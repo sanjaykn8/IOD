@@ -1,0 +1,47 @@
+# NOT built or run in this project's development sandbox (no Docker
+# daemon was available there — see each component's Dockerfile for the
+# same note). Provided as a best-effort starting point. The natively-run
+# path (scripts/linux/run_demo.sh or scripts/windows/run_demo.ps1) is
+# the one actually verified working end-to-end in this project.
+version: "3.8"
+services:
+  rust-core:
+    build: ./rust-core
+    ports:
+      - "8787:8787"
+    volumes:
+      - iod-data:/data
+
+  python-rag:
+    build: ./python-service
+    ports:
+      - "5001:5001"
+
+  node-gateway:
+    build: ./node-server
+    ports:
+      - "4000:4000"
+    environment:
+      # Inside the Compose network, services reach each other by service
+      # name, not 127.0.0.1 (that would mean "this container itself").
+      # This was a real bug caught during a manual re-review of this
+      # file: the Node gateway's own defaults (127.0.0.1:8787 /
+      # 127.0.0.1:5001) only work for the native, non-Docker run path.
+      IOD_RUST_BASE_URL: http://rust-core:8787
+      IOD_PYTHON_BASE_URL: http://python-rag:5001
+    depends_on:
+      - rust-core
+      - python-rag
+
+  web-ui:
+    build:
+      context: ./web-ui
+      args:
+        VITE_API_BASE: http://127.0.0.1:4000/api
+    ports:
+      - "5173:80"
+    depends_on:
+      - node-gateway
+
+volumes:
+  iod-data:

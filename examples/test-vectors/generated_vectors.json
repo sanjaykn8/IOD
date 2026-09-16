@@ -1,0 +1,63 @@
+{
+  "generated_at_unix_ms": 1789011316716,
+  "generator": "iod-vectors",
+  "section_a_fully_deterministic_hash_chain": {
+    "inputs": {
+      "group_id": "vector-group",
+      "metadata": {
+        "issued_at_unix": 1700000000,
+        "role": "test-vector"
+      },
+      "pk_dil_bytes_utf8": "FIXED-TEST-VECTOR-PK-DIL-BYTES-0002",
+      "pk_kem_bytes_utf8": "FIXED-TEST-VECTOR-PK-KEM-BYTES-0001",
+      "rho_hex": "4242424242424242424242424242424242424242424242424242424242424242",
+      "seed_hex_for_pid": "1111111111111111111111111111111111111111111111111111111111111111"
+    },
+    "note": "Every value in this section is derived ONLY from literal fixed bytes below plus deterministic hash functions (Poseidon/SHAKE256) — no RNG anywhere in this call path except the ZK proof's hiding blinding factor (noted separately). Reproducible byte-for-byte on any machine, forever, EXCEPT the two fields explicitly marked.",
+    "outputs": {
+      "group_field_hex": "22bbd9d4f94effc3",
+      "leaf_hex": "f83c730cd52d5886",
+      "merkle_root_hex": "a2cbf0e5dd094021",
+      "merkle_witness_verifies": true,
+      "pid_counter_0_hex": "1032722ff4f139b435e6d1fb2c15f311",
+      "pid_counter_1_hex": "e933952ae33586aeabcff2e513843a57",
+      "pk_commitment_hex": "492d056230ec3e2e",
+      "t_base_transcript_hash_hex": "00099b03a153f416c1c521ebdb4c93b321585d6e294d1970899f19b0555433e0",
+      "zk_proof_verifies": true,
+      "zk_proof_witness_commitment_hex": "NON-REPRODUCIBLE: includes a fresh random blinding factor each run (see zk module docs); only the verification RESULT below is reproducible"
+    }
+  },
+  "section_b_captured_real_run_non_reproducible": {
+    "authentication_result": {
+      "freshness_ok": true,
+      "puf_ok": true,
+      "reason_code": "ALL_CHECKS_PASSED",
+      "root_version_ok": true,
+      "session_id": "9043e8896c6fe0eb13c27b1e48140b68",
+      "signature_ok": true,
+      "zero_trust_decision": "Allow",
+      "zk_membership_ok": true
+    },
+    "drone1_public_keys": {
+      "dil_pk_fingerprint": "cc8fcd54dd5245a5",
+      "kem_pk_fingerprint": "db1520e39b42333e"
+    },
+    "example_kem_roundtrip": {
+      "ciphertext_size_bytes": 1088,
+      "public_key_fingerprint": "62189276124a3427",
+      "public_key_size_bytes": 1184,
+      "shared_secrets_match": true
+    },
+    "example_signature": {
+      "public_key_fingerprint": "d572f98b1030a4c0",
+      "signature_size_bytes": 2420,
+      "verifies": true
+    },
+    "group_state": {
+      "group_id": "vector-live-group",
+      "root_hex": "8810a74d3eacc741",
+      "version": 2
+    },
+    "note": "Captured from one concrete run of the real system. Will differ on every re-run (real RNG, real timestamps, and the pqcrypto library's non-seeded keygen — see module docs above). No private key or PUF seed appears here."
+  }
+}

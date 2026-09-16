@@ -1,0 +1,57 @@
+[package]
+name = "iod-core"
+version = "0.1.0"
+edition = "2021"
+description = "Post-quantum secure Internet-of-Drones protocol core (no ECC)"
+
+[lib]
+name = "iod_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "iod-server"
+path = "src/bin/server.rs"
+
+[[bin]]
+name = "iod-vectors"
+path = "src/bin/vectors.rs"
+
+[[bin]]
+name = "iod-bench"
+path = "src/bin/bench.rs"
+
+[dependencies]
+# NOTE: pqcrypto-kyber / pqcrypto-dilithium implement the NIST Round-3
+# submissions (Kyber768, Dilithium2) via audited PQClean C sources. These
+# are the direct algorithmic predecessors of the standardized ML-KEM-768
+# (FIPS 203) and ML-DSA-44 (FIPS 204). We use them (a) because the sandbox
+# toolchain (rustc 1.75, released Dec 2023) cannot build the newer
+# pqcrypto-mlkem/pqcrypto-mldsa crates' build scripts, which require a
+# newer cargo, and (b) because their naming matches the specification's
+# own "Kyber768"/"Dilithium2" terminology exactly. See
+# docs/cryptography.md for the precise standards mapping and the small
+# encoding differences vs. the final FIPS text, and for instructions on
+# swapping to pqcrypto-mlkem/pqcrypto-mldsa on a newer toolchain.
+pqcrypto-kyber = "0.8.1"
+pqcrypto-dilithium = "0.5.0"
+pqcrypto-traits = "0.3"
+sha3 = "0.10"
+sha2 = "0.10"
+hmac = "0.12"
+hkdf = "0.12"
+chacha20poly1305 = "0.10"
+rand = "0.8"
+rand_core = "0.6"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+rusqlite = { version = "0.31", features = ["bundled"] }
+tiny_http = "0.12"
+hex = "0.4"
+thiserror = "1"
+anyhow = "1"
+
+# Pins required because this environment's rustc (1.75.0) predates the
+# MSRV of the newest releases of these transitive dependencies.
+zeroize = "=1.7.0"
+getrandom = "=0.2.15"
+jobserver = "=0.1.32"
