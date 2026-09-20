@@ -1,0 +1,3 @@
+import {createFileRoute} from "@tanstack/react-router";
+import {OverviewPage} from "@/components/command/overview-pages";
+export const Route=createFileRoute("/")({head:()=>({meta:[{title:"Cypher Command Center — Overview"},{name:"description",content:"Live security overview for the post-quantum Internet of Drones research simulator."},{property:"og:title",content:"Cypher Command Center — Overview"},{property:"og:description",content:"Live GCS, fleet, Merkle membership, and protocol telemetry."},{property:"og:type",content:"website"},{name:"twitter:card",content:"summary_large_image"}]}),component:OverviewPage});
