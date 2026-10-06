@@ -54,9 +54,9 @@ pub fn run_authentication(
     log.push(&session_id, "M3", &d2.drone_id, &d2.drone_id, EventStatus::Ok, "D2 decrypted D1's public credentials + current R_G/V_G");
 
     // M4
-    let challenge = m4_challenge(d2, &group_id, &cred_resp.cred_d1, &m2.plain.n2)?;
-    log.push(&session_id, "M4", &d2.drone_id, &d1.drone_id, EventStatus::Info, "Challenge (signed by D2)");
-    let sig4_ok = d1_verify_challenge(&challenge);
+    let challenge = m4_challenge(d2, &group_id, &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2)?;
+    log.push(&session_id, "M4", &d2.drone_id, &d1.drone_id, EventStatus::Info, "Challenge (signed by D2, key certified by GCS)");
+    let sig4_ok = d1_verify_challenge(&challenge, &gcs.sign_pk);
     log.push(
         &session_id,
         "M4",
@@ -72,6 +72,7 @@ pub fn run_authentication(
             signature_ok: false,
             puf_ok: false,
             root_version_ok: false,
+            credential_consistency_ok: false,
             zero_trust: ZeroTrustDecision::Deny,
             reason_code: "D2_CHALLENGE_SIGNATURE_INVALID".to_string(),
         };
@@ -158,11 +159,13 @@ pub fn run_authentication(
     );
 
     // M8
-    let auth_result_msg = m8_auth_result(&d2.keys.as_ref().unwrap().dil_sk, &m7.report)?;
-    log.push(&session_id, "M8", &d2.drone_id, &d1.drone_id, EventStatus::Info, "AuthResult (signed)");
+    let auth_result_msg = m8_auth_result(&d2.keys.as_ref().unwrap().dil_sk, &m7.report, &cred_resp.d2_cert)?;
+    log.push(&session_id, "M8", &d2.drone_id, &d1.drone_id, EventStatus::Info, "AuthResult (signed, GCS-certified key)");
 
-    let pk_dil_d2 = crate::crypto::sign::SignPublicKey(d2.keys.as_ref().unwrap().dil_pk.0.clone());
-    let m8_sig_ok = d1_verify_m8(&pk_dil_d2, &auth_result_msg);
+    // SECURITY FIX (spec 25-G): D1 verifies M8 using only
+    // `auth_result_msg` + `gcs.sign_pk` -- no reach-into-D2's-state
+    // shortcut. See `d1_verify_m8` docs.
+    let m8_sig_ok = d1_verify_m8(&gcs.sign_pk, &auth_result_msg);
     log.push(
         &session_id,
         "M8",
@@ -406,11 +409,11 @@ mod tests {
         // before M7 evaluates it.
         let comm_req = m1_comm_req(&mut d1);
         let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&gcs, &m2.wire).unwrap();
+        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
         let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
         let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &m2.plain.n2).unwrap();
-        assert!(d1_verify_challenge(&challenge));
+        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
+        assert!(d1_verify_challenge(&challenge, &gcs.sign_pk));
         let ctx = d1_local_auth_context(&d1);
         let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
 
@@ -432,14 +435,73 @@ mod tests {
     }
 
     #[test]
+    fn spec_25b_forged_signing_key_with_untouched_comm_pk_is_caught_by_credential_consistency_not_by_zk_or_sig() {
+        // SECURITY FIX regression (25-B). Before this fix, M7 verified
+        // the ZK proof against `proof.comm_pk_d1` and the signature
+        // against `proof.pk_dil_d1` independently, with no check that
+        // those two fields -- plus `proof.pk_kem_d1` -- were actually
+        // consistent with EACH OTHER or with what M3 told D2 to expect.
+        // This test builds a forged bundle that passes BOTH the
+        // zk_membership and signature checks on their own (because an
+        // attacker who can intercept and re-sign the public transcript
+        // with a freshly-generated keypair always can -- the transcript
+        // contains no secret), while leaving `comm_pk_d1` untouched
+        // (still the real, ZK-proven one) and `pk_dil_d1` swapped to the
+        // attacker's own key. Only `credential_consistency_ok` (the
+        // comm_pk_d1 recomputation + M3/M5 key-match checks) catches
+        // this, and the overall decision must still be `Deny`.
+        let (mut gcs, mut d1, d2) = setup_two_drones();
+        let comm_req = m1_comm_req(&mut d1);
+        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
+        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
+        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
+        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
+        let ctx = d1_local_auth_context(&d1);
+        let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
+
+        // Attacker generates their own keypair and re-signs the SAME
+        // public transcript (comm_pk_d1, proof digest, nonces,
+        // timestamps, pid1 are all public / unchanged), then swaps in
+        // their own pk_dil_d1 -- but cannot touch comm_pk_d1 without
+        // breaking the untouched, already-valid ZK proof.
+        let (forged_pk, forged_sk) = crate::crypto::sign::keypair();
+        let proof_digest = crate::protocol::messages::digest_zk_proof(&proof.proof_zk);
+        let t = crate::protocol::transcript::build_auth_transcript(
+            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1, &proof_digest,
+            &comm_req.n1, &m2.plain.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
+        );
+        let forged_sig = crate::crypto::sign::sign_transcript(&forged_sk, &t).unwrap();
+        proof.sig1 = forged_sig.0;
+        proof.pk_dil_d1 = forged_pk.0;
+
+        let t_base = crate::protocol::transcript::build_t_base(
+            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1,
+            &comm_req.n1, &m2.plain.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
+        );
+        let m6_wire = m6_puf_verify_req(&proof, "alpha", ctx.v_g, &challenge.challenge_payload.c_puf, &m2.plain.n2, &t_base, &gcs.kem_pk).unwrap();
+        let puf_resp = gcs_m6_verify(&mut gcs, &m6_wire).unwrap();
+
+        let m7 = m7_verify_and_decide(
+            &cred_resp.cred_d1, &proof, &comm_req.n1, &m2.plain.n2,
+            comm_req.ts1, challenge.challenge_payload.ts4, &puf_resp, &gcs.sign_pk, "alpha",
+        );
+        assert!(m7.report.zk_membership_ok, "the untouched ZK proof must still verify on its own");
+        assert!(m7.report.signature_ok, "the forged-but-self-consistent signature must still verify on its own");
+        assert!(!m7.report.credential_consistency_ok, "the new check must catch the key substitution the old checks missed");
+        assert_eq!(m7.report.zero_trust, ZeroTrustDecision::Deny, "overall decision must still deny");
+        assert_eq!(m7.report.reason_code, "CREDENTIAL_CONSISTENCY_FAILED");
+    }
+
+    #[test]
     fn altered_puf_mac_is_rejected() {
         let (mut gcs, mut d1, d2) = setup_two_drones();
         let comm_req = m1_comm_req(&mut d1);
         let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&gcs, &m2.wire).unwrap();
+        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
         let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
         let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &m2.plain.n2).unwrap();
+        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
         let ctx = d1_local_auth_context(&d1);
         let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
 
@@ -455,6 +517,76 @@ mod tests {
     }
 
     #[test]
+    fn spec_25a_a_self_asserted_d2_key_not_certified_by_gcs_is_rejected_at_m4() {
+        // SECURITY FIX regression (25-A): an attacker who can forge a
+        // Challenge message but does not control GCS's signing key
+        // (e.g. a MITM impersonating D2 toward D1, or just D2's own
+        // untrusted self-assertion) must not be able to get D1 to trust
+        // an uncertified public key. Build a Challenge whose `d2_cert`
+        // carries a DIFFERENT (attacker-controlled) Dilithium key than
+        // the one that actually signed `sig4`, with a cert signature
+        // forged by a random keypair instead of GCS's real `sign_sk`.
+        let (mut gcs, mut d1, d2) = setup_two_drones();
+        let comm_req = m1_comm_req(&mut d1);
+        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
+        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
+        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
+        let mut challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
+
+        // Real cert, real sig4 -- this must pass.
+        assert!(d1_verify_challenge(&challenge, &gcs.sign_pk));
+
+        // Now forge: attacker signs their OWN cert with a random (not
+        // GCS's) signing key and swaps it in.
+        let (attacker_pk, attacker_sk) = crate::crypto::sign::keypair();
+        let mut forged_cert = cred_resp.d2_cert.clone();
+        forged_cert.pk_dil = attacker_pk.0;
+        let forged_sig = crate::crypto::sign::sign_transcript(&attacker_sk, &forged_cert.signing_bytes()).unwrap();
+        forged_cert.sig = forged_sig.0;
+        challenge.d2_cert = forged_cert;
+        assert!(!d1_verify_challenge(&challenge, &gcs.sign_pk), "a cert not signed by GCS must be rejected");
+    }
+
+    #[test]
+    fn spec_25g_m8_is_verifiable_from_the_message_alone_and_rejects_an_uncertified_key() {
+        // SECURITY FIX regression (25-G): `AuthResultMsg` must carry its
+        // own GCS-certified key (D1 never reaches into D2's in-memory
+        // state to verify it). Tamper the embedded cert's key the same
+        // way as the 25-A test above and confirm `d1_verify_m8` rejects
+        // it, then confirm the untampered message verifies.
+        let (mut gcs, mut d1, d2) = setup_two_drones();
+        let mut log = EventLog::new();
+        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
+        assert_eq!(result.report.zero_trust, ZeroTrustDecision::Allow);
+
+        let auth_result_msg = {
+            let cred_resp_d2_cert = {
+                // Rebuild M3 once more to get a cert object to tamper
+                // with (the real flow doesn't expose the M8 message
+                // from `run_authentication`, by design -- it only
+                // returns the final report).
+                let comm_req = m1_comm_req(&mut d1);
+                let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
+                let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+                let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
+                d2_receive_m3(&d2, &m3_wire).unwrap().d2_cert
+            };
+            m8_auth_result(&d2.keys.as_ref().unwrap().dil_sk, &result.report, &cred_resp_d2_cert).unwrap()
+        };
+        assert!(d1_verify_m8(&gcs.sign_pk, &auth_result_msg), "a genuinely GCS-certified M8 must verify");
+
+        let mut tampered = auth_result_msg.clone();
+        let (attacker_pk, attacker_sk) = crate::crypto::sign::keypair();
+        let mut forged_cert = tampered.d2_cert.clone();
+        forged_cert.pk_dil = attacker_pk.0;
+        let forged_sig = crate::crypto::sign::sign_transcript(&attacker_sk, &forged_cert.signing_bytes()).unwrap();
+        forged_cert.sig = forged_sig.0;
+        tampered.d2_cert = forged_cert;
+        assert!(!d1_verify_m8(&gcs.sign_pk, &tampered), "an uncertified key embedded in M8 must be rejected");
+    }
+
+    #[test]
     fn reused_nonce_at_m6_is_rejected() {
         let (mut gcs, mut d1, d2) = setup_two_drones();
         let mut log = EventLog::new();
@@ -465,10 +597,10 @@ mod tests {
         // session already consumed.
         let comm_req = m1_comm_req(&mut d1);
         let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&gcs, &m2.wire).unwrap();
+        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
         let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
         let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &r1.unwrap().n2 /* reused N2 */).unwrap();
+        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &r1.unwrap().n2 /* reused N2 */).unwrap();
         let ctx = d1_local_auth_context(&d1);
         let proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
         let t_base = crate::protocol::transcript::build_t_base(
@@ -482,7 +614,7 @@ mod tests {
 
     #[test]
     fn unknown_pid_at_m2_is_rejected() {
-        let (gcs, _d1, d2) = setup_two_drones();
+        let (mut gcs, _d1, d2) = setup_two_drones();
         let bogus = CommReq {
             msg_type: "CommReq".into(),
             g: "alpha".into(),
@@ -491,7 +623,45 @@ mod tests {
             n1: vec![1, 2, 3],
         };
         let m2 = m2_cred_req(&d2, &bogus, &gcs.kem_pk).unwrap();
-        assert!(gcs_receive_m2(&gcs, &m2.wire).is_err());
+        assert!(gcs_receive_m2(&mut gcs, &m2.wire).is_err());
+    }
+
+    #[test]
+    fn spec_25f_replaying_an_already_consumed_pid1_to_start_a_second_session_is_rejected() {
+        // SECURITY FIX regression (25-F: PID lifecycle
+        // ACTIVE/CONSUMED/EXPIRED). The pid_pool's module docs always
+        // claimed pseudonyms are "consumed as sessions start," but
+        // nothing enforced it until this fix -- a pid1 could start
+        // unlimited independent sessions. Build one real CommReq/M2
+        // (consuming its pid1), confirm a SECOND, independent M2 replay
+        // of the exact same pid1 is now rejected, and confirm the
+        // drone's NEXT (unused) pid1 still works normally.
+        let (mut gcs, mut d1, d2) = setup_two_drones();
+
+        let comm_req_1 = m1_comm_req(&mut d1); // consumes pid_counter=0 locally, derives pid1 for it
+        assert_eq!(
+            gcs.pid_state(&comm_req_1.pid1),
+            Some(crate::protocol::entities::PidState::Active),
+            "freshly pre-provisioned pid1 must start Active"
+        );
+        let m2_first = m2_cred_req(&d2, &comm_req_1, &gcs.kem_pk).unwrap();
+        assert!(gcs_receive_m2(&mut gcs, &m2_first.wire).is_ok(), "the first use of a fresh pid1 must succeed");
+        assert_eq!(gcs.pid_state(&comm_req_1.pid1), Some(crate::protocol::entities::PidState::Consumed));
+
+        // Replay: an attacker (or a buggy retry) presents the EXACT
+        // SAME pid1 again to start a brand-new session.
+        let m2_replay = m2_cred_req(&d2, &comm_req_1, &gcs.kem_pk).unwrap();
+        let replay_result = gcs_receive_m2(&mut gcs, &m2_replay.wire);
+        assert!(replay_result.is_err(), "a second, independent session must not be startable with an already-consumed pid1");
+        assert!(format!("{}", replay_result.unwrap_err()).contains("already been consumed"));
+
+        // The drone's NEXT pid1 (a different, still-Active pseudonym
+        // from the same pre-provisioned pool) must work normally --
+        // this is single-PID replay rejection, not a blanket drone ban.
+        let comm_req_2 = m1_comm_req(&mut d1);
+        assert_ne!(comm_req_2.pid1, comm_req_1.pid1);
+        let m2_second = m2_cred_req(&d2, &comm_req_2, &gcs.kem_pk).unwrap();
+        assert!(gcs_receive_m2(&mut gcs, &m2_second.wire).is_ok(), "a fresh, never-used pid1 from the same pool must still work");
     }
 
     #[test]
@@ -505,7 +675,7 @@ mod tests {
 
         let comm_req = m1_comm_req(&mut d1); // g = "alpha"
         let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap(); // D2 is in "bravo"
-        assert!(gcs_receive_m2(&gcs, &m2.wire).is_err());
+        assert!(gcs_receive_m2(&mut gcs, &m2.wire).is_err());
     }
 
     #[test]

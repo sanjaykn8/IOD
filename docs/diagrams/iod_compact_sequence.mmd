@@ -1,0 +1,60 @@
+%% IOD compact presentation sequence diagram.
+%% Same notation rules as iod_full_sequence.mmd:
+%%   - "||" = concatenation; Poseidon(a, b, c) = comma style, never "||".
+%%   - Messages shown as braced Msg{...}; fields are a representative
+%%     SUBSET for slide legibility (see the note below) -- never invented
+%%     fields, and never a field renamed from its real struct name.
+%%   - RAG is registration-local only: no participant lane, no network arrow.
+%%   - R2 is GCS-internal: Note over GCS only, never an arrow.
+%%   - Trace Manager appears ONLY inside the alt/exception block.
+sequenceDiagram
+    autonumber
+    participant D1 as Drone D1
+    participant GCS as GCS
+    participant D2 as Drone D2
+
+    Note over D1,D2: Fields below are an abbreviated subset for presentation -- see docs/diagrams/iod_full_sequence.mmd for every field of every message.
+
+    Note over D1,GCS: Registration (R1-R3) -- post-quantum sealed, steganographically transported
+
+    rect rgb(235,240,255)
+    Note over D1: RAG-assisted stego selection (registration-local): real benchmark, then deterministic selector, then evidence-grounded explanation
+    end
+    D1->>GCS: EnrollmentRequest{pk_kem_d, pk_dil_d, rho} -- sealed, embedded in a cover image
+    Note over GCS: R2 (GCS-internal): leaf = Poseidon(pk_kem_d, pk_dil_d, g, metadata, rho), register in Merkle tree
+    GCS->>D1: EnrollmentResponse{r_g, v_g, witness} -- sealed, embedded in a cover image
+    D1->>D1: verify_witness(r_g, leaf, witness) before trusting R3
+
+    Note over D1,D2: Authentication (M1-M8)
+
+    D1->>D2: CommReq{g, pid1, ts1, n1}
+    D2->>GCS: CredReq{g, pid1, d2_id, ts2, n2}
+    GCS->>D2: CredResp{cred_d1{pk_kem_d1, pk_dil_d1, r_g, v_g}, d2_cert{pk_dil, sig}} [GCS-certified D2 key, spec 25-A]
+    D2->>D1: Challenge{c_puf, n2, ts4, sig4, d2_cert}
+    D1->>D2: ProofBundle{comm_pk_d1, proof_zk, mac1, sig1, pk_kem_d1, pk_dil_d1}
+    D2->>GCS: PUFVerifyReq{pid1, c_puf, n2, t_base, mac1}
+    GCS->>D2: PUFVerifyResp{result, current_r_g, current_v_g, sig7}
+    D2->>D2: credential_consistency_ok = (Poseidon(pk_kem_d1, pk_dil_d1) == comm_pk_d1) AND matches cred_d1 [spec 25-B]
+    D2->>D2: VerificationReport{..., zero_trust, reason_code}
+
+    alt zero_trust = Deny
+        Note over GCS: Trace Manager (audit-only): flag_session recorded, PID resolution requires requester_role == "administrator"
+    end
+
+    D2->>D1: AuthResult{result, reason_code, sig9, d2_cert} -- self-contained verification, spec 25-G
+
+    Note over D1,D2: Group Key (K1-K4) + Secure Messaging
+
+    D2->>GCS: GroupKeyReq{g, d1_pid1, mission_id, auth_evidence_hash}
+    GCS->>GCS: require a genuinely-completed Allow session for this pair [spec 25-D/25-I]
+    GCS->>D2: GroupKeyResp{ct_kem_g_d1, ct_kem_g_d2}
+    D2->>D1: KeyDelivery{ct_kem_g_d1, sig8}
+    D1->>D1: K_AEAD = HKDF(K_G,M, N1 || N2 || N6 || N7) -- real session nonces [spec 25-E]
+    D1->>D2: SecureAppMessage{src_pid, dst_pid, sealed} -- session tags, never the permanent DroneID [spec 25-H]
+
+    alt Revocation
+        GCS->>GCS: revoke_drone(drone_id)
+        D1->>D2: CommReq{...} (re-authentication attempt)
+        D2->>GCS: CredReq{...}
+        GCS--xD2: reject -- "D1 is revoked"
+    end

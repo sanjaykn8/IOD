@@ -6,7 +6,13 @@ import { rust } from "./services/rustClient";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Default express.json() body limit (100kb) is too small for the
+// base64-encoded cover-image payload the Registration (Stego) flow's
+// `POST /api/drones/:id/register-stego` can carry (a PNG cover image,
+// base64-encoded, can run to a few MB) -- raised globally rather than
+// per-route for simplicity, since no other route needs a body anywhere
+// near this size.
+app.use(express.json({ limit: "20mb" }));
 
 app.use("/api", router);
 

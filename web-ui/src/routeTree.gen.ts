@@ -15,6 +15,7 @@ import { Route as DronesRouteImport } from './routes/drones'
 import { Route as GroupsRouteImport } from './routes/groups'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as RagRouteImport } from './routes/rag'
+import { Route as RegistrationRouteImport } from './routes/registration'
 import { Route as SecureCommunicationRouteImport } from './routes/secure-communication'
 import { Route as SystemRouteImport } from './routes/system'
 import { Route as TraceRouteImport } from './routes/trace'
@@ -49,6 +50,11 @@ const RagRoute = RagRouteImport.update({
   path: '/rag',
   getParentRoute: () => rootRouteImport,
 } as any)
+const RegistrationRoute = RegistrationRouteImport.update({
+  id: '/registration',
+  path: '/registration',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SecureCommunicationRoute = SecureCommunicationRouteImport.update({
   id: '/secure-communication',
   path: '/secure-communication',
@@ -72,6 +78,7 @@ export interface FileRoutesByFullPath {
   '/groups': typeof GroupsRoute
   '/logs': typeof LogsRoute
   '/rag': typeof RagRoute
+  '/registration': typeof RegistrationRoute
   '/secure-communication': typeof SecureCommunicationRoute
   '/system': typeof SystemRoute
   '/trace': typeof TraceRoute
@@ -83,6 +90,7 @@ export interface FileRoutesByTo {
   '/groups': typeof GroupsRoute
   '/logs': typeof LogsRoute
   '/rag': typeof RagRoute
+  '/registration': typeof RegistrationRoute
   '/secure-communication': typeof SecureCommunicationRoute
   '/system': typeof SystemRoute
   '/trace': typeof TraceRoute
@@ -95,6 +103,7 @@ export interface FileRoutesById {
   '/groups': typeof GroupsRoute
   '/logs': typeof LogsRoute
   '/rag': typeof RagRoute
+  '/registration': typeof RegistrationRoute
   '/secure-communication': typeof SecureCommunicationRoute
   '/system': typeof SystemRoute
   '/trace': typeof TraceRoute
@@ -108,6 +117,7 @@ export interface FileRouteTypes {
     | '/groups'
     | '/logs'
     | '/rag'
+    | '/registration'
     | '/secure-communication'
     | '/system'
     | '/trace'
@@ -119,6 +129,7 @@ export interface FileRouteTypes {
     | '/groups'
     | '/logs'
     | '/rag'
+    | '/registration'
     | '/secure-communication'
     | '/system'
     | '/trace'
@@ -130,6 +141,7 @@ export interface FileRouteTypes {
     | '/groups'
     | '/logs'
     | '/rag'
+    | '/registration'
     | '/secure-communication'
     | '/system'
     | '/trace'
@@ -142,6 +154,7 @@ export interface RootRouteChildren {
   GroupsRoute: typeof GroupsRoute
   LogsRoute: typeof LogsRoute
   RagRoute: typeof RagRoute
+  RegistrationRoute: typeof RegistrationRoute
   SecureCommunicationRoute: typeof SecureCommunicationRoute
   SystemRoute: typeof SystemRoute
   TraceRoute: typeof TraceRoute
@@ -191,6 +204,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof RagRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/registration': {
+      id: '/registration'
+      path: '/registration'
+      fullPath: '/registration'
+      preLoaderRoute: typeof RegistrationRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/secure-communication': {
       id: '/secure-communication'
       path: '/secure-communication'
@@ -222,6 +242,7 @@ const rootRouteChildren: RootRouteChildren = {
   GroupsRoute: GroupsRoute,
   LogsRoute: LogsRoute,
   RagRoute: RagRoute,
+  RegistrationRoute: RegistrationRoute,
   SecureCommunicationRoute: SecureCommunicationRoute,
   SystemRoute: SystemRoute,
   TraceRoute: TraceRoute,

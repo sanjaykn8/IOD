@@ -25,6 +25,9 @@ pub const SEED_DOMAIN_AEAD: &[u8] = b"IOD-SEED-AEAD-KEY-v1";
 pub const SEED_DOMAIN_FUZZY_EXTRACTOR: &[u8] = b"IOD-SEED-FUZZY-EXTRACTOR-v1";
 pub const SEED_DOMAIN_ENVELOPE: &[u8] = b"IOD-SEED-ENVELOPE-KEY-v1";
 pub const SEED_DOMAIN_GROUP_KEY_AEAD: &[u8] = b"IOD-SEED-GROUPKEY-AEAD-v1";
+/// Spec item 25-C ("explicit PUF<->credential<->Merkle-member<->ML-DSA-
+/// key binding"). See `identity::leaf::derive_puf_bound_rho` docs.
+pub const SEED_DOMAIN_LEAF_RHO: &[u8] = b"IOD-SEED-LEAF-RHO-v1";
 
 // --- SHAKE256 transcript domains (byte string prefixes) ---
 pub const TRANSCRIPT_AUTH: &[u8] = b"AuthTranscript-v1";

@@ -222,7 +222,7 @@ mod tests {
         let mut gcs = gcs;
         gcs.pid_pool.insert(d1_pid1.clone(), d1.drone_id.clone());
 
-        let (wire1, _plain1) = k1_group_key_req(&d2, "alpha", &d1_pid1, "mission-x", [0u8; 32], &gcs.kem_pk).unwrap();
+        let (wire1, plain1) = k1_group_key_req(&d2, "alpha", &d1_pid1, "mission-x", [0u8; 32], &gcs.kem_pk).unwrap();
         let wire7 = gcs_handle_k1(&gcs, &wire1).unwrap();
         let (resp, key_delivery) = d2_handle_k1_response(&d2, &wire7).unwrap();
 
@@ -235,8 +235,14 @@ mod tests {
         let k_d2 = d2_decapsulate_group_key(&d2, &resp).unwrap();
         assert_eq!(k_d1, k_d2, "D1 and D2 must derive the identical group key");
 
-        let aead_d1 = derive_aead_key(&k_d1, b"n1", b"n2", b"n6", b"n7");
-        let aead_d2 = derive_aead_key(&k_d2, b"n1", b"n2", b"n6", b"n7");
+        // Use the REAL session nonces (N6 from the K1 request this test
+        // just built, N7 from the K1 response GCS just produced) rather
+        // than fixed placeholder strings — both sides must derive from
+        // the same real transcript material. N1/N2 stand in here for a
+        // prior M1/M2 (this unit test exercises K1-K3 in isolation, not
+        // the full M1-M8 flow, so there is no real M1/M2 to reuse).
+        let aead_d1 = derive_aead_key(&k_d1, b"session-n1", b"session-n2", &plain1.n6, &resp.n7);
+        let aead_d2 = derive_aead_key(&k_d2, b"session-n1", b"session-n2", &plain1.n6, &resp.n7);
         assert_eq!(aead_d1.0, aead_d2.0);
     }
 

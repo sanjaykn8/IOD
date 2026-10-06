@@ -23,6 +23,8 @@ pub struct ZeroTrustInputs {
     pub signature_ok: bool,
     pub puf_ok: bool,
     pub root_version_ok: bool,
+    /// Spec item 25-B: see `messages::VerificationReport::credential_consistency_ok`.
+    pub credential_consistency_ok: bool,
     pub group_id: String,
     pub requested_operation: String,
     /// Structural extension point for a mission-time-window policy
@@ -89,6 +91,9 @@ impl PolicyEngine for DefaultPolicy {
         if !inputs.root_version_ok {
             return deny("STALE_MEMBERSHIP_ROOT_OR_VERSION");
         }
+        if !inputs.credential_consistency_ok {
+            return deny("CREDENTIAL_CONSISTENCY_FAILED");
+        }
         if !inputs.zk_membership_ok {
             return deny("ZK_MEMBERSHIP_PROOF_INVALID");
         }
@@ -133,6 +138,7 @@ mod tests {
             signature_ok: true,
             puf_ok: true,
             root_version_ok: true,
+            credential_consistency_ok: true,
             group_id: "alpha".into(),
             requested_operation: "authenticate".into(),
             mission_active: true,
@@ -152,6 +158,18 @@ mod tests {
         let r = evaluate(&i);
         assert_eq!(r.decision, Decision::Deny);
         assert_eq!(r.reason_code, "PUF_VERIFICATION_FAILED");
+    }
+
+    #[test]
+    fn credential_inconsistency_denies_even_if_crypto_checks_passed() {
+        // Spec 25-B regression: the policy layer itself must treat a
+        // failed comm_pk_d1/M3-M5 consistency check as a hard deny,
+        // independent of (and checked before) the ZK/signature booleans.
+        let mut i = base();
+        i.credential_consistency_ok = false;
+        let r = evaluate(&i);
+        assert_eq!(r.decision, Decision::Deny);
+        assert_eq!(r.reason_code, "CREDENTIAL_CONSISTENCY_FAILED");
     }
 
     #[test]

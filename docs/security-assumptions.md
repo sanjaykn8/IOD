@@ -59,6 +59,20 @@ not exactly zero.
 See `docs/threat-model.md`. Acceptable only because every service in
 this project binds to `127.0.0.1` and nothing crosses a real network.
 
+## Steganographic concealment is not, and does not substitute for, encryption
+
+Registration (R1-R3) can be transported by embedding a KEM-then-AEAD
+**already-sealed** envelope into a cover image (`docs/registration-
+stego.md`). The steganographic layer's job is concealment (making the
+transmitted image not obviously carry hidden data); it contributes
+nothing to confidentiality or integrity, both of which come entirely
+from the encryption applied before embedding. This assumption is
+stated explicitly because steganography is a common source of
+over-claiming in exactly the direction this project avoids elsewhere:
+"hidden" must never be read as "secure" on its own. See
+`docs/data-and-evaluation.md` for what was and wasn't evaluated about
+the concealment itself (no steganalysis-resistance claim is made).
+
 ## Classical vs. post-quantum security levels, stated per-primitive
 
 | Primitive | Classical security basis | Post-quantum consideration |

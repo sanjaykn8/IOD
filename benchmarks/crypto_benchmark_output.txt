@@ -1,0 +1,30 @@
+   Compiling iod-core v0.1.0 (/home/claude/iod/IOD-main/rust-core)
+    Finished `release` profile [optimized] target(s) in 33.99s
+     Running `target/release/iod-bench`
+=== IoD Secure Simulator — Benchmarks ===
+(all numbers below are actually measured on this run, not assumed)
+
+PUF fuzzy-extractor reconstruction            avg=  0.039073ms  p50=  0.037345ms  p95=  0.048338ms  (n=200)
+ML-KEM-768 (Kyber768) key generation          avg=  0.009636ms  p50=  0.008940ms  p95=  0.010938ms  (n=100)
+ML-KEM-768 encapsulate                        avg=  0.009286ms  p50=  0.008731ms  p95=  0.009187ms  (n=200)
+ML-KEM-768 decapsulate                        avg=  0.009679ms  p50=  0.009478ms  p95=  0.009867ms  (n=200)
+  -> Kyber768 public key size                 1184 bytes
+  -> Kyber768 ciphertext size                 1088 bytes
+ML-DSA-44 (Dilithium2) key generation         avg=  0.019577ms  p50=  0.018696ms  p95=  0.024131ms  (n=100)
+ML-DSA-44 sign                                avg=  0.061324ms  p50=  0.060229ms  p95=  0.070154ms  (n=100)
+ML-DSA-44 verify                              avg=  0.020945ms  p50=  0.020031ms  p95=  0.030244ms  (n=100)
+  -> Dilithium2 public key size               1312 bytes
+  -> Dilithium2 signature size                2420 bytes
+Poseidon hash (8 field elements)              avg=  0.005536ms  p50=  0.005325ms  p95=  0.005996ms  (n=1000)
+Merkle registration (single leaf, depth=12)   avg=  0.017613ms  p50=  0.017053ms  p95=  0.017189ms  (n=200)
+Merkle witness generation (depth=12, 500 members) avg=  0.000063ms  p50=  0.000061ms  p95=  0.000063ms  (n=500)
+Merkle witness verification (depth=12)        avg=  0.021586ms  p50=  0.015977ms  p95=  0.022216ms  (n=1000)
+ZK membership proof generation (depth=10)     avg=  0.085426ms  p50=  0.082304ms  p95=  0.098036ms  (n=200)
+ZK membership proof verification (depth=10)   avg=  0.089578ms  p50=  0.082028ms  p95=  0.118005ms  (n=200)
+  -> ZK proof size                            545 bytes (JSON-serialized)
+AEAD (ChaCha20-Poly1305) seal (256B)          avg=  0.001638ms  p50=  0.001468ms  p95=  0.001700ms  (n=1000)
+AEAD (ChaCha20-Poly1305) open (256B)          avg=  0.003475ms  p50=  0.001700ms  p95=  0.001963ms  (n=1000)
+Full end-to-end authentication (M1-M8, incl. registration) avg=  4.951653ms  p50=  4.880139ms  p95=  5.410078ms  (n=50)
+Group-key establishment (K1-K4)               avg=  1.402379ms  p50=  1.387616ms  p95=  1.520524ms  (n=50)
+
+Done. These numbers were measured with `cargo run --release` on this sandbox VM's shared CPU — they demonstrate relative cost and correctness of measurement methodology, but are NOT representative of embedded-drone-hardware performance (which would have a much slower CPU, no OS-level scheduling noise from a shared VM host, and different cache behavior). Re-run this binary directly on target hardware for numbers that matter for a real deployment decision.

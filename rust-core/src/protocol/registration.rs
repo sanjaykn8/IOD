@@ -9,14 +9,13 @@
 //! KEM/AEAD wrapping to it, matching the specification.
 
 use crate::identity::keys::derive_device_keys;
-use crate::identity::leaf::compute_leaf;
+use crate::identity::leaf::{compute_leaf, derive_puf_bound_rho};
 use crate::identity::metadata::MembershipMetadata;
 use crate::identity::pid::derive_pid;
 use crate::merkle::group_tree::GroupError;
 use crate::puf::crp::CrpReference;
 use crate::puf::fuzzy_extractor;
 use crate::protocol::entities::{DronePublicRecord, DroneState, GcsState};
-use rand::RngCore;
 
 #[derive(thiserror::Error, Debug)]
 pub enum RegistrationError {
@@ -51,8 +50,11 @@ pub fn register_drone(
     let reference_reading = drone.puf.read();
     let enrolled = fuzzy_extractor::generate(&reference_reading);
     let keys = derive_device_keys(&enrolled.seed);
-    let mut rho = [0u8; 32];
-    rand::thread_rng().fill_bytes(&mut rho);
+    // SECURITY FIX (spec 25-C): rho is now cryptographically bound to
+    // this drone's PUF-reconstructed seed (still fresh per
+    // registration) rather than independent randomness with no tie to
+    // the physical device. See `identity::leaf::derive_puf_bound_rho`.
+    let rho = derive_puf_bound_rho(&enrolled.seed);
 
     let reference_response = drone.puf.challenge_response(&drone.crp_default_challenge);
 

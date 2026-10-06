@@ -6,9 +6,13 @@ fuzzy extractor, ML-KEM-768/Kyber768 and ML-DSA-44/Dilithium2, a Poseidon
 Merkle membership tree, a transparent (non-ECC) ZK membership proof, the
 full M1-M8 authentication handshake, K1-K4 GCS-assisted group-key
 establishment, AEAD secure messaging, Zero Trust authorization, a Trace
-Manager, a collaborative RAG/mock-LLM simulation, and a full web
+Manager, device registration (R1-R3) transported through real 2D image
+steganography with RAG-assisted, measurement-grounded algorithm
+selection, a collaborative RAG/mock-LLM simulation (now a secondary,
+non-load-bearing subsystem -- see `docs/rag.md`), and a full web
 dashboard — built across Rust (security-critical core), Node.js/
-TypeScript (API gateway), Python (RAG), and React (dashboard).
+TypeScript (API gateway), Python (steganography + RAG), and React
+(dashboard).
 
 **Zero elliptic-curve cryptography anywhere in this project** — see
 `docs/ecc-audit.md` for the full, methodical audit.
@@ -38,11 +42,15 @@ real bug found and fixed during development and how it was caught.
 | Zero Trust | **REAL** (deterministic, configurable, replaceable policy engine — not ML-based) |
 | Trace Manager | **REAL** |
 | SQLite persistence | **REAL** |
-| RAG retrieval | **SIMULATED** (word-overlap, not embeddings) |
-| RAG Byzantine-ish validation | **SIMULATED** (a labeled heuristic, not a real BFT defense) |
+| 2D steganography algorithms (Adaptive LSB, PVD, DCT, DWT, SVD) | **REAL** (real pixel embed/extract against real cover images; see `docs/steganography.md`) |
+| Registration-time algorithm selection | **REAL selection logic over REAL measurements** (deterministic, importance-weighted; see `docs/algorithm-selection.md`) — the "RAG" in "RAG-assisted" is retrieval + narrative only, never the number-producing step |
+| Registration-time RAG narrative/evidence | **SIMULATED retrieval** (word-overlap over a hand-written knowledge base, not embeddings), quoting only real numbers it is handed — see `docs/rag-stego-selection.md` |
+| R1-R3 registration transported via steganography | **REAL** end-to-end (real ML-KEM-768/ML-DSA-44 keys, real KEM-then-AEAD sealing, real embed/extract), live via the dashboard's Registration (Stego) page and `iod-register-stego-demo` — see `docs/registration-stego.md` |
+| Collaborative drone-contribution RAG pipeline (retrieval/validation/fusion) | **SIMULATED**, still present and tested, but superseded as of this stage for registration — see `docs/rag.md`'s "Historical subsystem" section |
+| RAG retrieval (collaborative pipeline) | **SIMULATED** (word-overlap, not embeddings) |
+| RAG Byzantine-ish validation (collaborative pipeline) | **SIMULATED** (a labeled heuristic, not a real BFT defense) |
 | Mock LLM | **REAL** (genuinely deterministic, template-based; no network call) |
 | Ollama LLM provider | **PLACEHOLDER/FUTURE** (interface only, `NotImplementedError`) |
-| Steganography transport | **PLACEHOLDER/FUTURE** (interface only, per explicit project scope) |
 | Node.js↔Rust live updates | **REAL SSE to the browser**, via internal polling on the Rust↔Node leg (documented toolchain-driven decision, see `docs/architecture.md`) |
 | Docker configuration | **Best-effort, UNTESTED** — no Docker daemon was available in the development sandbox; the native (non-Docker) path is what was actually verified |
 
@@ -140,13 +148,22 @@ through the identical scenario visually.
 ## Using the web dashboard
 
 Open `http://127.0.0.1:5173` after starting the dashboard dev server (or
-serve `web-ui/dist/` after `npm run build` with any static file server).
-Nine pages, all functional (not mockups): Dashboard, Drones, Groups,
-Authentication, Secure Communication, RAG Simulation, Trace Manager,
-Protocol Logs (live via SSE), and Settings. Every control was actually
-driven end-to-end with a headless browser (Playwright) during
-development — see `docs/testing.md` for the full verification writeup
-and the one real UI bug it caught and fixed.
+serve the production build after `npm run build` with any static file
+server). Nine pages, all functional (not mockups): Overview, Drones,
+Groups, Authentication, Secure Communication, **Registration (Stego)**,
+Trace Manager, Event Log (live via SSE), and System. The Registration
+(Stego) page runs the real R1-R3 flow end-to-end from the browser --
+pick (or create) an unregistered drone, optionally supply your own R1/R3
+cover images, and it drives a real RAG-assisted algorithm selection,
+real embed/extract against `python-service`, and real registration,
+showing every candidate algorithm's real measurements, the selector's
+reasoning, and the resulting stego images (see `docs/registration-stego.md`).
+It replaces the former RAG-chatbot page in primary navigation; that page
+and its collaborative pipeline still exist and still work, reachable
+directly, but are no longer load-bearing for registration (`docs/rag.md`).
+Every control was actually driven end-to-end with a headless browser
+(Playwright) during development — see `docs/testing.md` for the full
+verification writeup and the one real UI bug it caught and fixed.
 
 ## Tests
 
@@ -155,9 +172,13 @@ and the one real UI bug it caught and fixed.
 .\scripts\windows\test.ps1     # Windows
 ```
 
-**125 automated tests, all passing**: 107 Rust unit tests + 2 end-to-end
-integration tests + 3 dedicated security-negative tests + 13 Python
-tests. Full checklist-to-test mapping (every item from "stale
+**213 automated tests, all passing**: 132 Rust unit tests + 3 end-to-end
+integration tests (including a full chained Stego Registration →
+Authentication → Authorization → Group Key → Secure Message →
+Revocation → denied Re-authentication run) + 3 dedicated
+security-negative tests + 75 Python tests (steganography algorithms,
+selector, benchmark, RAG knowledge, and the original collaborative RAG
+pipeline). Full checklist-to-test mapping (every item from "stale
 timestamp" through "invalid AEAD authentication tag") in
 `docs/testing.md`.
 
@@ -215,8 +236,21 @@ the top of `rust-core/src/bin/vectors.rs`.
    project's rustc 1.75.0 development toolchain — see
    `docs/dependency-rationale.md` for the exact list and how to relax
    them on a newer toolchain.
-8. RAG simulation state is in-memory/process-lifetime only (not
-   persisted to SQLite) — a documented simplification.
+8. RAG simulation state (both the collaborative pipeline and the
+   registration-time selector's per-request measurements) is
+   in-memory/process-lifetime only (not persisted to SQLite) — a
+   documented simplification.
+9. **Registration via steganography requires `python-service` to be
+   reachable** (`IOD_STEGO_SERVICE_URL`, default `http://127.0.0.1:5001`)
+   — unlike the plain (non-stego) registration path, which has no such
+   dependency. If the service is down, the dashboard's Registration
+   (Stego) page and `iod-register-stego-demo` fail with a clear error
+   rather than silently falling back to a non-steganographic path. See
+   `docs/registration-stego.md`.
+10. The registration-time algorithm selector's importance weighting
+    (`CRITICAL` by default) is a chosen deployment policy, not a fact
+    the project claims to have derived empirically — see
+    `docs/algorithm-selection.md`.
 
 ## Documentation index
 
@@ -227,4 +261,8 @@ the top of `rust-core/src/bin/vectors.rs`.
 `docs/testing.md` · `docs/benchmarking.md` · `docs/troubleshooting.md` ·
 `docs/research-notes.md` · `docs/dependency-rationale.md` ·
 `docs/ecc-audit.md` · `docs/security-review.md` ·
+`docs/steganography.md` · `docs/rag-stego-selection.md` ·
+`docs/registration-stego.md` · `docs/image-pipeline.md` ·
+`docs/algorithm-selection.md` · `docs/data-and-evaluation.md` ·
+`docs/migration-notes.md` · `docs/claims-and-limitations.md` ·
 `docs/IMPLEMENTATION_STATUS.md` (the complete, phase-by-phase build log)

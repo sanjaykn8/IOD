@@ -86,3 +86,21 @@ in this size — a real hiding backend would typically be either larger
 (a STARK proof) or a different shape entirely (an MPC-in-the-head
 transcript), so this number should not be used to estimate a future
 hiding backend's bandwidth cost.
+
+## Steganography benchmarks: a separate subsystem, a separate methodology
+
+This document covers `iod-bench` — the Rust crypto/protocol
+primitives above, timed across many repeated trials with avg/p50/p95
+reporting, because their cost does not depend on image content. The
+2D-steganography algorithms (`docs/steganography.md`) are benchmarked
+differently and separately, by `python-service/src/stego/benchmark.py`:
+one real measurement **per actual (cover image, payload) pair**, at
+registration time, since their cost and quality genuinely depend on
+that specific input. See `docs/data-and-evaluation.md` for exactly
+what is and is not covered by that measurement, and
+`docs/algorithm-selection.md` for how those per-request measurements
+feed the deterministic selector. Exported stego benchmark figures
+(per algorithm, across the bundled fixture images) are included
+alongside this document's crypto/protocol numbers in the benchmark
+export produced for this stage — see the repository's top-level
+benchmark results export for the exact figures captured.

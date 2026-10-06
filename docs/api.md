@@ -34,6 +34,8 @@ Request/response bodies are JSON. All examples use `curl`.
 | GET | `/drones` | — | List all drones (public fingerprints only — see "Secret redaction" below). |
 | GET | `/drones/:id` | — | One drone's detail. |
 | POST | `/drones/:id/register` | `{"group_id": "alpha", "role": "recon"}` | Runs R1-R3; refreshes every other active member's witness cache in that group afterward. |
+| POST | `/drones/:id/register-stego` | `{"group_id": "alpha", "role": "recon", "cover_image_r1_b64"?: "...", "cover_image_r3_b64"?: "..."}` | Runs R1-R3 transported through real 2D steganography (RAG-assisted algorithm selection, real embed/extract via `python-service`). Cover images optional (bundled fixtures used if omitted). Returns `leaf_index`, per-step chosen algorithm, every candidate's real measurements, RAG narrative, and both stego images as base64 PNG. Fails with a clear 400 if `python-service` is unreachable or the drone is already registered. See `docs/registration-stego.md`. |
+| GET | `/stego/algorithms` | — | Lists registered steganography algorithm ids (proxied to `python-service`). |
 | POST | `/drones/:id/revoke` | — | Zeroes the drone's Merkle leaf, bumps the group version, marks it inactive. |
 | POST | `/drones/:id/reactivate` | — | Re-registers a previously-revoked drone with a FRESH leaf (new `rho`), reusing its original Merkle slot. |
 | POST | `/drones/:id/move` | `{"group_id": "bravo"}` | Revokes from the old group, registers fresh into the new one. |

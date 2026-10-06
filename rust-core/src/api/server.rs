@@ -180,6 +180,37 @@ fn route(
             }
         }
 
+        (Method::Post, ["api", "drones", drone_id, "register-stego"]) => {
+            let body = read_body_json(request);
+            let Some(group_id) = str_field(&body, "group_id") else { return err(400, "missing group_id") };
+            let role = str_field(&body, "role").unwrap_or("member");
+            let decode_cover = |field: &str| -> Result<Option<Vec<u8>>, String> {
+                match body.get(field).and_then(|v| v.as_str()) {
+                    None => Ok(None),
+                    Some(b64) => {
+                        use base64::Engine;
+                        base64::engine::general_purpose::STANDARD
+                            .decode(b64)
+                            .map(Some)
+                            .map_err(|e| format!("invalid {field}: {e}"))
+                    }
+                }
+            };
+            let cover_r1 = match decode_cover("cover_image_r1_b64") {
+                Ok(v) => v,
+                Err(e) => return err(400, e),
+            };
+            let cover_r3 = match decode_cover("cover_image_r3_b64") {
+                Ok(v) => v,
+                Err(e) => return err(400, e),
+            };
+            let mut s = state.lock().unwrap();
+            match s.register_drone_via_stego(drone_id, group_id, role, cover_r1, cover_r3) {
+                Ok(outcome) => ok(serde_json::to_value(outcome).unwrap()),
+                Err(e) => err(400, e),
+            }
+        }
+
         (Method::Post, ["api", "drones", drone_id, "revoke"]) => {
             let mut s = state.lock().unwrap();
             match s.revoke_drone(drone_id) {

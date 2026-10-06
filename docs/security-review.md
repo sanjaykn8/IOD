@@ -176,6 +176,55 @@ Zero found — full audit in `docs/ecc-audit.md` (dependency graph
 inspection across all three language runtimes plus a compiled-binary
 string scan). **Finding**: none. **Fix**: none required.
 
+## Re-review after the spec-25 protocol fixes and the registration-via-steganography addition
+
+A later stage added twelve further protocol fixes (spec items 25-A
+through 25-K, full table in `docs/claims-and-limitations.md` §7) and a
+new registration transport (`docs/registration-stego.md`). Re-reviewed
+against the same 18 points above:
+
+- **Point 1 (transcript binding) and point 7 (proof/key consistency)
+  are now stronger, not just unchanged.** 25-A/25-G closed a gap this
+  original review did not name: D2's own signing key (`pk_dil_d2`) was
+  previously self-asserted in M4's `ChallengeMsg` and M8's
+  `AuthResultMsg` — trusted on the strength of "the message says so,"
+  not anchored to anything GCS vouched for. A `SignedPeerCert` now
+  carries that binding, verified before the per-message signature it
+  gates. 25-B adds `credential_consistency_ok`, an independent
+  recomputation that closes a related splicing path the original ZK/
+  signature checks alone did not catch (see `docs/protocol.md`'s
+  worked example and the `spec_25b_forged_signing_key_with_untouched_
+  comm_pk_is_caught_by_credential_consistency_not_by_zk_or_sig` test).
+  **Finding**: this review's point 1/7 should be read together with
+  these two fixes from now on; neither original finding was wrong, but
+  neither was complete. **Fix**: already applied and tested, see above.
+- **Point 2 (nonce handling) gains a sibling concern: PID lifecycle.**
+  25-F adds `PidState::{Active, Consumed, Expired}` so a `pid1` cannot
+  be replayed to start a second session after being consumed by a
+  first — a gap of the same *shape* as the pre-existing nonce-reuse
+  concern (point 2's finding about `used_nonces` growing unboundedly
+  still applies unchanged; this is a different, newly-closed gap, not
+  a fix to that one). **Finding**: none beyond the original point 2.
+  **Fix**: 25-F, tested (9 unit tests plus one protocol-level test).
+- **New component, same trust boundary: `python-service`'s
+  steganography subsystem.** Registration via steganography adds a
+  fourth local process to the trust boundary already covering
+  `iod-server`/`node-server`/the existing Python RAG service — all
+  four are loopback-only (`127.0.0.1`), per point 17/`docs/
+  security-assumptions.md`'s existing network-trust framing, so this
+  adds no new *remote* attacker surface. What it does add: the
+  confidentiality/integrity of a drone's registration payload while
+  "in transit" as a stego image now depends on the cover image/
+  stego-image bytes themselves carrying no plaintext signal, which is
+  why the payload is KEM-then-AEAD-sealed **before** embedding, not
+  relying on the steganographic concealment for confidentiality at
+  all — concealment and encryption are independent, stacked
+  properties here, not one substituting for the other. **Finding**:
+  none — this was a deliberate design choice, not a gap found during
+  review. **Fix**: none required; see `docs/registration-stego.md`.
+- **Point 13 (authorization) and the rest are unaffected** by this
+  stage's changes — no Zero Trust policy logic changed.
+
 ## Bugs found and fixed during this review process (cross-referenced)
 
 1. Fuzzy-extractor reliability parameter (Phase 1) — see `docs/puf.md`.

@@ -5,6 +5,8 @@ pub mod events;
 pub mod group_key;
 pub mod messages;
 pub mod registration;
+pub mod registration_stego;
+pub mod stego_client;
 pub mod secure_messaging;
 pub mod simulation;
 pub mod transcript;

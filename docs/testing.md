@@ -4,12 +4,26 @@
 
 | Suite | Count | Status |
 |---|---|---|
-| Rust unit tests (`cargo test --lib`) | 107 | all passing |
-| Rust integration tests (`rust-core/tests/end_to_end.rs`) | 2 | all passing |
+| Rust unit tests (`cargo test --lib`) | 132 | all passing |
+| Rust integration tests (`rust-core/tests/end_to_end.rs`) | 3 | all passing |
 | Rust security-negative tests (`rust-core/tests/security_negative.rs`) | 3 | all passing |
-| Python unit tests (`pytest`) | 13 | all passing |
-| **Total automated tests** | **125** | **all passing** |
+| Python unit tests (`pytest`) | 75 | all passing |
+| **Total automated tests** | **213** | **all passing** |
 | React dashboard | build + type-check clean; functionally verified with a real headless-browser (Playwright/Chromium) session driving the live 4-service stack | pass |
+
+The Rust integration count's third test is
+`full_chain_stego_registration_through_revocation_and_denied_reauthentication`
+-- the single longest chain this project tests end-to-end in one
+function: Stego Registration (R1-R3 via `MockStegoClient`, crypto/
+framing correctness) -> Authentication (M1-M8, ALLOW) -> Authorization
+(Zero Trust) -> Group Key (K1-K4) -> Secure Message (send + decrypt) ->
+Revocation -> Authentication Failure (the same pair, post-revocation,
+correctly denied). The Python count's growth (13 -> 75) is almost
+entirely the new steganography subsystem: `test_stego_algorithms.py`,
+`test_stego_benchmark.py`, `test_selector.py`, `test_stego_knowledge.py`,
+`test_stego_api.py` -- see `docs/steganography.md`,
+`docs/algorithm-selection.md`, `docs/rag-stego-selection.md`. The
+original 13 collaborative-RAG tests are unchanged and still pass.
 
 Re-run stability: the full Rust suite was re-run 5 consecutive times
 with zero flakiness (the PUF fuzzy-extractor's probabilistic reliability
@@ -106,6 +120,38 @@ Documented in full in `docs/IMPLEMENTATION_STATUS.md`; summarized here:
 4. **React "Reactivate" button enabled for never-registered drones**
    (Phase 9): caught via Playwright-driven UI testing, not by code
    review. Fixed and reverified with a fresh screenshot.
+
+## Live cross-service verification: Registration (Stego) end-to-end
+
+Beyond the automated suites above, the live HTTP path was actually run
+against all three backend services together (not mocked, not just
+unit-tested): `iod-server`, `python-service` (Flask), and
+`node-server`, started as real OS processes. Through the Node gateway
+(exactly the path the browser uses), a group and a drone were created,
+`POST /drones/:id/register-stego` was called with no cover images
+supplied (exercising the bundled-fixture default path), and the
+response was inspected directly:
+
+- `adaptive_lsb` was the real selector winner for both R1 and R3 on the
+  bundled 512x512 fixtures, chosen from real measured candidates
+  (`adaptive_lsb`, `pvd`, `dct`, `dwt`, `svd`).
+- The returned stego images were real, non-trivial base64 PNG payloads
+  (hundreds of KB).
+- `GET /drones/:id` afterward showed `registered: true` with the
+  correct leaf index and a real Merkle root.
+- The event log (`GET /events/history`) showed the real R1 -> R2 -> R3
+  sequence with the selector's actual per-step choice recorded.
+- A second, normally-registered drone in the same group then
+  successfully completed real M1-M8 authentication (`ALLOW`) against
+  the stego-registered drone, confirming the two registration paths
+  produce interoperable Merkle state.
+- Re-registering an already-registered drone via this endpoint was
+  confirmed to fail cleanly (400, clear error message), not silently
+  succeed or panic.
+
+This is the same "don't just trust the type signature, actually run
+the real stack" standard the React dashboard verification below
+applies, extended to this stage's new endpoint.
 
 ## React dashboard verification methodology
 

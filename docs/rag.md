@@ -5,6 +5,34 @@ Rust cryptographic core. **No cryptography, no external network calls,
 no paid API** — every requirement the project brief states for this
 subsystem.
 
+## Historical subsystem (superseded as the project's primary RAG role)
+
+This document describes the subsystem as originally built: an
+independent "collaborative drone contribution" pipeline (contribute →
+retrieve → validate → fuse → generate), reachable from the dashboard's
+RAG page and the `/rag/*` API, with no role in device registration.
+
+As of this stage, RAG's **primary** role in this project is different:
+registration-time, measurement-grounded steganography-algorithm
+selection, consumed by `stego_api.py` during R1/R3 (see
+`docs/rag-stego-selection.md` and `docs/algorithm-selection.md`). That
+subsystem is architecturally unable to fabricate a performance number
+-- it only ever quotes measurements `stego/benchmark.py` already
+computed -- which is a stronger, narrower honesty property than
+anything this page's word-overlap retrieval claims for itself.
+
+The collaborative pipeline documented below is **not removed and not
+broken**: `rag/{retrieval,validation,fusion}.py`, `llm/`, and this
+page's own tests all still exist, still pass, and are still reachable
+(the dashboard's "Registration (Stego)" page replaced this one in
+primary navigation, but the underlying route and API are unchanged and
+still live -- see `docs/architecture.md`). It is simply no longer
+load-bearing for registration, and nothing below should be read as a
+description of how a drone's enrollment credentials reach GCS -- that
+is `docs/registration-stego.md`'s subject. See
+`docs/claims-and-limitations.md` §9 for the full classification of
+both roles side by side.
+
 ## Pipeline
 
 ```

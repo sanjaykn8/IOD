@@ -90,6 +90,50 @@ concatenate variable-length byte arrays ambiguously" requirement.
 
 See `docs/cryptography.md`, "Deterministic key generation limitation."
 
+## Protocol security fixes — spec section 25 (A-K)
+
+A later stage applied twelve further, independently-documented fixes
+to M1-M8/K1-K4, closing trust-anchoring and lifecycle gaps that the
+original spec-correction list above did not cover (they are protocol
+security fixes, not spec/API-incompatibility corrections, so they get
+their own list rather than being folded into #1-8). The two most
+structurally significant:
+
+- **25-A / 25-G: D2's key is no longer self-asserted.** GCS issues a
+  `SignedPeerCert` (D2's own registered `pk_kem`/`pk_dil`, GCS-signed)
+  at M3, which D2 forwards unchanged through M4's `ChallengeMsg` and
+  M8's `AuthResultMsg`. D1 verifies the GCS signature on that
+  certificate before trusting the key used to check `sig4`/`sig9` --
+  M8 is now verifiable from the message alone plus `gcs.sign_pk`, with
+  no reach into the other party's in-memory state.
+- **25-B: `credential_consistency_ok`.** A new, independent
+  `VerificationReport` boolean recomputes `comm_pk_d1` from the
+  `ProofBundle`'s own `pk_kem_d1`/`pk_dil_d1` and cross-checks it
+  against M3's `cred_d1` -- catching a forged-but-self-consistent
+  bundle that the pre-existing ZK/signature checks alone would pass.
+
+The full A-K table, with the exact mechanism and test name for every
+item (including the two prefixed by this session, 25-D/25-E/25-H/25-I/
+25-J, already correct from the prior stage; and 25-K, re-confirmed
+already honest with no code change needed), is
+`docs/claims-and-limitations.md` §7. A known residual gap of the same
+shape as 25-A -- K2's `KeyDeliveryMsg.pk_dil_d2` is still
+self-asserted, same fix mechanical but out of this pass's named scope
+-- is disclosed there in §7a rather than silently left for later
+discovery.
+
+## R1-R3 over steganography: an additional transport, not a replacement
+
+`protocol::registration_stego` implements the same R1-R3 exchange as
+`protocol::registration` above, but as explicit, KEM-then-AEAD-sealed
+wire messages transported by embedding them into real cover images
+(`docs/registration-stego.md`). `protocol::registration` (the original,
+fused, in-process function) is unchanged and still the right choice
+whenever a real cover image and a live steganography service are
+unnecessary ceremony; the two paths converge on the identical Merkle
+leaf/witness structure, so a drone registered either way is
+indistinguishable to M1-M8 authentication.
+
 ## What the ZK layer actually hides — and what it does not
 
 D2 learns `PK_KEM_D1`, `PK_Dil_D1`, and `membership_metadata_1` directly

@@ -23,9 +23,11 @@ from rag.retrieval import retrieve
 from rag.validation import validate
 from rag.fusion import fuse
 from llm.mock_provider import MockLLMProvider
+from stego_api import stego_bp
 
 app = Flask(__name__)
 CORS(app)
+app.register_blueprint(stego_bp)
 
 llm_provider = MockLLMProvider()
 

@@ -20,6 +20,10 @@ path = "src/bin/vectors.rs"
 name = "iod-bench"
 path = "src/bin/bench.rs"
 
+[[bin]]
+name = "iod-register-stego-demo"
+path = "src/bin/register_stego_demo.rs"
+
 [dependencies]
 # NOTE: pqcrypto-kyber / pqcrypto-dilithium implement the NIST Round-3
 # submissions (Kyber768, Dilithium2) via audited PQClean C sources. These
@@ -49,6 +53,15 @@ tiny_http = "0.12"
 hex = "0.4"
 thiserror = "1"
 anyhow = "1"
+
+# Used only by `protocol::registration_stego`'s `HttpStegoClient`, to
+# call the Python steganography service's HTTP endpoints
+# (`/stego/select-and-embed`, `/stego/extract`) for the real R1/R3
+# registration transport. No TLS feature enabled: this client only ever
+# talks to the python-service over plain HTTP on localhost/the Docker
+# network, matching how `node-server` already reaches it.
+ureq = { version = "2", default-features = false, features = ["json"] }
+base64 = "0.22"
 
 # Pins required because this environment's rustc (1.75.0) predates the
 # MSRV of the newest releases of these transitive dependencies.

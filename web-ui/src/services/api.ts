@@ -14,14 +14,15 @@ import type {
   TraceRecord,
 } from "../types/api";
 
-const BASE = import.meta.env.VITE_API_BASE || "http://127.0.0.1:4000/api";
+const BASE = import.meta.env["VITE_API_BASE"] || "http://127.0.0.1:4000/api";
 
 async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-  });
+  const init: RequestInit = { method };
+  if (body !== undefined) {
+    init.headers = { "Content-Type": "application/json" };
+    init.body = JSON.stringify(body);
+  }
+  const res = await fetch(`${BASE}${path}`, init);
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(json?.error || `Request failed (${res.status})`);

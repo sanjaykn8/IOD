@@ -109,6 +109,44 @@ pub struct DronePublicRecord {
     pub active: bool,
 }
 
+/// SECURITY FIX (spec item 25-F: "PID lifecycle states
+/// ACTIVE/CONSUMED/EXPIRED"). The module doc above already promised
+/// pre-registered pseudonyms are "consumed... as sessions start," but
+/// until this fix nothing in the code actually implemented that --
+/// `resolve_pid` was a pure, non-mutating lookup, so every pre-
+/// provisioned PID stayed usable to start arbitrarily many independent
+/// sessions forever. These three states are now explicit and enforced:
+///   - `Active`: provisioned, never yet used to start a session.
+///   - `Consumed`: used once to start a session (via `consume_pid`,
+///     called at M2 -- see `auth_flow::gcs_receive_m2`). Re-presenting
+///     the SAME pid1 to start a SECOND, independent session is now
+///     rejected as a replay. It remains legitimately resolvable within
+///     the session that consumed it (M6 looks it up again via
+///     `resolve_pid`, which treats Active and Consumed as equally
+///     resolvable -- only Expired/unknown PIDs are refused there).
+///   - `Expired`: administratively retired (`expire_pid`) and can never
+///     be consumed, or even resolved, again. A real deployment would
+///     call this on a time horizon (e.g. unused PIDs past their
+///     provisioning window); this prototype exposes the transition
+///     itself rather than inventing a specific retention policy with no
+///     stated basis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum PidState {
+    Active,
+    Consumed,
+    Expired,
+}
+
+#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PidLifecycleError {
+    #[error("PID is not a known pre-registered pseudonym")]
+    Unknown,
+    #[error("PID has already been consumed to start a prior session (replay rejected)")]
+    AlreadyConsumed,
+    #[error("PID has been administratively expired and may no longer be used")]
+    Expired,
+}
+
 pub struct GcsState {
     pub kem_pk: KemPublicKey,
     pub kem_sk: KemSecretKey,
@@ -117,8 +155,19 @@ pub struct GcsState {
     pub groups: HashMap<String, GroupMembershipTree>,
     pub drones: HashMap<String, DronePublicRecord>,
     /// Pre-registered pseudonym pool: pid bytes -> drone_id (see module
-    /// docs above). Consumed (removed) as sessions start.
+    /// docs above). Lifecycle state (see `PidState`) is tracked
+    /// separately in `consumed_pids`/`expired_pids` below rather than by
+    /// removing entries here, so `resolve_pid` can still serve
+    /// legitimate same-session lookups (M6) after M2 has consumed a pid.
     pub pid_pool: HashMap<Vec<u8>, String>,
+    /// PIDs that have been consumed (spec 25-F / `PidState::Consumed`).
+    /// Like `used_nonces` below, NOT persisted across a process restart
+    /// in this research prototype -- documented limitation, same
+    /// rationale as that field.
+    pub consumed_pids: std::collections::HashSet<Vec<u8>>,
+    /// PIDs administratively retired (spec 25-F / `PidState::Expired`).
+    /// Same persistence caveat as `consumed_pids`.
+    pub expired_pids: std::collections::HashSet<Vec<u8>>,
     /// Nonces GCS has already seen at the M6 PUF-verification step, for
     /// replay detection (spec security-test requirement: "reused
     /// nonce"). Keyed on the raw nonce bytes; in a production system
@@ -139,6 +188,8 @@ impl GcsState {
             groups: HashMap::new(),
             drones: HashMap::new(),
             pid_pool: HashMap::new(),
+            consumed_pids: std::collections::HashSet::new(),
+            expired_pids: std::collections::HashSet::new(),
             used_nonces: std::collections::HashSet::new(),
         }
     }
@@ -149,13 +200,154 @@ impl GcsState {
             .or_insert_with(|| GroupMembershipTree::new(group_id, merkle_depth));
     }
 
+    /// Read-only lookup used by every party that may legitimately need
+    /// to resolve a pid MORE THAN ONCE within a single already-started
+    /// session (M6's `gcs_m6_verify`, K1's `gcs_handle_k1`, and the
+    /// trace/administrator PID-resolution path) -- so it deliberately
+    /// treats both `Active` and `Consumed` as resolvable. Only
+    /// `Expired` (or never-provisioned) PIDs are refused here; the
+    /// one-time-use-to-START-a-session enforcement lives in
+    /// `consume_pid`, not here.
     pub fn resolve_pid(&self, pid: &[u8]) -> Option<&str> {
+        if self.expired_pids.contains(pid) {
+            return None;
+        }
         self.pid_pool.get(pid).map(|s| s.as_str())
+    }
+
+    /// Current lifecycle state of a pid (spec 25-F). Returns `None` for
+    /// a pid that was never provisioned at all (distinct from any of
+    /// the three real states).
+    pub fn pid_state(&self, pid: &[u8]) -> Option<PidState> {
+        if !self.pid_pool.contains_key(pid) {
+            return None;
+        }
+        if self.expired_pids.contains(pid) {
+            Some(PidState::Expired)
+        } else if self.consumed_pids.contains(pid) {
+            Some(PidState::Consumed)
+        } else {
+            Some(PidState::Active)
+        }
+    }
+
+    /// Consume an `Active` pid to start a new session -- called once,
+    /// at M2 (see `auth_flow::gcs_receive_m2`). Transitions
+    /// `Active` -> `Consumed` and returns the owning drone_id. Any
+    /// other current state is a hard, explicit rejection: this is what
+    /// actually stops a pid from starting a second, independent
+    /// session (the module docs always claimed this; see `PidState`
+    /// docs for why it previously did not happen).
+    pub fn consume_pid(&mut self, pid: &[u8]) -> Result<String, PidLifecycleError> {
+        match self.pid_state(pid) {
+            None => Err(PidLifecycleError::Unknown),
+            Some(PidState::Expired) => Err(PidLifecycleError::Expired),
+            Some(PidState::Consumed) => Err(PidLifecycleError::AlreadyConsumed),
+            Some(PidState::Active) => {
+                let drone_id = self.pid_pool.get(pid).expect("checked present by pid_state").clone();
+                self.consumed_pids.insert(pid.to_vec());
+                Ok(drone_id)
+            }
+        }
+    }
+
+    /// Administrative transition: retire a pid (spec 25-F /
+    /// `PidState::Expired`) so it can never be consumed, or resolved,
+    /// again regardless of its current state. Returns `false` for a pid
+    /// that was never provisioned.
+    pub fn expire_pid(&mut self, pid: &[u8]) -> bool {
+        if !self.pid_pool.contains_key(pid) {
+            return false;
+        }
+        self.expired_pids.insert(pid.to_vec());
+        true
     }
 }
 
 impl Default for GcsState {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod pid_lifecycle_tests {
+    use super::*;
+
+    fn gcs_with_one_pid() -> (GcsState, Vec<u8>) {
+        let mut gcs = GcsState::new();
+        let pid = vec![1u8, 2, 3, 4];
+        gcs.pid_pool.insert(pid.clone(), "drone-1".to_string());
+        (gcs, pid)
+    }
+
+    #[test]
+    fn freshly_provisioned_pid_is_active() {
+        let (gcs, pid) = gcs_with_one_pid();
+        assert_eq!(gcs.pid_state(&pid), Some(PidState::Active));
+    }
+
+    #[test]
+    fn unprovisioned_pid_has_no_state() {
+        let gcs = GcsState::new();
+        assert_eq!(gcs.pid_state(&[9u8; 4]), None);
+        assert!(gcs.resolve_pid(&[9u8; 4]).is_none());
+    }
+
+    #[test]
+    fn consuming_an_active_pid_transitions_to_consumed_and_returns_owner() {
+        let (mut gcs, pid) = gcs_with_one_pid();
+        let owner = gcs.consume_pid(&pid).unwrap();
+        assert_eq!(owner, "drone-1");
+        assert_eq!(gcs.pid_state(&pid), Some(PidState::Consumed));
+    }
+
+    #[test]
+    fn consuming_an_already_consumed_pid_is_rejected_as_replay() {
+        let (mut gcs, pid) = gcs_with_one_pid();
+        gcs.consume_pid(&pid).unwrap();
+        let second = gcs.consume_pid(&pid);
+        assert_eq!(second, Err(PidLifecycleError::AlreadyConsumed));
+    }
+
+    #[test]
+    fn consumed_pid_remains_resolvable_for_same_session_lookups() {
+        // M6/K1/trace all need to resolve a pid again AFTER M2 already
+        // consumed it in the same session -- `resolve_pid` must keep
+        // working for `Consumed`, only `consume_pid` enforces
+        // one-time-use.
+        let (mut gcs, pid) = gcs_with_one_pid();
+        gcs.consume_pid(&pid).unwrap();
+        assert_eq!(gcs.resolve_pid(&pid), Some("drone-1"));
+    }
+
+    #[test]
+    fn expiring_a_pid_blocks_both_consume_and_resolve() {
+        let (mut gcs, pid) = gcs_with_one_pid();
+        assert!(gcs.expire_pid(&pid));
+        assert_eq!(gcs.pid_state(&pid), Some(PidState::Expired));
+        assert!(gcs.resolve_pid(&pid).is_none(), "an expired pid must no longer resolve, even for same-session lookups");
+        assert_eq!(gcs.consume_pid(&pid), Err(PidLifecycleError::Expired));
+    }
+
+    #[test]
+    fn expiring_an_already_consumed_pid_still_blocks_resolution() {
+        let (mut gcs, pid) = gcs_with_one_pid();
+        gcs.consume_pid(&pid).unwrap();
+        gcs.expire_pid(&pid);
+        assert_eq!(gcs.pid_state(&pid), Some(PidState::Expired));
+        assert!(gcs.resolve_pid(&pid).is_none());
+    }
+
+    #[test]
+    fn expiring_an_unknown_pid_returns_false() {
+        let mut gcs = GcsState::new();
+        assert!(!gcs.expire_pid(&[9u8; 4]));
+    }
+
+    #[test]
+    fn consuming_an_unknown_pid_is_rejected() {
+        let mut gcs = GcsState::new();
+        assert_eq!(gcs.consume_pid(&[9u8; 4]), Err(PidLifecycleError::Unknown));
     }
 }

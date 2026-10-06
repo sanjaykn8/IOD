@@ -10,8 +10,10 @@ Legend:
   stand-in for something that would require production-grade infrastructure
   (e.g. real silicon) or a research-grade proof backend not realistically
   buildable in this sandbox. Clearly documented, not hidden.
-- **PLACEHOLDER/FUTURE** — interface exists, real implementation deferred
-  (e.g. steganography transport).
+- **PLACEHOLDER/FUTURE** — interface exists, real implementation
+  deferred (e.g. the Ollama LLM provider). Steganography transport was
+  in this category through Phase 10; it moved to REAL in Phase 11 (see
+  below) and this line is updated to stop citing it as the example.
 
 ## Environment constraints discovered (affect several decisions below)
 
@@ -253,3 +255,64 @@ scripts on a real Windows machine, which remains a stated limitation
    drone can never reuse a revoked slot's index, avoiding identity
    confusion, at the cost of the tree "filling up" faster under heavy
    churn. Documented trade-off, acceptable for a research prototype.
+
+## Phase 11 — Registration redesign: real 2D steganography, RAG-assisted selection, twelve protocol security fixes
+
+**Status: COMPLETE.** 213/213 automated tests passing (132 Rust lib +
+3 Rust integration + 3 Rust security-negative + 75 Python), zero
+regressions from Phase 10's count. Live, cross-service verification
+performed in addition to the automated suites (see `docs/testing.md`'s
+"Live cross-service verification" section).
+
+| Component | Classification | Notes |
+|---|---|---|
+| 2D steganography algorithms (Adaptive LSB, PVD, DCT, DWT, SVD) | REAL | `python-service/src/stego/`. Real embed/extract against real pixel arrays; real per-image capacity; no fabricated numbers. See `docs/steganography.md`. |
+| Steganography benchmark engine | REAL | `stego/benchmark.py`: real timing, real MSE/PSNR/SSIM, a real round-trip correctness gate per candidate. See `docs/steganography.md`/`docs/data-and-evaluation.md`. |
+| Registration-time algorithm selector | REAL decision logic over REAL measurements | `rag/selector.py`: deterministic, importance-weighted, feasibility-gated, alphabetical tie-break. See `docs/algorithm-selection.md`. |
+| Registration-time RAG narrative/evidence | SIMULATED retrieval (word-overlap), REAL numbers quoted | `rag/stego_knowledge.py`: architecturally unable to fabricate a measurement, since it never computes one. See `docs/rag-stego-selection.md`. |
+| R1-R3 over steganography (`registration_stego.rs`) | REAL | Explicit KEM-then-AEAD-sealed wire messages, embedded/extracted via a real HTTP round trip to `python-service`. Two documented, necessary field additions beyond the spec's literal list (`rho`, `pid_pool`); one new integrity check this split enabled (D1 locally re-verifies R3's witness, no longer blind trust). See `docs/registration-stego.md`. |
+| `StegoClient` (`HttpStegoClient` real, `MockStegoClient` crypto-only test double) | REAL (Http) / explicitly-labeled test double (Mock) | `protocol/stego_client.rs`. `MockStegoClient` never claims to be a steganography implementation — it carries bytes through unchanged, used only to test crypto/framing. |
+| Live HTTP registration-via-steganography endpoint | REAL | `POST /api/drones/:id/register-stego` (`api/state.rs`'s `register_drone_via_stego`, `api/server.rs`'s route), proxied by the Node gateway at the same path. Actually run end-to-end against all three backend services together, not just unit-tested — see `docs/testing.md`. |
+| Dashboard Registration (Stego) page | REAL, functional (not a mockup) | `web-ui/src/components/command/registration-page.tsx`, route `/registration`, now primary navigation (replacing the former RAG-chatbot page there). Drives the live endpoint above; shows every candidate's real measurements, the selector's winner and narrative, and both stego image previews. |
+| Original collaborative RAG pipeline + its dashboard page | SIMULATED (unchanged), still REAL as implemented | Unchanged, still fully tested, still reachable at `/rag` -- no longer load-bearing for registration. See `docs/rag.md`'s "Historical subsystem" section. |
+| Spec section 25 protocol fixes (A-K) | REAL (11 fixes) + 1 already-honest re-confirmation | See `docs/claims-and-limitations.md` §7 for the complete table with mechanism and test name per item, and `docs/security-review.md`'s re-review section for how they interact with the original 18-point security review. Residual, out-of-list gap (K2's self-asserted key, same shape as 25-A) disclosed in §7a, not fixed, not hidden. |
+| Two new sequence diagrams (full-technical, compact-presentation) | REAL | `docs/diagrams/iod_{full,compact}_sequence.{mmd,svg,png}`. Strict notation rules (RAG shown registration-local only, R2 as GCS-internal, Trace Manager only in exception blocks) enforced and visually verified. |
+| `docs/claims-and-limitations.md` | REAL | New, mandated REAL/SIMULATED/RESEARCH PROTOTYPE/PLACEHOLDER-FUTURE classification table, a finer-grained legend than this file's three-way one, covering every component touched this phase. |
+
+### Bugs found and fixed during this phase
+
+1. **Port default mismatch** (`bin/register_stego_demo.rs` defaulted
+   to `5055`; every other part of the project — `python-service`'s own
+   `IOD_PYTHON_PORT` default, `node-server/src/config.ts` — uses
+   `5001`). Caught while wiring the live HTTP endpoint and writing
+   `docs/registration-stego.md`'s run instructions; fixed in the demo
+   binary and in `docs/claims-and-limitations.md`'s re-verification
+   command, which had the same stale port.
+2. **Dashboard `tsc -b` failure on dead, pre-existing code**
+   (`web-ui/src/services/api.ts`, unreachable from any live route):
+   `exactOptionalPropertyTypes` rejected `fetch`'s optional `headers`/
+   `body` being assigned `undefined`, and `import.meta.env.VITE_API_BASE`
+   tripped the index-signature-access rule. Neither was caused by this
+   phase's changes, but both blocked a clean `tsc -b`, so both were
+   fixed (matching the pattern the live `lib/api.ts` already used)
+   rather than left as a pre-existing failure for the next person to
+   debug.
+3. **`web-ui`/`node-server`/`python-service` dependencies were not
+   installed** in this phase's working environment (`node_modules`,
+   the Python `venv`, and the TanStack Start route-tree generation
+   output did not yet exist). Re-ran the project's own setup sequence
+   (`npm install` x2, `python3 -m venv` + `pip install -r
+   requirements.txt`, `vite build` once to regenerate `routeTree.gen.ts`
+   before `tsc -b` could type-check the new `/registration` route) --
+   not a code bug, but worth recording since it is exactly the kind of
+   step `docs/troubleshooting.md` should cover for the next person.
+
+### Honesty note on this phase's RAG framing
+
+The spec's own language ("RAG-assisted drone registration") is easy to
+misread as "RAG decides." It does not. `rag/selector.py` decides, from
+measurements it did not produce; `rag/stego_knowledge.py` explains,
+from a decision it did not make. Every doc this phase touched
+(`docs/algorithm-selection.md`, `docs/rag-stego-selection.md`,
+`docs/claims-and-limitations.md`) states this explicitly rather than
+letting "RAG-assisted" imply more than it is.

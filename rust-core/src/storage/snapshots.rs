@@ -92,6 +92,10 @@ impl GcsState {
             groups,
             drones,
             pid_pool,
+            // Not persisted -- see `GcsState::consumed_pids`/`expired_pids`
+            // docs (same rationale as `used_nonces` below).
+            consumed_pids: std::collections::HashSet::new(),
+            expired_pids: std::collections::HashSet::new(),
             used_nonces: std::collections::HashSet::new(),
         }
     }

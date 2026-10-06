@@ -79,14 +79,11 @@ pub fn m2_cred_req(
     Ok(M2Output { wire, plain })
 }
 
-pub fn gcs_receive_m2(gcs: &GcsState, wire: &CredReqWire) -> anyhow::Result<(CredReqPlain, String)> {
+pub fn gcs_receive_m2(gcs: &mut GcsState, wire: &CredReqWire) -> anyhow::Result<(CredReqPlain, String)> {
     let bytes = envelope::open_as_recipient(&gcs.kem_sk, b"M2-CredReq", wire)
         .map_err(|e| anyhow::anyhow!("M2 envelope open failed: {e}"))?;
     let plain: CredReqPlain = serde_json::from_slice(&bytes)?;
-    let d1_id = gcs
-        .resolve_pid(&plain.pid1)
-        .ok_or_else(|| anyhow::anyhow!("unknown PID1: no pre-registered pseudonym matches"))?
-        .to_string();
+
     let d2_record = gcs
         .drones
         .get(&plain.d2_id)
@@ -94,6 +91,19 @@ pub fn gcs_receive_m2(gcs: &GcsState, wire: &CredReqWire) -> anyhow::Result<(Cre
     if !d2_record.active || d2_record.group_id != plain.g {
         anyhow::bail!("D2 is not an active member of group '{}'", plain.g);
     }
+
+    // SECURITY FIX (spec 25-F: PID lifecycle ACTIVE/CONSUMED/EXPIRED).
+    // M2 is the first point a session's pid1 reaches GCS, so this is
+    // where it gets CONSUMED (one-time use to START a session) --
+    // replaying an already-consumed or administratively-expired pid1
+    // to start a NEW session is now explicitly rejected, not silently
+    // accepted forever. The SAME pid1 is still legitimately resolved
+    // again later in THIS session (M6, via `resolve_pid`; see that
+    // function's docs for why Consumed stays resolvable there).
+    let d1_id = gcs
+        .consume_pid(&plain.pid1)
+        .map_err(|e| anyhow::anyhow!("PID1 rejected: {e}"))?;
+
     Ok((plain, d1_id))
 }
 
@@ -120,6 +130,21 @@ pub fn gcs_m3_cred_resp(
         .get(d2_id)
         .ok_or_else(|| anyhow::anyhow!("unknown D2 record"))?;
 
+    // SECURITY FIX (spec 25-A): GCS issues D2's peer certificate here,
+    // from D2's OWN registered record (not from anything D2 asserts),
+    // signed with GCS's signing key. D2 carries this forward into M4 so
+    // D1 has a trust anchor for D2's public key. See
+    // `messages::SignedPeerCert` / `CredRespPlain::d2_cert` docs.
+    let d2_cert_ts = now_ms();
+    let d2_cert_unsigned = SignedPeerCert {
+        pk_kem: d2_record.kem_pk.0.clone(),
+        pk_dil: d2_record.dil_pk.0.clone(),
+        ts: d2_cert_ts,
+        sig: Vec::new(),
+    };
+    let cert_sig = sign::sign_transcript(&gcs.sign_sk, &d2_cert_unsigned.signing_bytes())?;
+    let d2_cert = SignedPeerCert { sig: cert_sig.0, ..d2_cert_unsigned };
+
     let plain = CredRespPlain {
         msg_type: "CredResp".into(),
         cred_d1: CredD1 {
@@ -130,6 +155,7 @@ pub fn gcs_m3_cred_resp(
             v_g: tree.version,
             crp_challenge: d1_record.crp.challenge.clone(),
         },
+        d2_cert,
         ts3: now_ms(),
         n3: fresh_nonce(16),
     };
@@ -152,6 +178,7 @@ pub fn m4_challenge(
     d2: &DroneState,
     group_id: &str,
     cred_d1: &CredD1,
+    d2_cert: &SignedPeerCert,
     n2: &[u8],
 ) -> anyhow::Result<ChallengeMsg> {
     let d2_keys = d2.keys.as_ref().expect("D2 must be registered");
@@ -177,12 +204,31 @@ pub fn m4_challenge(
     Ok(ChallengeMsg {
         challenge_payload,
         sig4: sig4.0,
-        pk_dil_d2: d2_keys.dil_pk.0.clone(),
+        // SECURITY FIX (spec 25-A): forward the GCS-issued certificate
+        // from M3 rather than asserting `d2_keys.dil_pk` directly. See
+        // `messages::SignedPeerCert` docs.
+        d2_cert: d2_cert.clone(),
     })
 }
 
-pub fn d1_verify_challenge(challenge: &ChallengeMsg) -> bool {
-    let pk = SignPublicKey(challenge.pk_dil_d2.clone());
+/// SECURITY FIX (spec 25-A): D1 no longer trusts a self-asserted
+/// `pk_dil_d2`. It first verifies GCS's signature on `d2_cert` (anchored
+/// to `gcs_sign_pk`, which D1 — as a registered member of the same
+/// GCS-managed group — already trusts for exactly this purpose, the
+/// same way it trusts GCS's M6/M8 signatures elsewhere in this flow),
+/// and only then uses the certified `pk_dil` inside it to check `sig4`.
+/// A forged or stale certificate, or one signed by any key other than
+/// GCS's, is rejected here before the signature check even runs.
+pub fn d1_verify_challenge(challenge: &ChallengeMsg, gcs_sign_pk: &SignPublicKey) -> bool {
+    let cert_ok = sign::verify_transcript(
+        gcs_sign_pk,
+        &challenge.d2_cert.signing_bytes(),
+        &Signature(challenge.d2_cert.sig.clone()),
+    );
+    if !cert_ok {
+        return false;
+    }
+    let pk = SignPublicKey(challenge.d2_cert.pk_dil.clone());
     sign::verify_transcript(
         &pk,
         &challenge.challenge_payload.signing_bytes(),
@@ -445,12 +491,32 @@ pub fn m7_verify_and_decide(
     let root_version_ok =
         puf_resp.payload.current_r_g == cred_d1.r_g && puf_resp.payload.current_v_g == cred_d1.v_g;
 
+    // SECURITY FIX (spec 25-B: "explicit M3/M5 consistency checks +
+    // comm_PK_D1 recomputation check"). Two independent checks, both
+    // required:
+    //   (1) comm_pk_d1 recomputation: the ProofBundle's own comm_pk_d1
+    //       must actually BE the commitment of the SAME bundle's
+    //       pk_kem_d1/pk_dil_d1 -- otherwise the ZK statement above
+    //       (built from the claimed comm_pk_d1) and the signature check
+    //       above (built from the claimed pk_dil_d1) could be checking
+    //       two different, unrelated identities that merely happen to
+    //       share a ProofBundle.
+    //   (2) M3/M5 consistency: those SAME keys must match what GCS
+    //       already vouched for in M3's cred_d1 -- otherwise D1 could
+    //       present a self-consistent bundle for keys GCS never
+    //       actually registered to this D1.
+    let recomputed_comm_pk = compute_commitment(&proof.pk_kem_d1, &proof.pk_dil_d1);
+    let comm_pk_recomputation_ok = recomputed_comm_pk == proof.comm_pk_d1;
+    let m3_m5_keys_consistent = proof.pk_kem_d1 == cred_d1.pk_kem_d1 && proof.pk_dil_d1 == cred_d1.pk_dil_d1;
+    let credential_consistency_ok = comm_pk_recomputation_ok && m3_m5_keys_consistent;
+
     let zt_inputs = zero_trust::ZeroTrustInputs {
         freshness_ok,
         zk_membership_ok,
         signature_ok,
         puf_ok,
         root_version_ok,
+        credential_consistency_ok,
         group_id: group_id.to_string(),
         requested_operation: "authenticate".to_string(),
         mission_active: true,
@@ -465,6 +531,7 @@ pub fn m7_verify_and_decide(
             signature_ok,
             puf_ok,
             root_version_ok,
+            credential_consistency_ok,
             zero_trust: match decision.decision {
                 zero_trust::Decision::Allow => ZeroTrustDecision::Allow,
                 zero_trust::Decision::Deny => ZeroTrustDecision::Deny,
@@ -476,7 +543,11 @@ pub fn m7_verify_and_decide(
 
 // ================================================================ M8 ===
 
-pub fn m8_auth_result(gcs_or_d2_sign_sk: &crate::crypto::sign::SignSecretKey, report: &VerificationReport) -> anyhow::Result<AuthResultMsg> {
+pub fn m8_auth_result(
+    gcs_or_d2_sign_sk: &crate::crypto::sign::SignSecretKey,
+    report: &VerificationReport,
+    d2_cert: &SignedPeerCert,
+) -> anyhow::Result<AuthResultMsg> {
     let payload9 = AuthResultPayload {
         msg_type: "AuthResult".into(),
         result: report.zero_trust,
@@ -488,10 +559,27 @@ pub fn m8_auth_result(gcs_or_d2_sign_sk: &crate::crypto::sign::SignSecretKey, re
     Ok(AuthResultMsg {
         payload9,
         sig9: sig9.0,
-        pk_dil_d2: Vec::new(), // filled by caller with D2's actual Dilithium PK
+        // SECURITY FIX (spec 25-G): carry the GCS-certified key forward
+        // so D1 can verify this message self-containedly. See
+        // `AuthResultMsg::d2_cert` docs.
+        d2_cert: d2_cert.clone(),
     })
 }
 
-pub fn d1_verify_m8(pk_dil_d2: &SignPublicKey, msg: &AuthResultMsg) -> bool {
-    sign::verify_transcript(pk_dil_d2, &msg.payload9.signing_bytes(), &Signature(msg.sig9.clone()))
+/// SECURITY FIX (spec 25-G): verifies `AuthResultMsg` using ONLY the
+/// message itself plus `gcs_sign_pk` (a value D1 already trusts, the
+/// same way it trusts GCS's M6 signature) -- no lookup into any other
+/// party's in-memory state. First checks GCS's signature on `d2_cert`,
+/// then checks `sig9` against the certified key.
+pub fn d1_verify_m8(gcs_sign_pk: &SignPublicKey, msg: &AuthResultMsg) -> bool {
+    let cert_ok = sign::verify_transcript(
+        gcs_sign_pk,
+        &msg.d2_cert.signing_bytes(),
+        &Signature(msg.d2_cert.sig.clone()),
+    );
+    if !cert_ok {
+        return false;
+    }
+    let pk = SignPublicKey(msg.d2_cert.pk_dil.clone());
+    sign::verify_transcript(&pk, &msg.payload9.signing_bytes(), &Signature(msg.sig9.clone()))
 }

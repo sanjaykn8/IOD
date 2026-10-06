@@ -47,10 +47,32 @@
   or its associated data fails the authentication tag (tested); any
   bit-flip in a ZK proof's opening fails the commitment-binding check
   (tested).
-- **A malicious RAG contributor** — partially mitigated by the
-  similarity-outlier heuristic in `rag/validation.py`, explicitly
-  documented as a demonstration-level defense with no characterized
-  error rate, not a real Byzantine fault-tolerant mechanism.
+- **A malicious RAG contributor** (collaborative pipeline, `docs/rag.md`)
+  — partially mitigated by the similarity-outlier heuristic in
+  `rag/validation.py`, explicitly documented as a demonstration-level
+  defense with no characterized error rate, not a real Byzantine
+  fault-tolerant mechanism.
+- **A malicious or malformed cover image during registration via
+  steganography** — a cover image an attacker controls cannot forge a
+  registration, because the embedded payload is KEM-then-AEAD-sealed
+  before embedding and the receiving side re-verifies the decrypted
+  plaintext's own signatures/witness exactly as the non-steganographic
+  path does; at worst, a corrupted or adversarially-crafted image
+  causes extraction to fail or recover garbage, which fails AEAD
+  decryption cleanly (the same tamper-evidence any other ciphertext
+  has) rather than being silently accepted. The steganographic layer
+  is a concealment mechanism, never a substitute for the encryption
+  that already protects confidentiality and integrity — see
+  `docs/registration-stego.md` and `docs/security-review.md`'s
+  re-review section.
+- **A `python-service` that is down, slow, or returns malformed
+  responses during registration via steganography** — the live
+  endpoint and demo both surface a clear error rather than falling
+  back to a non-steganographic path or accepting a malformed response;
+  see `docs/registration-stego.md`'s "Dependency on `python-service`."
+  This does not change the trust boundary: `python-service` runs
+  locally, loopback-only, the same boundary as every other service
+  here (see "local execution environment" above).
 - **A non-administrator attempting to de-anonymize a drone via the
   Trace Manager** — defended against structurally: `TraceManager::
   request_trace` only resolves a PID when `requester_role ==
@@ -79,8 +101,15 @@ is explicitly out of scope for this frozen-specification implementation.
 
 ## Explicitly out of scope for this version
 
-- **Steganography** — no image/media embedding is implemented; only the
-  clean `transport::TransportProvider` interface exists for future work.
+- **Steganalysis resistance.** Device registration (R1-R3) IS
+  transported via real 2D image steganography as of this stage (see
+  `docs/registration-stego.md`, `docs/steganography.md`) — what
+  remains out of scope is evaluating that transport against an
+  adversarial steganalysis detector (classical or learned); see
+  `docs/data-and-evaluation.md` for exactly what was and wasn't
+  evaluated. The steganographic layer is concealment, not the source
+  of confidentiality/integrity (those come from KEM-then-AEAD sealing,
+  applied before embedding) — see the threat entry above.
 - **A distributed or threshold GCS.**
 - **Network-layer TLS between the four local services** (see "local
   execution environment" above).
