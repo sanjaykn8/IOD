@@ -1,126 +1,20 @@
-# ECC Dependency Audit
+# ECC Dependency Audit (re-run for protocol v2)
 
-**Result: NO elliptic-curve cryptography found anywhere in this project's
-dependency graph, source code, or compiled binaries.**
+**Result: no elliptic-curve cryptography found in the Rust dependency graph (all edge kinds: normal, build, dev), in the three built binaries, in the Node gateway/React UI lockfiles, or in the Python service requirements.** This audit was run on 2026-10-12 with rustc 1.97.0 / cargo 1.97.0.
 
-This audit was performed as a non-negotiable project requirement and is
-re-runnable by anyone with the commands below.
+## Method
+1. `cargo tree -e all --prefix none` in `rust-core/` → **334 package entries (118 distinct crate names)**, saved and searched by name.
+2. Keyword search on crate names: `elliptic, ecdsa, ecdh, ed25519, x25519, curve25519, secp, bls12, bn254/bn256, p256/p384/p521, groth16, kzg, pairing, dalek, k256, halo2, bulletproof, ristretto, ark-, ecc`. **0 matches.** (A naive `ecc`/`ark-` search matches `keccak` and `stark`; those are the Keccak hash and the STARK proof system, not ECC. The Keccak crates present are `keccak`, `tiny-keccak`, `p3-keccak`.)
+3. `strings -a` on `iod-server`, `iod-bench`, `iod-vectors` with the same keywords (excluding the substring in `Keccak256`): the only hits are 34 occurrences of the hex fragment `8ecc1` inside Rust symbol-mangling hashes — false positives; no ECC identifier.
+4. `npm ls --all` for `node-server` and `web-ui`, and `package-lock.json` grep (`elliptic, secp, ed25519, curve25519, tweetnacl, noble, jsonwebtoken`): **0 matches**. `python-service/requirements.txt` = `flask, flask-cors, pytest` only.
+5. Source policy: no ECC/ECDSA/ECDH/X25519 code, no TLS (the HTTP server is plain `tiny_http`, localhost), no certificates other than GCS ML-DSA credentials.
 
-## Methodology
+Reproduce (Linux/macOS): `cd rust-core && cargo tree -e all --prefix none | sed 's/ (.*//' | sort -u | grep -iE 'elliptic|ecdsa|ecdh|ed25519|x25519|curve25519|secp|bls12|bn254|k256|dalek|halo2|pairing'` (expect no output). Windows PowerShell: `cargo tree -e all --prefix none | Select-String -Pattern 'elliptic|ecdsa|ecdh|ed25519|x25519|curve25519|secp|bls12|bn254|k256|dalek|halo2|pairing'`.
 
-Per the project brief's explicit instruction ("Do not merely search
-source code. Inspect actual dependency graphs"), this audit used three
-independent methods:
+## Direct Rust dependencies
+`pqcrypto-kyber 0.8.1`, `pqcrypto-dilithium 0.5.0`, `pqcrypto-traits`, `sha3`, `sha2`, `hmac`, `hkdf`, `chacha20poly1305 0.10`, `rand 0.8 / 0.10`, `rand_core`, `serde`, `serde_json`, `postcard`, `rusqlite 0.31 (bundled SQLite)`, `tiny_http`, `hex`, `thiserror`, `anyhow`, and Plonky3 `=0.9.0-rc.1`: `p3-air, p3-baby-bear, p3-challenger, p3-commit, p3-dft, p3-field, p3-fri, p3-keccak, p3-matrix, p3-merkle-tree, p3-poseidon2, p3-poseidon2-air, p3-symmetric, p3-uni-stark`.
+Plonky3's only field arithmetic used here is BabyBear and its degree-5 extension (a prime-field/polynomial structure, not a curve group).
 
-1. **Full transitive dependency graph inspection** (`cargo tree`,
-   `npm ls --all`, `pip list`) — every crate/package actually compiled or
-   installed, not just direct dependencies.
-2. **Keyword search across the flattened dependency graph** for: ECC,
-   elliptic curve, ECDSA, ECDH, Ed25519, X25519, Curve25519, secp*, BLS,
-   BN254/BN256, P-256/P-384/P-521, Groth16, PLONK, KZG, pairing.
-3. **Compiled-binary string scan** (`strings` on the built `iod-server`
-   executable) for the same keyword list, as a defense against a
-   statically-linked C dependency that might not show up clearly by name
-   in the Cargo dependency graph (e.g. pulled in via a `-sys` crate's
-   vendored C sources).
-
-## Rust core (`rust-core/`) — the only component with real cryptography
-
-Command used:
-```
-cargo tree                                   # full graph, 132 lines
-cargo tree --prefix none | sed 's/ v.*//' | sort -u   # unique crate names
-```
-
-Every unique crate name in the graph (reproduced in full below) was
-manually reviewed:
-
-```
-aead, ahash, anyhow, ascii, bitflags, block-buffer, cc, cfg-if, chacha20,
-chacha20poly1305, chunked_transfer, cipher, cpufeatures, crypto-common,
-digest, dunce, fallible-iterator, fallible-streaming-iterator,
-find-msvc-tools, generic-array, getrandom, glob, hashbrown, hashlink,
-hex, hkdf, hmac, httpdate, inout, iod-core, itoa, jobserver, keccak,
-libc, libsqlite3-sys, log, memchr, once_cell, opaque-debug, pkg-config,
-poly1305, ppv-lite86, pqcrypto-dilithium, pqcrypto-internals,
-pqcrypto-kyber, pqcrypto-traits, proc-macro2, quote, rand, rand_chacha,
-rand_core, rusqlite, serde, serde_core, serde_derive, serde_json, sha2,
-sha3, shlex, smallvec, subtle, syn, thiserror, thiserror-impl, tiny_http,
-typenum, unicode-ident, universal-hash, vcpkg, version_check, zerocopy,
-zeroize, zmij
-```
-
-Findings:
-- **`pqcrypto-kyber`, `pqcrypto-dilithium`, `pqcrypto-internals`,
-  `pqcrypto-traits`**: lattice-based post-quantum cryptography (Module-LWE
-  / Module-LWE+Fiat-Shamir-with-Aborts). No curve arithmetic, no
-  pairings. This is the ONLY public-key cryptography in the project.
-- **`chacha20`, `chacha20poly1305`, `poly1305`, `cipher`, `inout`,
-  `aead`, `universal-hash`**: symmetric AEAD (ChaCha20-Poly1305). No
-  curve arithmetic.
-- **`sha2`, `sha3`, `keccak`, `digest`, `block-buffer`,
-  `crypto-common`, `hkdf`, `hmac`, `subtle`, `zeroize`,
-  `generic-array`, `typenum`, `opaque-debug`**: hash functions, MACs,
-  KDFs, and constant-time/secure-memory utility crates. No curve
-  arithmetic — `subtle`'s constant-time comparisons and `zeroize`'s
-  memory clearing are algorithm-agnostic hygiene utilities used
-  by many non-ECC crypto crates as well.
-- **`rand`, `rand_core`, `rand_chacha`, `ppv-lite86`, `getrandom`**:
-  CSPRNG. No curve arithmetic.
-- **`rusqlite`, `libsqlite3-sys`, `hashlink`, `fallible-iterator`,
-  `fallible-streaming-iterator`**: SQLite bindings and its dependencies.
-  Not cryptography.
-- **`tiny_http`, `chunked_transfer`, `httpdate`, `ascii`**: the plain
-  HTTP/1.1 server. No TLS is used anywhere in this local, single-machine
-  demo (all services communicate over `127.0.0.1` in plaintext HTTP by
-  design — see docs/threat-model.md), so there is no ECC-based TLS key
-  exchange (which would otherwise be the single most likely accidental
-  ECC entry point in a project like this).
-- **`zmij`**: pulled in transitively by `serde_json` — a
-  double-to-string float formatting algorithm (by the well-known Rust
-  library author dtolnay), unrelated to cryptography.
-- Everything else (`cc`, `pkg-config`, `vcpkg`, `jobserver`, `glob`,
-  `dunce`, `find-msvc-tools`, `shlex`, `version_check`, `proc-macro2`,
-  `quote`, `syn`, `serde*`, `thiserror*`, `anyhow`, `log`, `once_cell`,
-  `memchr`, `smallvec`, `hashbrown`, `ahash`, `bitflags`, `cfg-if`,
-  `libc`, `unicode-ident`, `zerocopy`, `itoa`, `hex`, `cpufeatures`):
-  build tooling, error handling, macro infrastructure, or general-purpose
-  utility crates with no cryptographic content at all.
-
-**Keyword search result**: zero matches for any ECC-related term across
-the full dependency list.
-
-**Binary string-scan result**: zero matches for any ECC-related term in
-the compiled `iod-server` binary.
-
-## Node.js gateway (`node-server/`)
-
-Command used: `npm ls --all`. Dependencies: `express`, `cors`,
-`node-fetch`, plus their transitive dependencies, plus TypeScript
-tooling (`typescript`, `ts-node`, `@types/*`) as dev-only dependencies.
-None of these packages implement cryptography of any kind — the gateway
-does no cryptographic operations itself; it only proxies JSON over plain
-HTTP to the Rust core (see docs/architecture.md). Keyword search: zero
-matches.
-
-## Python RAG service (`python-service/`)
-
-`pip list` shows: `Flask`, `Flask-Cors`, `Werkzeug`, `Jinja2`,
-`MarkupSafe`, `itsdangerous`, `blinker`, `click`, plus `pytest` and its
-dependencies for testing. None of these are cryptographic libraries —
-the Python service does no cryptography of any kind (by design: RAG
-content processing only, all security-critical operations are in Rust).
-Keyword search: zero matches.
-
-## Conclusion
-
-- **Dependencies inspected**: full transitive graphs for all three
-  language runtimes (132 Rust crates, all Node packages, all Python
-  packages), plus a compiled-binary string scan.
-- **Findings**: no ECC, no ECDSA/ECDH, no Ed25519/X25519/Curve25519, no
-  secp*/BLS/BN254 curves, no Groth16/PLONK/KZG/pairing-based
-  cryptography, anywhere in the project.
-- **Transitive ECC usage remaining**: none.
-- **Action taken**: none required. This audit should be re-run (`cargo
-  tree` diff) any time a new Rust dependency is added, and re-verified
-  before any future release.
+## Caveats
+* Absence of ECC in the dependency names and binary strings is strong but not a formal proof about vendored C code; PQClean sources are Kyber/Dilithium only.
+* Cryptographic assumptions in use: lattice (Module-LWE/SIS), hash collision/preimage (SHAKE256, SHA-256, Keccak-256, Poseidon2), ChaCha20-Poly1305 (symmetric).

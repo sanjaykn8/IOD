@@ -63,9 +63,24 @@ impl Default for EventLog {
     }
 }
 
+thread_local! {
+    static CLOCK_SKEW_MS: std::cell::Cell<i64> = const { std::cell::Cell::new(0) };
+}
+
+/// Simulation/test-only: run `f` with this thread's clock shifted by
+/// `skew_ms` (used by negative tests for stale/future timestamps and
+/// expiry). Never used by the server path.
+pub fn with_clock_skew<T>(skew_ms: i64, f: impl FnOnce() -> T) -> T {
+    let prev = CLOCK_SKEW_MS.with(|c| c.replace(skew_ms));
+    let out = f();
+    CLOCK_SKEW_MS.with(|c| c.set(prev));
+    out
+}
+
 pub fn now_unix_ms() -> u64 {
-    std::time::SystemTime::now()
+    let base = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .expect("system clock before 1970")
-        .as_millis() as u64
+        .as_millis() as i64;
+    (base + CLOCK_SKEW_MS.with(|c| c.get())) as u64
 }

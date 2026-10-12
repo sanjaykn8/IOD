@@ -13,10 +13,10 @@ export interface RustResponse<T = any> {
   body: T;
 }
 
-async function call(method: string, path: string, body?: unknown): Promise<RustResponse> {
+async function call(method: string, path: string, body?: unknown, extra?: Record<string, string>): Promise<RustResponse> {
   const res = await fetch(`${config.rustBaseUrl}${path}`, {
     method,
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: body || extra ? { ...(body ? { "Content-Type": "application/json" } : {}), ...(extra ?? {}) } : undefined,
     body: body ? JSON.stringify(body) : undefined,
   });
   let json: any = {};
@@ -30,5 +30,5 @@ async function call(method: string, path: string, body?: unknown): Promise<RustR
 
 export const rust = {
   get: (path: string) => call("GET", path),
-  post: (path: string, body?: unknown) => call("POST", path, body),
+  post: (path: string, body?: unknown, extra?: Record<string, string>) => call("POST", path, body, extra),
 };

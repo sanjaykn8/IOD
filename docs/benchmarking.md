@@ -1,106 +1,76 @@
-# Benchmarking
+# Benchmarks (host-simulation measurements)
 
-## Running
+**Every number below was measured by `rust-core/src/bin/bench.rs` on the host described in the header. They are HOST-SIMULATION measurements — not Raspberry Pi, flight-controller or drone-hardware numbers — and exclude any network.** Repetitions: 15–5000 per row (stated as `n=`). Statistics: average / p50 / p95 of wall-clock `Instant` deltas. Re-run: `cargo run --release --bin iod-bench` (`IOD_BENCH_QUICK=1` for a short run). Raw output is kept in `docs/benchmark-results-host-simulation.txt`.
 
-```bash
-cd rust-core
-cargo run --release --bin iod-bench
-```
-
-Always use `--release` — debug-mode numbers are dominated by missing
-optimizations and are not representative of even relative cost between
-operations.
-
-## What is measured
-
-PUF fuzzy-extractor reconstruction, ML-KEM-768 keygen/encapsulate/
-decapsulate, ML-DSA-44 keygen/sign/verify, Poseidon hashing, Merkle
-registration/witness-generation/verification, ZK proof generation/
-verification, AEAD seal/open, full end-to-end authentication (M1-M8
-including registration), and group-key establishment (K1-K4). Each
-operation is timed individually across 50-1000 trials (fewer for
-slower/more complex operations) using `std::time::Instant`, and
-avg/p50/p95 are computed from the actual measured samples — nothing in
-this output is an assumed or estimated figure.
-
-## A real result, captured in this session
+Reading notes:
+* ZK prove time is almost independent of tree depth (4/8/12) because the trace is padded to ≥256 rows by the hiding-FRI budget; proof size is ≈250 KB. Public-input size is 54 field elements (216 B).
+* "Security parameters" printed per depth come from Plonky3's estimator: conjectured 128 b, proven list-decoding 120 b, proven unique-decoding 74 b.
+* Wire sizes are of the JSON simulation encoding (byte arrays as number lists, proof as hex), which inflates them roughly 2–3× versus a binary encoding; they are not protocol-minimum sizes.
+* CRP pool (16) forced the benchmark to revoke/re-enroll D1 every 12 sessions; those enrollments are not in the M1–M8 rows.
+* Peak RSS is the process high-water mark (`VmHWM`) on Linux.
 
 ```
-PUF fuzzy-extractor reconstruction            avg=  0.061631ms  p50=  0.049261ms  p95=  0.067382ms  (n=200)
-ML-KEM-768 (Kyber768) key generation          avg=  0.017616ms  p50=  0.014148ms  p95=  0.029325ms  (n=100)
-ML-KEM-768 encapsulate                        avg=  0.015165ms  p50=  0.013668ms  p95=  0.019748ms  (n=200)
-ML-KEM-768 decapsulate                        avg=  0.017629ms  p50=  0.015183ms  p95=  0.024097ms  (n=200)
-  -> Kyber768 public key size                 1184 bytes
-  -> Kyber768 ciphertext size                 1088 bytes
-ML-DSA-44 (Dilithium2) key generation         avg=  0.032417ms  p50=  0.027675ms  p95=  0.054279ms  (n=100)
-ML-DSA-44 sign                                avg=  0.042811ms  p50=  0.040688ms  p95=  0.064357ms  (n=100)
-ML-DSA-44 verify                              avg=  0.033075ms  p50=  0.029577ms  p95=  0.049753ms  (n=100)
-  -> Dilithium2 public key size               1312 bytes
-  -> Dilithium2 signature size                2420 bytes
-Poseidon hash (8 field elements)              avg=  0.009542ms  p50=  0.008955ms  p95=  0.012194ms  (n=1000)
-Merkle registration (single leaf, depth=12)   avg=  0.030907ms  p50=  0.028382ms  p95=  0.036048ms  (n=200)
-Merkle witness generation (depth=12, 500 members) avg=  0.000193ms  p50=  0.000103ms  p95=  0.000116ms  (n=500)
-Merkle witness verification (depth=12)        avg=  0.028998ms  p50=  0.026793ms  p95=  0.033654ms  (n=1000)
-ZK membership proof generation (depth=10)     avg=  0.112268ms  p50=  0.109739ms  p95=  0.128532ms  (n=200)
-ZK membership proof verification (depth=10)   avg=  0.109705ms  p50=  0.106462ms  p95=  0.125219ms  (n=200)
-  -> ZK proof size                            543 bytes (JSON-serialized)
-AEAD (ChaCha20-Poly1305) seal (256B)          avg=  0.002210ms  p50=  0.002005ms  p95=  0.002162ms  (n=1000)
-AEAD (ChaCha20-Poly1305) open (256B)          avg=  0.002068ms  p50=  0.001963ms  p95=  0.002057ms  (n=1000)
-Full end-to-end authentication (M1-M8, incl. registration) avg=  4.981547ms  p50=  4.957460ms  p95=  5.353850ms  (n=50)
-Group-key establishment (K1-K4)               avg=  1.678100ms  p50=  1.661745ms  p95=  1.910263ms  (n=50)
+=== IoD Secure Simulator benchmarks: HOST-SIMULATION MEASUREMENTS ===
+NOT Raspberry Pi / drone-hardware numbers.
+CPU      : Intel(R) Xeon(R) Processor @ 2.10GHz (2 logical cores)
+RAM      : MemTotal:        8222320 kB
+OS       : Linux 6.18.44-fc-v114 x86_64
+rustc    : rustc 1.97.0 (2d8144b78 2026-07-07)
+build    : release
+libs     : pqcrypto-kyber 0.8.1 (Kyber768), pqcrypto-dilithium 0.5.0 (Dilithium2), plonky3 =0.9.0-rc.1 (BabyBear, Poseidon2, hiding FRI), chacha20poly1305, sha3, hkdf
+quick    : false
+
+--- PUF (simulated SRAM PUF + fuzzy extractor) ---
+PUF fuzzy-extractor reconstruction                   avg=    0.0447 ms  p50=    0.0419 ms  p95=    0.0606 ms  (n=200)
+
+--- ML-KEM-768 (Kyber768) / ML-DSA-44 (Dilithium2) ---
+ML-KEM-768 keygen                                    avg=    0.0148 ms  p50=    0.0140 ms  p95=    0.0183 ms  (n=200)
+ML-KEM-768 encapsulate                               avg=    0.0149 ms  p50=    0.0136 ms  p95=    0.0200 ms  (n=500)
+ML-KEM-768 decapsulate                               avg=    0.0160 ms  p50=    0.0149 ms  p95=    0.0217 ms  (n=500)
+  sizes: pk=1184 B, ct=1088 B
+ML-DSA-44 keygen                                     avg=    0.0293 ms  p50=    0.0273 ms  p95=    0.0453 ms  (n=200)
+ML-DSA-44 sign (256 B transcript)                    avg=    0.0533 ms  p50=    0.0502 ms  p95=    0.0635 ms  (n=500)
+ML-DSA-44 verify                                     avg=    0.0334 ms  p50=    0.0306 ms  p95=    0.0457 ms  (n=500)
+  sizes: pk=1312 B, sig=2420 B
+
+--- AEAD / hash / Merkle ---
+ChaCha20-Poly1305 seal (256 B)                       avg=    0.0026 ms  p50=    0.0022 ms  p95=    0.0024 ms  (n=2000)
+ChaCha20-Poly1305 open (256 B)                       avg=    0.0021 ms  p50=    0.0019 ms  p95=    0.0023 ms  (n=2000)
+Poseidon2 node hash (2x8 limbs -> 8)                 avg=    0.0014 ms  p50=    0.0013 ms  p95=    0.0018 ms  (n=5000)
+Poseidon2 leaf hash (6 permutations)                 avg=    0.0083 ms  p50=    0.0075 ms  p95=    0.0106 ms  (n=2000)
+Merkle witness generation (depth 12)                 avg=    0.0001 ms  p50=    0.0001 ms  p95=    0.0001 ms  (n=1000)
+Merkle witness verification (depth 12)               avg=    0.0199 ms  p50=    0.0176 ms  p95=    0.0270 ms  (n=2000)
+
+--- ZK membership proof (Plonky3 hiding FRI; Poseidon2/BabyBear AIR) ---
+[depth 4] depth=4 trace=256x339 log_blowup=3 queries=70 query_pow=16 batch_pow=10 ext_degree=5 field=BabyBear(31b) | conjectured=128b proven(unique)=74b proven(list)=120b
+ZK prove  (depth 4)                                  avg=   97.7722 ms  p50=   95.9745 ms  p95=  122.0503 ms  (n=30)
+ZK verify (depth 4)                                  avg=    4.3046 ms  p50=    3.9579 ms  p95=    5.9779 ms  (n=100)
+  proof size = 246772 B ; public inputs = 54 field elements (54 x 4 B = 216 B); peak RSS so far = 14.3 MB
+[depth 8] depth=8 trace=256x343 log_blowup=3 queries=70 query_pow=16 batch_pow=10 ext_degree=5 field=BabyBear(31b) | conjectured=128b proven(unique)=74b proven(list)=120b
+ZK prove  (depth 8)                                  avg=  100.6073 ms  p50=   99.9668 ms  p95=  120.7922 ms  (n=30)
+ZK verify (depth 8)                                  avg=    4.4206 ms  p50=    4.0503 ms  p95=    7.3624 ms  (n=100)
+  proof size = 249233 B ; public inputs = 54 field elements (54 x 4 B = 216 B); peak RSS so far = 14.3 MB
+[depth 12] depth=12 trace=256x347 log_blowup=3 queries=70 query_pow=16 batch_pow=10 ext_degree=5 field=BabyBear(31b) | conjectured=128b proven(unique)=74b proven(list)=120b
+ZK prove  (depth 12)                                 avg=  101.0554 ms  p50=   98.9599 ms  p95=  117.7026 ms  (n=15)
+ZK verify (depth 12)                                 avg=    4.3226 ms  p50=    4.0494 ms  p95=    5.7180 ms  (n=100)
+  proof size = 248046 B ; public inputs = 54 field elements (54 x 4 B = 216 B); peak RSS so far = 14.3 MB
+
+--- Protocol (depth 8, standard ZK parameters), per-message stage timings ---
+R1-R3 registration (incl. keygen, 16 CRPs, 64 PIDs)  avg=    0.6086 ms  p50=    0.5974 ms  p95=    0.7621 ms  (n=20)
+M1 D1 builds CommReq                                 avg=    0.0578 ms  p50=    0.0562 ms  p95=    0.0984 ms  (n=20)
+M2 D2 builds+seals CredReq                           avg=    0.2666 ms  p50=    0.2407 ms  p95=    0.4629 ms  (n=20)
+M2/M3 GCS checks, signs, seals                       avg=    0.7016 ms  p50=    0.6178 ms  p95=    1.0160 ms  (n=20)
+M3/M4 D2 verifies M3, signs M4                       avg=    0.6407 ms  p50=    0.6247 ms  p95=    0.9088 ms  (n=20)
+M4 D1 verifies M4 (GCS+D2 cred+sig4)                 avg=    0.1760 ms  p50=    0.1499 ms  p95=    0.2591 ms  (n=20)
+M5 D1 ZK prove + MAC + sign                          avg=  103.9047 ms  p50=  100.3490 ms  p95=  141.0709 ms  (n=20)
+M6 D2 builds+signs+seals request                     avg=    0.2048 ms  p50=    0.1778 ms  p95=    0.4970 ms  (n=20)
+M6 GCS verifies (MAC, PID, CRP, membership)          avg=    0.2853 ms  p50=    0.2873 ms  p95=    0.4323 ms  (n=20)
+M7 D2 verifies ZK + sigs + decides                   avg=    5.5179 ms  p50=    4.9682 ms  p95=    8.4653 ms  (n=20)
+M8 D2 signs; D1 verifies + confirms                  avg=    0.2439 ms  p50=    0.2090 ms  p95=    0.4894 ms  (n=20)
+TOTAL M1-M8 (sequential, no network)                 avg=  112.0011 ms  p50=  107.8350 ms  p95=  153.1483 ms  (n=20)
+TOTAL K1-K3 (sequential, no network)                 avg=    2.2090 ms  p50=    2.0792 ms  p95=    3.1391 ms  (n=20)
+  message sizes (JSON on the wire): M2=35990 B, M3=100075 B, M4=53766 B, M5=506416 B, M6resp=9073 B, M8=9019 B
+  peak RSS of this process = 14.4 MB
+
+Reminder: host-simulation measurements only; no network, no embedded hardware.
 ```
-
-## Interpreting these numbers honestly
-
-These were measured on a shared sandbox VM's CPU, in a single process,
-with no isolation from other load on the host. They demonstrate:
-
-- **Relative cost** between operations (e.g., ZK proof gen/verify is
-  roughly 3-7x the cost of a single ML-DSA sign/verify in this
-  implementation, dominated by the Poseidon Merkle-path recomputation
-  and canonical encoding, not by any expensive proof-system machinery —
-  consistent with this being a disclosure-based proof rather than a
-  real succinct/hiding ZK system).
-- **Correctness of the measurement methodology** (real trials, real
-  percentiles, real sizes).
-
-They do **NOT** demonstrate real embedded-drone-hardware performance,
-which would differ substantially due to CPU architecture (many drone
-flight controllers use ARM Cortex-M/A-class cores, not x86_64 server
-cores), clock speed, absence of a hypervisor, and different memory/cache
-behavior. Re-run `iod-bench` directly on target hardware before making
-any real deployment sizing decision.
-
-## Message/proof sizes (also measured, not estimated)
-
-| Object | Size |
-|---|---|
-| Kyber768 public key | 1184 bytes |
-| Kyber768 ciphertext | 1088 bytes |
-| Dilithium2 public key | 1312 bytes |
-| Dilithium2 signature | 2420 bytes |
-| ZK proof (JSON-serialized, depth=10 tree) | ~540 bytes |
-
-Note the ZK proof's `opening` (see `docs/zk-membership.md`) is included
-in this size — a real hiding backend would typically be either larger
-(a STARK proof) or a different shape entirely (an MPC-in-the-head
-transcript), so this number should not be used to estimate a future
-hiding backend's bandwidth cost.
-
-## Steganography benchmarks: a separate subsystem, a separate methodology
-
-This document covers `iod-bench` — the Rust crypto/protocol
-primitives above, timed across many repeated trials with avg/p50/p95
-reporting, because their cost does not depend on image content. The
-2D-steganography algorithms (`docs/steganography.md`) are benchmarked
-differently and separately, by `python-service/src/stego/benchmark.py`:
-one real measurement **per actual (cover image, payload) pair**, at
-registration time, since their cost and quality genuinely depend on
-that specific input. See `docs/data-and-evaluation.md` for exactly
-what is and is not covered by that measurement, and
-`docs/algorithm-selection.md` for how those per-request measurements
-feed the deterministic selector. Exported stego benchmark figures
-(per algorithm, across the bundled fixture images) are included
-alongside this document's crypto/protocol numbers in the benchmark
-export produced for this stage — see the repository's top-level
-benchmark results export for the exact figures captured.

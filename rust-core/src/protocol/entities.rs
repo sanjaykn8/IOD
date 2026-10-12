@@ -1,61 +1,53 @@
-//! In-process simulation entities: `DroneState` (a simulated drone) and
-//! `GcsState` (the Ground Control Station). These hold everything a real
-//! deployment would split across separate machines/processes; here they
-//! are simulated in one process and exchange explicit message structs
-//! (see `protocol::messages`) exactly as if they were serialized over a
-//! network, which is what the HTTP/SSE API layer (`api` crate binary)
-//! actually does when driven from the web dashboard.
+//! Simulated entities: `DroneState` (a drone) and `GcsState` (Ground
+//! Control Station) plus the GCS-side lifecycle tables for pseudonyms
+//! (PIDs), PUF challenge-response pairs (CRPs) and authentication
+//! sessions. Everything the GCS must remember across messages lives in
+//! `GcsState` and is persisted (see `storage::snapshots`).
 //!
-//! ## Documented implementation decision: PID → DroneID resolution
+//! ## PID lifecycle (spec: docs/protocol.md §PID)
+//! `ACTIVE` --(M3 issues a credential for it)--> `CONSUMED(session)`
+//! `ACTIVE|CONSUMED` --(time or revocation)--> `EXPIRED`.
+//! A PID can start at most one session; replaying M1/M2 with a
+//! consumed/expired PID is rejected at the GCS.
 //!
-//! The specification says "GCS: Resolves PID1 → DroneID_D1 (internal
-//! mapping)" without specifying the mechanism. Since `PID_1 =
-//! SHAKE256(0x03 || s_D1 || "PID" || counter)` depends on `s_D1`, which
-//! **GCS never possesses** (by design — GCS does not store drone
-//! private/PUF secrets), GCS cannot simply recompute a drone's PID
-//! on-the-fly. We resolve this ambiguity with a **pre-registered
-//! pseudonym pool**: at registration (and whenever the pool runs low),
-//! each drone locally derives a batch of upcoming PIDs (using its own
-//! seed and known future counter values) and submits `(pid ->
-//! drone_id)` bindings to GCS over the same trusted enrollment channel
-//! already used for R1-R3. GCS stores these bindings and consumes one
-//! per session. This preserves every stated security property (D2 never
-//! learns the permanent DroneID; GCS still never learns `s_D1`; PIDs
-//! still rotate per session) while giving "internal mapping" a concrete,
-//! implementable mechanism. The trade-off (a finite pool that needs
-//! periodic top-up) is documented in `docs/protocol.md`.
+//! ## CRP lifecycle
+//! `FRESH` --(M3 picks it as C_PUF)--> `RESERVED(session)`
+//! --(M6 verified or failed)--> `USED`. A challenge is never reused.
 
+use crate::crypto::kem::{KemPublicKey, KemSecretKey};
+use crate::crypto::sign::{SignPublicKey, SignSecretKey};
 use crate::identity::keys::DeviceKeys;
 use crate::merkle::group_tree::GroupMembershipTree;
 use crate::merkle::tree::MerkleWitness;
-use crate::puf::crp::CrpReference;
+use crate::protocol::credentials::SignedCredential;
 use crate::puf::fuzzy_extractor::HelperData;
 use crate::puf::sram_puf::SramPuf;
-use crate::crypto::field::Fp;
-use crate::crypto::kem::{KemPublicKey, KemSecretKey};
-use crate::crypto::sign::{SignPublicKey, SignSecretKey};
-use std::collections::HashMap;
+use crate::zkhash::{Digest, Limbs, RHO_LIMBS};
+use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 
-/// A drone's full local state. In a real deployment, everything except
-/// `drone_id`/`group_id`/cached membership metadata would live only on
-/// the physical device; see field-level comments for what is/is not
-/// realistic to expose via the API/UI layer (governed centrally by
-/// `api::redact`, not by this struct itself, which is the trusted
-/// internal simulation model).
 pub struct DroneState {
     pub drone_id: String,
     pub group_id: Option<String>,
     pub puf: SramPuf,
     pub helper_data: Option<HelperData>,
     pub keys: Option<DeviceKeys>,
-    pub rho: Option<[u8; 32]>,
-    pub leaf: Option<Fp>,
+    /// Leaf randomness: 8 uniform BabyBear elements. PRIVATE witness.
+    pub rho: Option<[u32; RHO_LIMBS]>,
+    pub leaf: Option<Digest>,
     pub metadata: Option<crate::identity::metadata::MembershipMetadata>,
+    /// GCS-issued credential for this drone and the pinned GCS ML-DSA
+    /// trust anchor (both installed at enrollment, R3).
+    pub credential: Option<SignedCredential>,
+    pub trust_anchor: Option<SignPublicKey>,
+    /// Pinned GCS ML-KEM public key (for sealing messages to the GCS).
+    pub gcs_kem_pk: Option<KemPublicKey>,
     pub cached_witness: Option<MerkleWitness>,
-    pub cached_root: Option<Fp>,
+    pub cached_root: Option<Digest>,
     pub cached_version: Option<u64>,
     pub pid_counter: u64,
-    pub crp_default_challenge: Vec<u8>,
+    /// PID counters [0, pid_registered_upto) have been registered at the GCS.
+    pub pid_registered_upto: u64,
     pub revoked: bool,
 }
 
@@ -70,81 +62,106 @@ impl DroneState {
             rho: None,
             leaf: None,
             metadata: None,
+            credential: None,
+            trust_anchor: None,
+            gcs_kem_pk: None,
             cached_witness: None,
             cached_root: None,
             cached_version: None,
             pid_counter: 0,
-            crp_default_challenge: b"default-challenge-v1".to_vec(),
+            pid_registered_upto: 0,
             revoked: false,
         }
     }
 
-    /// Reconstruct `s_D` from a fresh (noisy) PUF reading via the fuzzy
-    /// extractor. Panics if the drone has not completed registration
-    /// (no helper data yet) — callers must check `is_registered()`.
+    /// Reconstruct `s_D` from a fresh noisy PUF reading via the fuzzy
+    /// extractor. Callers must check `is_registered()` first.
     pub fn reconstruct_seed(&self) -> [u8; 32] {
-        let helper = self
-            .helper_data
-            .as_ref()
-            .expect("reconstruct_seed called before registration");
+        let helper = self.helper_data.as_ref().expect("reconstruct_seed called before registration");
         let reading = self.puf.read();
         crate::puf::fuzzy_extractor::reproduce(&reading, helper)
     }
 
     pub fn is_registered(&self) -> bool {
-        self.helper_data.is_some() && self.keys.is_some() && self.group_id.is_some()
+        self.helper_data.is_some() && self.keys.is_some() && self.group_id.is_some() && self.credential.is_some()
     }
 }
 
-/// Public (GCS-visible / non-sensitive) record for a registered drone.
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
-pub struct DronePublicRecord {
-    pub drone_id: String,
-    pub group_id: String,
-    pub kem_pk: KemPublicKey,
-    pub dil_pk: SignPublicKey,
-    pub metadata: crate::identity::metadata::MembershipMetadata,
-    pub rho: [u8; 32], // leaf randomness — public per the spec's own leaf construction (not a secret key)
-    pub crp: CrpReference,
-    pub active: bool,
-}
-
-/// SECURITY FIX (spec item 25-F: "PID lifecycle states
-/// ACTIVE/CONSUMED/EXPIRED"). The module doc above already promised
-/// pre-registered pseudonyms are "consumed... as sessions start," but
-/// until this fix nothing in the code actually implemented that --
-/// `resolve_pid` was a pure, non-mutating lookup, so every pre-
-/// provisioned PID stayed usable to start arbitrarily many independent
-/// sessions forever. These three states are now explicit and enforced:
-///   - `Active`: provisioned, never yet used to start a session.
-///   - `Consumed`: used once to start a session (via `consume_pid`,
-///     called at M2 -- see `auth_flow::gcs_receive_m2`). Re-presenting
-///     the SAME pid1 to start a SECOND, independent session is now
-///     rejected as a replay. It remains legitimately resolvable within
-///     the session that consumed it (M6 looks it up again via
-///     `resolve_pid`, which treats Active and Consumed as equally
-///     resolvable -- only Expired/unknown PIDs are refused there).
-///   - `Expired`: administratively retired (`expire_pid`) and can never
-///     be consumed, or even resolved, again. A real deployment would
-///     call this on a time horizon (e.g. unused PIDs past their
-///     provisioning window); this prototype exposes the transition
-///     itself rather than inventing a specific retention policy with no
-///     stated basis.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PidState {
     Active,
     Consumed,
     Expired,
 }
 
-#[derive(thiserror::Error, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PidLifecycleError {
-    #[error("PID is not a known pre-registered pseudonym")]
-    Unknown,
-    #[error("PID has already been consumed to start a prior session (replay rejected)")]
-    AlreadyConsumed,
-    #[error("PID has been administratively expired and may no longer be used")]
-    Expired,
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PidRecord {
+    pub drone_id: String,
+    pub state: PidState,
+    pub issued_at_ms: u64,
+    pub expires_at_ms: u64,
+    pub bound_session: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CrpState {
+    Fresh,
+    Reserved(String),
+    Used,
+}
+
+#[derive(Clone, Serialize, Deserialize)]
+pub struct CrpEntry {
+    pub challenge: Vec<u8>,
+    pub reference_response: [u8; 32],
+    pub state: CrpState,
+}
+
+/// Public/GCS-visible record of a registered drone.
+#[derive(Clone, Serialize, Deserialize)]
+pub struct DronePublicRecord {
+    pub drone_id: String,
+    pub group_id: String,
+    pub kem_pk: KemPublicKey,
+    pub dil_pk: SignPublicKey,
+    pub comm_pk: Limbs,
+    pub metadata: crate::identity::metadata::MembershipMetadata,
+    pub credential: SignedCredential,
+    pub crps: Vec<CrpEntry>,
+    pub active: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SessionState {
+    /// M3 issued; waiting for M6.
+    CredIssued,
+    /// M6 verified (PID, CRP/PUF MAC, membership, freshness, root/version).
+    PufVerified,
+    /// M6 failed or session invalidated; terminal.
+    Failed,
+    /// K1 accepted for this exact session; terminal (one key per session).
+    KeyIssued,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthSession {
+    pub session_id: String,
+    pub pid1: Vec<u8>,
+    pub d1_id: String,
+    pub d2_id: String,
+    pub group_id: String,
+    pub issued_r_g: Digest,
+    pub issued_v_g: u64,
+    pub c_puf: Vec<u8>,
+    pub n1: Vec<u8>,
+    pub ts1: u64,
+    pub n2: Vec<u8>,
+    pub created_ms: u64,
+    pub expires_ms: u64,
+    pub state: SessionState,
+    pub reason_code: String,
+    pub session_ctx: Option<Limbs>,
+    pub verified_ms: Option<u64>,
 }
 
 pub struct GcsState {
@@ -154,26 +171,13 @@ pub struct GcsState {
     pub sign_sk: SignSecretKey,
     pub groups: HashMap<String, GroupMembershipTree>,
     pub drones: HashMap<String, DronePublicRecord>,
-    /// Pre-registered pseudonym pool: pid bytes -> drone_id (see module
-    /// docs above). Lifecycle state (see `PidState`) is tracked
-    /// separately in `consumed_pids`/`expired_pids` below rather than by
-    /// removing entries here, so `resolve_pid` can still serve
-    /// legitimate same-session lookups (M6) after M2 has consumed a pid.
-    pub pid_pool: HashMap<Vec<u8>, String>,
-    /// PIDs that have been consumed (spec 25-F / `PidState::Consumed`).
-    /// Like `used_nonces` below, NOT persisted across a process restart
-    /// in this research prototype -- documented limitation, same
-    /// rationale as that field.
-    pub consumed_pids: std::collections::HashSet<Vec<u8>>,
-    /// PIDs administratively retired (spec 25-F / `PidState::Expired`).
-    /// Same persistence caveat as `consumed_pids`.
-    pub expired_pids: std::collections::HashSet<Vec<u8>>,
-    /// Nonces GCS has already seen at the M6 PUF-verification step, for
-    /// replay detection (spec security-test requirement: "reused
-    /// nonce"). Keyed on the raw nonce bytes; in a production system
-    /// this would be time-windowed and evicted, which we note as a
-    /// simplification (an ever-growing set is fine for a bounded demo).
-    pub used_nonces: std::collections::HashSet<Vec<u8>>,
+    pub cred_index: HashMap<[u8; 16], String>,
+    pub pid_pool: HashMap<Vec<u8>, PidRecord>,
+    pub sessions: HashMap<String, AuthSession>,
+    /// Nonces (n1, n2, n6, ...) already accepted, for replay detection.
+    pub seen_nonces: HashSet<Vec<u8>>,
+    /// Outstanding enrollment nonces (R2).
+    pub enroll_nonces: HashSet<Vec<u8>>,
 }
 
 impl GcsState {
@@ -187,10 +191,11 @@ impl GcsState {
             sign_sk,
             groups: HashMap::new(),
             drones: HashMap::new(),
+            cred_index: HashMap::new(),
             pid_pool: HashMap::new(),
-            consumed_pids: std::collections::HashSet::new(),
-            expired_pids: std::collections::HashSet::new(),
-            used_nonces: std::collections::HashSet::new(),
+            sessions: HashMap::new(),
+            seen_nonces: HashSet::new(),
+            enroll_nonces: HashSet::new(),
         }
     }
 
@@ -200,154 +205,35 @@ impl GcsState {
             .or_insert_with(|| GroupMembershipTree::new(group_id, merkle_depth));
     }
 
-    /// Read-only lookup used by every party that may legitimately need
-    /// to resolve a pid MORE THAN ONCE within a single already-started
-    /// session (M6's `gcs_m6_verify`, K1's `gcs_handle_k1`, and the
-    /// trace/administrator PID-resolution path) -- so it deliberately
-    /// treats both `Active` and `Consumed` as resolvable. Only
-    /// `Expired` (or never-provisioned) PIDs are refused here; the
-    /// one-time-use-to-START-a-session enforcement lives in
-    /// `consume_pid`, not here.
+    /// Administrative resolution PID -> DroneID (Trace Manager only).
     pub fn resolve_pid(&self, pid: &[u8]) -> Option<&str> {
-        if self.expired_pids.contains(pid) {
-            return None;
-        }
-        self.pid_pool.get(pid).map(|s| s.as_str())
+        self.pid_pool.get(pid).map(|r| r.drone_id.as_str())
     }
 
-    /// Current lifecycle state of a pid (spec 25-F). Returns `None` for
-    /// a pid that was never provisioned at all (distinct from any of
-    /// the three real states).
-    pub fn pid_state(&self, pid: &[u8]) -> Option<PidState> {
-        if !self.pid_pool.contains_key(pid) {
-            return None;
-        }
-        if self.expired_pids.contains(pid) {
-            Some(PidState::Expired)
-        } else if self.consumed_pids.contains(pid) {
-            Some(PidState::Consumed)
-        } else {
-            Some(PidState::Active)
+    pub fn drone_by_cred(&self, cred_id: &[u8; 16]) -> Option<&DronePublicRecord> {
+        self.cred_index.get(cred_id).and_then(|id| self.drones.get(id))
+    }
+
+    /// Expire every PID of a drone (revocation, re-enrollment).
+    pub fn expire_pids_of(&mut self, drone_id: &str) {
+        for r in self.pid_pool.values_mut().filter(|r| r.drone_id == drone_id) {
+            r.state = PidState::Expired;
         }
     }
 
-    /// Consume an `Active` pid to start a new session -- called once,
-    /// at M2 (see `auth_flow::gcs_receive_m2`). Transitions
-    /// `Active` -> `Consumed` and returns the owning drone_id. Any
-    /// other current state is a hard, explicit rejection: this is what
-    /// actually stops a pid from starting a second, independent
-    /// session (the module docs always claimed this; see `PidState`
-    /// docs for why it previously did not happen).
-    pub fn consume_pid(&mut self, pid: &[u8]) -> Result<String, PidLifecycleError> {
-        match self.pid_state(pid) {
-            None => Err(PidLifecycleError::Unknown),
-            Some(PidState::Expired) => Err(PidLifecycleError::Expired),
-            Some(PidState::Consumed) => Err(PidLifecycleError::AlreadyConsumed),
-            Some(PidState::Active) => {
-                let drone_id = self.pid_pool.get(pid).expect("checked present by pid_state").clone();
-                self.consumed_pids.insert(pid.to_vec());
-                Ok(drone_id)
+    /// Mark sessions that involve a drone as failed (revocation).
+    pub fn fail_sessions_of(&mut self, drone_id: &str, reason: &str) {
+        for s in self.sessions.values_mut() {
+            if (s.d1_id == drone_id || s.d2_id == drone_id) && s.state != SessionState::Failed && s.state != SessionState::KeyIssued {
+                s.state = SessionState::Failed;
+                s.reason_code = reason.to_string();
             }
         }
-    }
-
-    /// Administrative transition: retire a pid (spec 25-F /
-    /// `PidState::Expired`) so it can never be consumed, or resolved,
-    /// again regardless of its current state. Returns `false` for a pid
-    /// that was never provisioned.
-    pub fn expire_pid(&mut self, pid: &[u8]) -> bool {
-        if !self.pid_pool.contains_key(pid) {
-            return false;
-        }
-        self.expired_pids.insert(pid.to_vec());
-        true
     }
 }
 
 impl Default for GcsState {
     fn default() -> Self {
         Self::new()
-    }
-}
-
-#[cfg(test)]
-mod pid_lifecycle_tests {
-    use super::*;
-
-    fn gcs_with_one_pid() -> (GcsState, Vec<u8>) {
-        let mut gcs = GcsState::new();
-        let pid = vec![1u8, 2, 3, 4];
-        gcs.pid_pool.insert(pid.clone(), "drone-1".to_string());
-        (gcs, pid)
-    }
-
-    #[test]
-    fn freshly_provisioned_pid_is_active() {
-        let (gcs, pid) = gcs_with_one_pid();
-        assert_eq!(gcs.pid_state(&pid), Some(PidState::Active));
-    }
-
-    #[test]
-    fn unprovisioned_pid_has_no_state() {
-        let gcs = GcsState::new();
-        assert_eq!(gcs.pid_state(&[9u8; 4]), None);
-        assert!(gcs.resolve_pid(&[9u8; 4]).is_none());
-    }
-
-    #[test]
-    fn consuming_an_active_pid_transitions_to_consumed_and_returns_owner() {
-        let (mut gcs, pid) = gcs_with_one_pid();
-        let owner = gcs.consume_pid(&pid).unwrap();
-        assert_eq!(owner, "drone-1");
-        assert_eq!(gcs.pid_state(&pid), Some(PidState::Consumed));
-    }
-
-    #[test]
-    fn consuming_an_already_consumed_pid_is_rejected_as_replay() {
-        let (mut gcs, pid) = gcs_with_one_pid();
-        gcs.consume_pid(&pid).unwrap();
-        let second = gcs.consume_pid(&pid);
-        assert_eq!(second, Err(PidLifecycleError::AlreadyConsumed));
-    }
-
-    #[test]
-    fn consumed_pid_remains_resolvable_for_same_session_lookups() {
-        // M6/K1/trace all need to resolve a pid again AFTER M2 already
-        // consumed it in the same session -- `resolve_pid` must keep
-        // working for `Consumed`, only `consume_pid` enforces
-        // one-time-use.
-        let (mut gcs, pid) = gcs_with_one_pid();
-        gcs.consume_pid(&pid).unwrap();
-        assert_eq!(gcs.resolve_pid(&pid), Some("drone-1"));
-    }
-
-    #[test]
-    fn expiring_a_pid_blocks_both_consume_and_resolve() {
-        let (mut gcs, pid) = gcs_with_one_pid();
-        assert!(gcs.expire_pid(&pid));
-        assert_eq!(gcs.pid_state(&pid), Some(PidState::Expired));
-        assert!(gcs.resolve_pid(&pid).is_none(), "an expired pid must no longer resolve, even for same-session lookups");
-        assert_eq!(gcs.consume_pid(&pid), Err(PidLifecycleError::Expired));
-    }
-
-    #[test]
-    fn expiring_an_already_consumed_pid_still_blocks_resolution() {
-        let (mut gcs, pid) = gcs_with_one_pid();
-        gcs.consume_pid(&pid).unwrap();
-        gcs.expire_pid(&pid);
-        assert_eq!(gcs.pid_state(&pid), Some(PidState::Expired));
-        assert!(gcs.resolve_pid(&pid).is_none());
-    }
-
-    #[test]
-    fn expiring_an_unknown_pid_returns_false() {
-        let mut gcs = GcsState::new();
-        assert!(!gcs.expire_pid(&[9u8; 4]));
-    }
-
-    #[test]
-    fn consuming_an_unknown_pid_is_rejected() {
-        let mut gcs = GcsState::new();
-        assert_eq!(gcs.consume_pid(&[9u8; 4]), Err(PidLifecycleError::Unknown));
     }
 }

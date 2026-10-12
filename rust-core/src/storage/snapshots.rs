@@ -31,14 +31,15 @@
 //! place this module is used is commented to make sure this distinction
 //! is never blurred with the GCS-side table.
 
-use crate::crypto::field::Fp;
 use crate::crypto::kem::{KemPublicKey, KemSecretKey};
 use crate::crypto::sign::{SignPublicKey, SignSecretKey};
 use crate::identity::keys::DeviceKeys;
 use crate::identity::metadata::MembershipMetadata;
 use crate::merkle::group_tree::GroupTreeSnapshot;
 use crate::merkle::tree::MerkleWitness;
-use crate::protocol::entities::{DronePublicRecord, DroneState, GcsState};
+use crate::protocol::credentials::SignedCredential;
+use crate::protocol::entities::{AuthSession, DronePublicRecord, DroneState, GcsState, PidRecord};
+use crate::zkhash::{Digest, RHO_LIMBS};
 use crate::puf::fuzzy_extractor::HelperData;
 use crate::puf::sram_puf::SramPuf;
 use serde::{Deserialize, Serialize};
@@ -51,11 +52,14 @@ pub struct GcsSnapshot {
     pub sign_sk: SignSecretKey,
     pub groups: Vec<GroupTreeSnapshot>,
     pub drones: Vec<DronePublicRecord>,
-    pub pid_pool: Vec<(Vec<u8>, String)>,
-    // `used_nonces` is intentionally NOT persisted: it is a bounded
-    // replay-detection window for the current process's uptime, not
-    // durable state; restarting the simulator resetting it is
-    // acceptable for a research prototype (documented limitation).
+    pub pid_pool: Vec<(Vec<u8>, PidRecord)>,
+    /// Durable authentication-session records (PID/CRP/session state).
+    #[serde(default)]
+    pub sessions: Vec<AuthSession>,
+    /// Replay-detection nonces are persisted so replays are still
+    /// rejected after a restart.
+    #[serde(default)]
+    pub seen_nonces: Vec<Vec<u8>>,
 }
 
 impl GcsState {
@@ -68,6 +72,8 @@ impl GcsState {
             groups: self.groups.values().map(|g| g.snapshot()).collect(),
             drones: self.drones.values().cloned().collect(),
             pid_pool: self.pid_pool.iter().map(|(k, v)| (k.clone(), v.clone())).collect(),
+            sessions: self.sessions.values().cloned().collect(),
+            seen_nonces: self.seen_nonces.iter().cloned().collect(),
         }
     }
 
@@ -77,7 +83,9 @@ impl GcsState {
             groups.insert(g.group_id.clone(), crate::merkle::group_tree::GroupMembershipTree::from_snapshot(g));
         }
         let mut drones = std::collections::HashMap::new();
+        let mut cred_index = std::collections::HashMap::new();
         for d in snap.drones {
+            cred_index.insert(d.credential.body.cred_id, d.drone_id.clone());
             drones.insert(d.drone_id.clone(), d);
         }
         let mut pid_pool = std::collections::HashMap::new();
@@ -91,12 +99,11 @@ impl GcsState {
             sign_sk: snap.sign_sk,
             groups,
             drones,
+            cred_index,
             pid_pool,
-            // Not persisted -- see `GcsState::consumed_pids`/`expired_pids`
-            // docs (same rationale as `used_nonces` below).
-            consumed_pids: std::collections::HashSet::new(),
-            expired_pids: std::collections::HashSet::new(),
-            used_nonces: std::collections::HashSet::new(),
+            sessions: snap.sessions.into_iter().map(|s| (s.session_id.clone(), s)).collect(),
+            seen_nonces: snap.seen_nonces.into_iter().collect(),
+            enroll_nonces: std::collections::HashSet::new(),
         }
     }
 }
@@ -111,14 +118,17 @@ pub struct DroneLocalSnapshot {
     pub bit_flip_prob: f64,
     pub helper_data: Option<HelperData>,
     pub keys: Option<DeviceKeys>,
-    pub rho: Option<[u8; 32]>,
-    pub leaf: Option<Fp>,
+    pub rho: Option<[u32; RHO_LIMBS]>,
+    pub leaf: Option<Digest>,
     pub metadata: Option<MembershipMetadata>,
     pub cached_witness: Option<MerkleWitness>,
-    pub cached_root: Option<Fp>,
+    pub cached_root: Option<Digest>,
     pub cached_version: Option<u64>,
     pub pid_counter: u64,
-    pub crp_default_challenge: Vec<u8>,
+    pub credential: Option<SignedCredential>,
+    pub trust_anchor: Option<SignPublicKey>,
+    pub gcs_kem_pk: Option<KemPublicKey>,
+    pub pid_registered_upto: u64,
     pub revoked: bool,
 }
 
@@ -138,7 +148,10 @@ impl DroneState {
             cached_root: self.cached_root,
             cached_version: self.cached_version,
             pid_counter: self.pid_counter,
-            crp_default_challenge: self.crp_default_challenge.clone(),
+            credential: self.credential.clone(),
+            trust_anchor: self.trust_anchor.clone(),
+            gcs_kem_pk: self.gcs_kem_pk.clone(),
+            pid_registered_upto: self.pid_registered_upto,
             revoked: self.revoked,
         }
     }
@@ -163,7 +176,10 @@ impl DroneState {
             cached_root: snap.cached_root,
             cached_version: snap.cached_version,
             pid_counter: snap.pid_counter,
-            crp_default_challenge: snap.crp_default_challenge,
+            credential: snap.credential,
+            trust_anchor: snap.trust_anchor,
+            gcs_kem_pk: snap.gcs_kem_pk,
+            pid_registered_upto: snap.pid_registered_upto,
             revoked: snap.revoked,
         })
     }

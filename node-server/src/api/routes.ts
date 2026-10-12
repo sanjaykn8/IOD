@@ -27,7 +27,6 @@ router.post("/drones", async (req, res) => relay(res, await rust.post("/api/dron
 router.get("/drones", async (_req, res) => relay(res, await rust.get("/api/drones")));
 router.get("/drones/:id", async (req, res) => relay(res, await rust.get(`/api/drones/${encodeURIComponent(req.params.id)}`)));
 router.post("/drones/:id/register", async (req, res) => relay(res, await rust.post(`/api/drones/${encodeURIComponent(req.params.id)}/register`, req.body)));
-router.post("/drones/:id/register-stego", async (req, res) => relay(res, await rust.post(`/api/drones/${encodeURIComponent(req.params.id)}/register-stego`, req.body)));
 router.post("/drones/:id/revoke", async (req, res) => relay(res, await rust.post(`/api/drones/${encodeURIComponent(req.params.id)}/revoke`)));
 router.post("/drones/:id/reactivate", async (req, res) => relay(res, await rust.post(`/api/drones/${encodeURIComponent(req.params.id)}/reactivate`)));
 router.post("/drones/:id/move", async (req, res) => relay(res, await rust.post(`/api/drones/${encodeURIComponent(req.params.id)}/move`, req.body)));
@@ -37,7 +36,12 @@ router.post("/group-key", async (req, res) => relay(res, await rust.post("/api/g
 router.post("/secure-message", async (req, res) => relay(res, await rust.post("/api/secure-message", req.body)));
 
 router.post("/trace/flag", async (req, res) => relay(res, await rust.post("/api/trace/flag", req.body)));
-router.post("/trace/request", async (req, res) => relay(res, await rust.post("/api/trace/request", req.body)));
+// Administrator authority comes ONLY from the X-Admin-Token header, which the
+// Rust core verifies against IOD_ADMIN_TOKEN. Any role claim in the body is ignored.
+router.post("/trace/request", async (req, res) => {
+  const tok = req.header("x-admin-token");
+  relay(res, await rust.post("/api/trace/request", req.body, tok ? { "X-Admin-Token": tok } : undefined));
+});
 router.get("/trace", async (_req, res) => relay(res, await rust.get("/api/trace")));
 router.get("/events/history", async (req, res) => {
   const limit = req.query.limit ? `?limit=${encodeURIComponent(String(req.query.limit))}` : "";
@@ -52,16 +56,3 @@ router.post("/rag/contribute", async (req, res) => relay(res, await python.post(
 router.post("/rag/run", async (req, res) => relay(res, await python.post("/rag/run", req.body)));
 router.get("/rag/state", async (_req, res) => relay(res, await python.get("/rag/state")));
 router.post("/rag/reset", async (_req, res) => relay(res, await python.post("/rag/reset")));
-
-// ---------------------------------------------------------------------
-// Python-stego-backed endpoints (registration-time RAG-assisted
-// algorithm selection + real embed/extract). `register-stego` above is
-// the one the dashboard actually drives end-to-end (it calls into
-// python-service from the RUST side, not from here -- see
-// `rust-core/src/api/state.rs`'s `register_drone_via_stego`); these two
-// are exposed directly for anything that wants the raw algorithm list
-// without going through a full registration (e.g. a future "preview"
-// UI, or manual inspection).
-// ---------------------------------------------------------------------
-
-router.get("/stego/algorithms", async (_req, res) => relay(res, await python.get("/stego/algorithms")));

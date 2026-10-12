@@ -16,13 +16,12 @@ import type {
 
 const BASE = import.meta.env["VITE_API_BASE"] || "http://127.0.0.1:4000/api";
 
-async function req<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const init: RequestInit = { method };
-  if (body !== undefined) {
-    init.headers = { "Content-Type": "application/json" };
-    init.body = JSON.stringify(body);
-  }
-  const res = await fetch(`${BASE}${path}`, init);
+async function req<T>(method: string, path: string, body?: unknown, extra?: Record<string, string>): Promise<T> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: { ...(body ? { "Content-Type": "application/json" } : {}), ...(extra ?? {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+  });
   const json = await res.json().catch(() => ({}));
   if (!res.ok) {
     throw new Error(json?.error || `Request failed (${res.status})`);
@@ -64,8 +63,8 @@ export const api = {
 
   flagSession: (session_id: string, flagged_by: string, reason: string) =>
     req<TraceFlag>("POST", "/trace/flag", { session_id, flagged_by, reason }),
-  requestTrace: (requested_by: string, requester_role: string, reason: string, target_pid_hex: string) =>
-    req<TraceRecord>("POST", "/trace/request", { requested_by, requester_role, reason, target_pid_hex }),
+  requestTrace: (requested_by: string, _requester_role: string, reason: string, target_pid_hex: string, adminToken = "") =>
+    req<TraceRecord>("POST", "/trace/request", { requested_by, reason, target_pid_hex }, adminToken ? { "X-Admin-Token": adminToken } : undefined),
   getTrace: () => req<{ flags: TraceFlag[]; trace_records: TraceRecord[] }>("GET", "/trace"),
 };
 

@@ -1,25 +1,81 @@
-//! Wire message structs for M1-M8 (authentication) and K1-K4 (group key).
-//!
-//! Every struct that gets Dilithium-signed exposes a `signing_bytes()`
-//! method that builds a canonical, length-prefixed byte transcript from
-//! its fields explicitly (see `crypto::kdf::length_prefixed_concat`) —
-//! never a raw `serde_json`/JS-object stringification — per the "do not
-//! sign vague JSON strings without canonicalization" requirement. The
-//! `serde::Serialize`/`Deserialize` derives are for the wire/API/UI
-//! layer only and are never what gets signed.
+//! Wire messages for R2/R3, M1-M8 and K1-K3. Everything signed exposes
+//! `signing_bytes()` built with `canon::Canon` (typed, length-prefixed,
+//! domain-separated). The serde derives are for transport/UI only and are
+//! never what is signed.
 
-use crate::crypto::field::Fp;
-use crate::crypto::kdf::length_prefixed_concat;
-use crate::identity::metadata::MembershipMetadata;
+use crate::merkle::tree::MerkleWitness;
+use crate::protocol::canon::Canon;
+use crate::protocol::credentials::SignedCredential;
 use crate::protocol::envelope::SecureEnvelope;
-use crate::zk::backend::ZkProof;
+use crate::zk::MembershipProof;
+use crate::zkhash::{Digest, Limbs};
 use serde::{Deserialize, Serialize};
+
+// ------------------------------------------------------------- R2/R3 ---
+
+/// Enrollment request (R2). `pop_sig` proves possession of the ML-DSA
+/// key; `pop_mac` proves the sender holds the PUF whose CRP the GCS
+/// holds (key = HKDF(PUF response)), over the same canonical body and a
+/// fresh GCS nonce.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EnrollmentBody {
+    pub drone_id: String,
+    pub group_id: String,
+    pub pk_kem: Vec<u8>,
+    pub pk_dil: Vec<u8>,
+    pub comm_pk: Limbs,
+    pub rho: [u32; 8],
+    pub metadata: crate::identity::metadata::MembershipMetadata,
+    pub pid_batch: Vec<Vec<u8>>,
+    pub gcs_nonce: Vec<u8>,
+    pub ts: u64,
+}
+
+impl EnrollmentBody {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut c = Canon::new("ENROLL");
+        c.str(&self.drone_id)
+            .str(&self.group_id)
+            .bytes(&self.pk_kem)
+            .bytes(&self.pk_dil)
+            .limbs(&self.comm_pk)
+            .limbs(&self.rho)
+            .str(&self.metadata.role)
+            .u64(self.metadata.issued_at_unix)
+            .u64(self.pid_batch.len() as u64);
+        for p in &self.pid_batch {
+            c.bytes(p);
+        }
+        c.bytes(&self.gcs_nonce).u64(self.ts);
+        c.into_vec()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EnrollmentRequest {
+    pub body: EnrollmentBody,
+    pub pop_sig: Vec<u8>,
+    pub pop_mac: Vec<u8>,
+    /// Challenge used for pop_mac (one of the CRPs provisioned at R1).
+    pub pop_challenge: Vec<u8>,
+}
+
+/// Enrollment response (R3): everything the drone stores.
+#[derive(Clone, Debug)]
+pub struct EnrollmentResponse {
+    pub credential: SignedCredential,
+    pub trust_anchor: Vec<u8>,
+    pub gcs_kem_pk: Vec<u8>,
+    pub witness: MerkleWitness,
+    pub root: Digest,
+    pub version: u64,
+    pub leaf_index: usize,
+}
 
 // ---------------------------------------------------------------- M1 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct CommReq {
-    pub msg_type: String,
     pub g: String,
     pub pid1: Vec<u8>,
     pub ts1: u64,
@@ -29,168 +85,185 @@ pub struct CommReq {
 // ---------------------------------------------------------------- M2 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CredReqPlain {
-    pub msg_type: String,
+pub struct CredReqBody {
     pub g: String,
     pub pid1: Vec<u8>,
-    pub d2_id: String,
+    pub n1: Vec<u8>,
+    pub ts1: u64,
+    pub d2_cred_id: [u8; 16],
     pub ts2: u64,
     pub n2: Vec<u8>,
 }
-pub type CredReqWire = SecureEnvelope; // M2 wire payload: { "ct2": ... }
+
+impl CredReqBody {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut c = Canon::new("M2");
+        c.str(&self.g)
+            .bytes(&self.pid1)
+            .bytes(&self.n1)
+            .u64(self.ts1)
+            .bytes(&self.d2_cred_id)
+            .u64(self.ts2)
+            .bytes(&self.n2);
+        c.into_vec()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CredReqPlain {
+    pub body: CredReqBody,
+    pub sig2: Vec<u8>,
+}
+pub type CredReqWire = SecureEnvelope;
 
 // ---------------------------------------------------------------- M3 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CredD1 {
-    pub pk_kem_d1: Vec<u8>,
-    pub pk_dil_d1: Vec<u8>,
-    pub membership_metadata_1: MembershipMetadata,
-    pub r_g: Fp,
+pub struct CredRespBody {
+    pub session_id: String,
+    pub group_id: String,
+    pub pid1: Vec<u8>,
+    pub d2_cred_id: [u8; 16],
+    pub n2: Vec<u8>,
+    pub cred_d1: SignedCredential,
+    pub r_g: Digest,
     pub v_g: u64,
-    /// Resolves the spec's underspecified "C_PUF: PUF challenge
-    /// identifier for D1 (GCS-managed)" — see `protocol::entities`
-    /// module docs for the analogous PID-pool design-decision writeup.
-    /// GCS is the natural authority for which CRP challenge is valid for
-    /// D1, so it is included here and forwarded by D2 to D1 in M4.
-    pub crp_challenge: Vec<u8>,
-}
-
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CredRespPlain {
-    pub msg_type: String,
-    pub cred_d1: CredD1,
-    /// SECURITY FIX (spec item 25-A: "trusted binding for D2's keys in
-    /// M4"). Previously `ChallengeMsg` carried a bare, self-asserted
-    /// `pk_dil_d2: Vec<u8>` that D1 had no way to authenticate: any
-    /// attacker could generate a fresh Dilithium keypair, sign a
-    /// `Challenge` with it, and set `pk_dil_d2` to match — D1's
-    /// signature check would pass trivially since it just verifies the
-    /// signature against whatever key the message itself claims is
-    /// D2's. GCS is the only party D1 can anchor trust to here (D1 has
-    /// no other channel to learn D2's real public key), so GCS now
-    /// issues a short-lived, GCS-signed certificate binding D2's actual
-    /// registered `(pk_kem, pk_dil)` pair, piggybacked on the M3
-    /// response GCS already sends D2 (GCS already looks up D2's own
-    /// record to build M3). D2 forwards this certificate verbatim inside
-    /// `ChallengeMsg` (see below) instead of just asserting its own key,
-    /// and D1 verifies the GCS signature on it before trusting the key
-    /// used to check `sig4`.
-    pub d2_cert: SignedPeerCert,
+    /// GCS-managed PUF challenge for D1, single use.
+    pub c_puf: Vec<u8>,
     pub ts3: u64,
     pub n3: Vec<u8>,
-}
-pub type CredRespWire = SecureEnvelope; // M3 wire payload: { "ct3": ... }
-
-/// GCS-issued certificate binding a drone's currently-registered
-/// `(pk_kem, pk_dil)` public-key pair, signed with GCS's own Dilithium
-/// signing key (`gcs.sign_sk`). Deliberately carries no permanent
-/// `DroneID` field — the whole point of this protocol's PID scheme is
-/// that peers never need to learn each other's permanent identity to
-/// trust each other's keys, only that GCS vouches for them. See the
-/// `d2_cert` field doc above for why this exists (spec item 25-A).
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SignedPeerCert {
-    pub pk_kem: Vec<u8>,
-    pub pk_dil: Vec<u8>,
-    pub ts: u64,
-    pub sig: Vec<u8>,
+    pub expires_ms: u64,
 }
 
-impl SignedPeerCert {
+impl CredRespBody {
     pub fn signing_bytes(&self) -> Vec<u8> {
-        length_prefixed_concat(&[b"IOD-PEER-CERT-v1", &self.pk_kem, &self.pk_dil, &self.ts.to_le_bytes()])
+        let mut c = Canon::new("M3");
+        c.str(&self.session_id)
+            .str(&self.group_id)
+            .bytes(&self.pid1)
+            .bytes(&self.d2_cred_id)
+            .bytes(&self.n2)
+            .bytes(&self.cred_d1.body.signing_bytes())
+            .bytes(&self.cred_d1.sig)
+            .limbs(&self.r_g.0)
+            .u64(self.v_g)
+            .bytes(&self.c_puf)
+            .u64(self.ts3)
+            .bytes(&self.n3)
+            .u64(self.expires_ms);
+        c.into_vec()
     }
 }
+
+/// GCS-signed M3 body. D2 verifies `sig3` against the trust anchor and
+/// forwards the whole object to D1 in M4, so D1 can verify the same
+/// signature (this is how D1 learns R_G/V_G/C_PUF from the GCS, not
+/// from D2).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SignedCredResp {
+    pub body: CredRespBody,
+    pub sig3: Vec<u8>,
+}
+pub type CredRespWire = SecureEnvelope;
 
 // ---------------------------------------------------------------- M4 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChallengePayload {
-    pub msg_type: String,
-    pub g: String,
+    pub session_id: String,
+    pub group_id: String,
+    pub pid1: Vec<u8>,
     pub c_puf: Vec<u8>,
     pub n2: Vec<u8>,
     pub ts4: u64,
-    pub ct_kem_d2d1: Option<SecureEnvelope>,
+    pub d2_cred_id: [u8; 16],
 }
 
 impl ChallengePayload {
     pub fn signing_bytes(&self) -> Vec<u8> {
-        length_prefixed_concat(&[
-            self.msg_type.as_bytes(),
-            self.g.as_bytes(),
-            &self.c_puf,
-            &self.n2,
-            &self.ts4.to_le_bytes(),
-            self.ct_kem_d2d1
-                .as_ref()
-                .map(|e| e.kem_ciphertext.as_slice())
-                .unwrap_or(b""),
-        ])
+        let mut c = Canon::new("M4");
+        c.str(&self.session_id)
+            .str(&self.group_id)
+            .bytes(&self.pid1)
+            .bytes(&self.c_puf)
+            .bytes(&self.n2)
+            .u64(self.ts4)
+            .bytes(&self.d2_cred_id);
+        c.into_vec()
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ChallengeMsg {
-    pub challenge_payload: ChallengePayload,
+    pub payload: ChallengePayload,
     pub sig4: Vec<u8>,
-    /// SECURITY FIX (spec item 25-A, see `CredRespPlain::d2_cert` doc):
-    /// this is now the GCS-signed certificate D2 received at M3, carried
-    /// forward unchanged, rather than a bare self-asserted public key.
-    /// `d1_verify_challenge` checks the GCS signature on this cert
-    /// BEFORE trusting the `pk_dil` inside it to verify `sig4`.
-    pub d2_cert: SignedPeerCert,
+    /// D2's GCS-issued credential: D1 takes D2's ML-DSA key from HERE
+    /// after verifying it against its trust anchor (never from sig4's
+    /// sender).
+    pub d2_cred: SignedCredential,
+    pub m3: SignedCredResp,
 }
 
 // ---------------------------------------------------------------- M5 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ProofBundle {
-    pub msg_type: String,
+    pub session_id: String,
     pub pid1: Vec<u8>,
-    pub comm_pk_d1: Fp,
-    pub proof_zk: ZkProof,
+    pub cred_id_d1: [u8; 16],
+    pub comm_pk_d1: Limbs,
+    pub proof: MembershipProof,
     pub mac1: Vec<u8>,
     pub sig1: Vec<u8>,
-    pub pk_dil_d1: Vec<u8>,
-    pub pk_kem_d1: Vec<u8>,
     pub ts5: u64,
     pub n5: Vec<u8>,
-    pub ct_kem_d1d2: Option<SecureEnvelope>,
-}
-
-/// Digest of the ZK proof used inside the signed auth transcript `T`
-/// (spec: "π_M is the ZK membership proof (or its hash if large)"). We
-/// always use the digest form for a fixed-size transcript. `ZkProof`
-/// contains no unordered maps, so `serde_json::to_vec` on it is
-/// deterministic given the struct's fixed field order (unlike a HashMap,
-/// whose iteration order is not stable) — see module docs for why this
-/// is safe here specifically, unlike the general canonicalization
-/// concern elsewhere in this project.
-pub fn digest_zk_proof(proof: &ZkProof) -> [u8; 32] {
-    use crate::crypto::kdf::shake256_bytes;
-    let bytes = serde_json::to_vec(proof).expect("ZkProof always serializes");
-    let d = shake256_bytes(b"IOD-ZKPROOF-DIGEST-v1", &bytes, 32);
-    let mut out = [0u8; 32];
-    out.copy_from_slice(&d);
-    out
 }
 
 // ---------------------------------------------------------------- M6 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PufVerifyReq {
-    pub msg_type: String,
+pub struct PufVerifyReqBody {
+    pub session_id: String,
     pub pid1: Vec<u8>,
+    pub d2_cred_id: [u8; 16],
     pub g: String,
-    pub v_g: u64,
-    pub c_puf: Vec<u8>,
+    pub n1: Vec<u8>,
+    pub ts1: u64,
     pub n2: Vec<u8>,
-    pub t_base: Vec<u8>,
+    pub ts4: u64,
+    pub c_puf: Vec<u8>,
+    pub comm_pk: Limbs,
     pub mac1: Vec<u8>,
+    pub ts6: u64,
+    pub n6: Vec<u8>,
 }
-pub type PufVerifyReqWire = SecureEnvelope; // sent over the D2<->GCS secure channel
+
+impl PufVerifyReqBody {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut c = Canon::new("M6");
+        c.str(&self.session_id)
+            .bytes(&self.pid1)
+            .bytes(&self.d2_cred_id)
+            .str(&self.g)
+            .bytes(&self.n1)
+            .u64(self.ts1)
+            .bytes(&self.n2)
+            .u64(self.ts4)
+            .bytes(&self.c_puf)
+            .limbs(&self.comm_pk)
+            .bytes(&self.mac1)
+            .u64(self.ts6)
+            .bytes(&self.n6);
+        c.into_vec()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PufVerifyReqPlain {
+    pub body: PufVerifyReqBody,
+    pub sig6: Vec<u8>,
+}
+pub type PufVerifyReqWire = SecureEnvelope;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum PufVerifyResult {
@@ -199,36 +272,37 @@ pub enum PufVerifyResult {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct PufVerifyRespPayload {
-    pub msg_type: String,
+pub struct PufVerifyRespBody {
+    pub session_id: String,
     pub pid1: Vec<u8>,
     pub result: PufVerifyResult,
-    pub ts7: u64,
-    /// GCS's live view of the group's root/version at verification time,
-    /// so D2 can detect a concurrent membership mutation (a revocation
-    /// racing this very session) WITHOUT needing the whole tree — see
-    /// `protocol::auth_flow` docs for the "root_version_ok" check this
-    /// feeds.
-    pub current_r_g: Fp,
+    pub reason_code: String,
+    pub current_r_g: Digest,
     pub current_v_g: u64,
+    pub session_ctx: Limbs,
+    pub ts7: u64,
+    pub n7: Vec<u8>,
 }
 
-impl PufVerifyRespPayload {
+impl PufVerifyRespBody {
     pub fn signing_bytes(&self) -> Vec<u8> {
-        length_prefixed_concat(&[
-            self.msg_type.as_bytes(),
-            &self.pid1,
-            if self.result == PufVerifyResult::Valid { b"VALID" } else { b"INVALID" },
-            &self.ts7.to_le_bytes(),
-            &self.current_r_g.to_bytes_le(),
-            &self.current_v_g.to_le_bytes(),
-        ])
+        let mut c = Canon::new("M6R");
+        c.str(&self.session_id)
+            .bytes(&self.pid1)
+            .u64(if self.result == PufVerifyResult::Valid { 1 } else { 0 })
+            .str(&self.reason_code)
+            .limbs(&self.current_r_g.0)
+            .u64(self.current_v_g)
+            .limbs(&self.session_ctx)
+            .u64(self.ts7)
+            .bytes(&self.n7);
+        c.into_vec()
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PufVerifyResp {
-    pub payload: PufVerifyRespPayload,
+    pub body: PufVerifyRespBody,
     pub sig7: Vec<u8>,
 }
 
@@ -240,168 +314,243 @@ pub enum ZeroTrustDecision {
     Deny,
 }
 
+/// Outcome of D2's verification (M7). Authentication results are
+/// separate from the authorization decision.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct VerificationReport {
     pub freshness_ok: bool,
+    pub credential_ok: bool,
+    pub commitment_ok: bool,
     pub zk_membership_ok: bool,
     pub signature_ok: bool,
     pub puf_ok: bool,
     pub root_version_ok: bool,
-    /// SECURITY FIX (spec item 25-B: "explicit M3/M5 consistency checks
-    /// + comm_PK_D1 recomputation check"). Previously M7 verified the
-    /// ZK proof and the Dilithium signature using whatever
-    /// `comm_pk_d1`/`pk_kem_d1`/`pk_dil_d1` the M5 `ProofBundle` itself
-    /// claimed, with no check that: (a) `comm_pk_d1` is actually the
-    /// commitment of the `pk_kem_d1`/`pk_dil_d1` the SAME bundle
-    /// presents (the "comm_PK_D1 recomputation check"), or (b) those
-    /// keys match the `pk_kem_d1`/`pk_dil_d1` GCS already vouched for in
-    /// M3's `cred_d1` (the "M3/M5 consistency check"). Without these, a
-    /// bundle could present self-consistent-looking-but-unregistered
-    /// keys alongside a comm_pk_d1 that happens to satisfy the ZK
-    /// statement for an unrelated reason, or present keys that silently
-    /// drift from what M3 told D2 to expect. See
-    /// `auth_flow::m7_verify_and_decide` for exactly what is recomputed
-    /// and compared.
-    pub credential_consistency_ok: bool,
+    pub session_binding_ok: bool,
+    /// All cryptographic/authentication checks passed.
+    pub authenticated: bool,
+    /// Zero Trust authorization decision (policy), separate from the above.
     pub zero_trust: ZeroTrustDecision,
     pub reason_code: String,
+    pub session_ctx: Limbs,
+}
+
+impl VerificationReport {
+    pub fn denied(reason: &str) -> Self {
+        VerificationReport {
+            freshness_ok: false,
+            credential_ok: false,
+            commitment_ok: false,
+            zk_membership_ok: false,
+            signature_ok: false,
+            puf_ok: false,
+            root_version_ok: false,
+            session_binding_ok: false,
+            authenticated: false,
+            zero_trust: ZeroTrustDecision::Deny,
+            reason_code: reason.to_string(),
+            session_ctx: [0; 11],
+        }
+    }
 }
 
 // ---------------------------------------------------------------- M8 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AuthResultPayload {
-    pub msg_type: String,
+    pub session_id: String,
+    pub session_ctx: Limbs,
     pub result: ZeroTrustDecision,
     pub reason_code: String,
-    pub ts9: u64,
-    pub n9: Vec<u8>,
+    pub d2_cred_id: [u8; 16],
+    pub ts8: u64,
+    pub n8: Vec<u8>,
 }
 
 impl AuthResultPayload {
     pub fn signing_bytes(&self) -> Vec<u8> {
-        length_prefixed_concat(&[
-            self.msg_type.as_bytes(),
-            if self.result == ZeroTrustDecision::Allow { b"ALLOW" } else { b"DENY" },
-            self.reason_code.as_bytes(),
-            &self.ts9.to_le_bytes(),
-            &self.n9,
-        ])
+        let mut c = Canon::new("M8");
+        c.str(&self.session_id)
+            .limbs(&self.session_ctx)
+            .u64(if self.result == ZeroTrustDecision::Allow { 1 } else { 0 })
+            .str(&self.reason_code)
+            .bytes(&self.d2_cred_id)
+            .u64(self.ts8)
+            .bytes(&self.n8);
+        c.into_vec()
+    }
+}
+
+/// M8 carries NO key: D1 verifies `sig8` with the ML-DSA key of the
+/// D2 credential it already verified against the trust anchor in M4.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct AuthResultMsg {
+    pub payload: AuthResultPayload,
+    pub sig8: Vec<u8>,
+}
+
+/// D1's signed confirmation that it received and verified M8 (sent to
+/// the GCS inside K1; the GCS requires it).
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SessionConfirmBody {
+    pub session_id: String,
+    pub session_ctx: Limbs,
+    pub result_seen: ZeroTrustDecision,
+    pub d1_cred_id: [u8; 16],
+    pub ts: u64,
+    pub n: Vec<u8>,
+}
+
+impl SessionConfirmBody {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut c = Canon::new("SESSION-CONFIRM");
+        c.str(&self.session_id)
+            .limbs(&self.session_ctx)
+            .u64(if self.result_seen == ZeroTrustDecision::Allow { 1 } else { 0 })
+            .bytes(&self.d1_cred_id)
+            .u64(self.ts)
+            .bytes(&self.n);
+        c.into_vec()
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AuthResultMsg {
-    pub payload9: AuthResultPayload,
-    pub sig9: Vec<u8>,
-    /// SECURITY FIX (spec item 25-G: "self-contained M8 verification").
-    /// Previously this field was a bare `pk_dil_d2: Vec<u8>` left empty
-    /// by `m8_auth_result` with a comment saying the caller must fill it
-    /// in -- in practice the simulation orchestrator (`simulation.rs`)
-    /// verified M8 by reaching directly into D2's in-memory
-    /// `DroneState.keys`, something D1 could never actually do over a
-    /// real network. That made M8 verification depend on data outside
-    /// the message itself, i.e. not self-contained. Reusing the same
-    /// GCS-issued `SignedPeerCert` D2 already received at M3 (see
-    /// `CredRespPlain::d2_cert`) makes `AuthResultMsg` carry everything
-    /// D1 needs to verify it unaided: D1 checks GCS's signature on
-    /// `d2_cert`, then uses the certified key to check `sig9`.
-    pub d2_cert: SignedPeerCert,
+pub struct SignedSessionConfirm {
+    pub body: SessionConfirmBody,
+    pub sig: Vec<u8>,
 }
 
 // ---------------------------------------------------------------- K1 ---
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GroupKeyReq {
-    pub msg_type: String,
-    pub g: String,
-    /// CORRECTION (documented, preserves the spec's intended data flow
-    /// while fixing a genuine privacy contradiction in the source
-    /// specification): the specification's own K1 payload literally puts
-    /// `"D1_ID": DroneID_D1` into a message *sent by D2*, directly
-    /// contradicting the project's own non-negotiable requirement that
-    /// "D2 must not learn D1's permanent DroneID." We replace the raw
-    /// DroneID with D1's session PID (which D2 already legitimately
-    /// holds from the M1-M8 session just completed), and GCS resolves it
-    /// internally via the same pre-registered pseudonym pool used at M2
-    /// (see `protocol::entities` module docs). This preserves the
-    /// message's purpose (GCS learns which two drones are establishing a
-    /// group key) without leaking D1's permanent identity to D2.
-    pub d1_pid1: Vec<u8>,
-    pub d2_id: String,
+pub struct GroupKeyReqBody {
+    pub session_id: String,
     pub mission_id: String,
+    pub d2_cred_id: [u8; 16],
+    pub session_ctx: Limbs,
+    /// D2's own decision for this session (must be ALLOW).
+    pub d2_result: ZeroTrustDecision,
+    pub d1_confirm: SignedSessionConfirm,
     pub ts6: u64,
     pub n6: Vec<u8>,
-    pub auth_evidence_hash: Vec<u8>,
+}
+
+impl GroupKeyReqBody {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut c = Canon::new("K1");
+        c.str(&self.session_id)
+            .str(&self.mission_id)
+            .bytes(&self.d2_cred_id)
+            .limbs(&self.session_ctx)
+            .u64(if self.d2_result == ZeroTrustDecision::Allow { 1 } else { 0 })
+            .bytes(&self.d1_confirm.body.signing_bytes())
+            .bytes(&self.d1_confirm.sig)
+            .u64(self.ts6)
+            .bytes(&self.n6);
+        c.into_vec()
+    }
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GroupKeyReq {
+    pub body: GroupKeyReqBody,
+    pub sig6: Vec<u8>,
 }
 pub type GroupKeyReqWire = SecureEnvelope;
 
-// ---------------------------------------------------------------- K1r --
+/// What the GCS seals for each recipient.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct GroupKeyInner {
+    pub k_g_m: Vec<u8>,
+    pub group_id: String,
+    pub mission_id: String,
+    pub session_id: String,
+    pub session_ctx: Limbs,
+    pub recipient_cred_id: [u8; 16],
+    pub key_epoch: u64,
+    pub ts: u64,
+    pub n6: Vec<u8>,
+    pub n7: Vec<u8>,
+}
+
+impl GroupKeyInner {
+    pub fn signing_bytes(&self) -> Vec<u8> {
+        let mut c = Canon::new("K-INNER");
+        c.bytes(&self.k_g_m)
+            .str(&self.group_id)
+            .str(&self.mission_id)
+            .str(&self.session_id)
+            .limbs(&self.session_ctx)
+            .bytes(&self.recipient_cred_id)
+            .u64(self.key_epoch)
+            .u64(self.ts)
+            .bytes(&self.n6)
+            .bytes(&self.n7);
+        c.into_vec()
+    }
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct GroupKeyEnvelopeInner {
-    pub k_g_m: Vec<u8>,
-    pub g: String,
-    pub mission_id: String,
-    pub ts7: u64,
+pub struct SignedGroupKeyInner {
+    pub inner: GroupKeyInner,
+    pub gcs_sig: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GroupKeyResp {
-    pub msg_type: String,
-    pub ct_kem_g_d1: SecureEnvelope,
-    pub ct_kem_g_d2: SecureEnvelope,
+    pub session_id: String,
+    pub ct_d1: SecureEnvelope,
+    pub ct_d2: SecureEnvelope,
     pub ts7: u64,
     pub n7: Vec<u8>,
 }
-pub type GroupKeyRespWire = SecureEnvelope; // GCS -> D2, re-wrapped for transport to D2
-
-// ---------------------------------------------------------------- K2 ---
+pub type GroupKeyRespWire = SecureEnvelope;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyDeliveryPayload {
-    pub msg_type: String,
-    pub ct_kem_g_d1: SecureEnvelope,
+    pub session_id: String,
+    pub ct_d1: SecureEnvelope,
     pub ts8: u64,
     pub n8: Vec<u8>,
 }
 
 impl KeyDeliveryPayload {
     pub fn signing_bytes(&self) -> Vec<u8> {
-        length_prefixed_concat(&[
-            self.msg_type.as_bytes(),
-            &self.ct_kem_g_d1.kem_ciphertext,
-            &self.ts8.to_le_bytes(),
-            &self.n8,
-        ])
+        let mut c = Canon::new("K2");
+        c.str(&self.session_id)
+            .bytes(&self.ct_d1.kem_ciphertext)
+            .bytes(&self.ct_d1.sealed.ciphertext)
+            .u64(self.ts8)
+            .bytes(&self.n8);
+        c.into_vec()
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct KeyDeliveryMsg {
-    pub payload8: KeyDeliveryPayload,
+    pub payload: KeyDeliveryPayload,
     pub sig8: Vec<u8>,
-    pub pk_dil_d2: Vec<u8>,
 }
 
 // -------------------------------------------------- secure messaging ---
 
+/// Application message header uses only a session-derived channel tag
+/// and a direction bit — never a permanent DroneID or a PID.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SecureAppMessage {
+    pub channel_tag: [u8; 16],
+    pub direction: u8,
     pub header_seq: u32,
     pub header_ts: u64,
-    pub src_pid: Vec<u8>,
-    pub dst_pid: Vec<u8>,
     pub sealed: crate::crypto::aead::SealedMessage,
 }
 
 impl SecureAppMessage {
     pub fn associated_data(&self) -> Vec<u8> {
-        length_prefixed_concat(&[
-            &self.header_seq.to_le_bytes(),
-            &self.header_ts.to_le_bytes(),
-            &self.src_pid,
-            &self.dst_pid,
-        ])
+        let mut c = Canon::new("APPMSG");
+        c.bytes(&self.channel_tag)
+            .u64(self.direction as u64)
+            .u32(self.header_seq)
+            .u64(self.header_ts);
+        c.into_vec()
     }
 }

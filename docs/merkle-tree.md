@@ -32,8 +32,8 @@ proof/key splicing by construction.
 
 A complete binary tree of fixed `depth`, stored as a flat 1-indexed
 array (`nodes[1]` = root; children of `nodes[i]` are `nodes[2i]` and
-`nodes[2i+1]`). Empty/unassigned/revoked leaf slots hold `Fp::ZERO` as a
-sentinel — a legitimately computed leaf collides with `Fp::ZERO` only
+`nodes[2i+1]`). Empty/unassigned/revoked leaf slots hold `Digest::ZERO` as a
+sentinel — a legitimately computed leaf collides with `Digest::ZERO` only
 with cryptographically negligible probability (Poseidon's output is
 effectively uniform over the field), so this is a safe, standard
 "sparse-tree-via-zero-sentinel" simplification.

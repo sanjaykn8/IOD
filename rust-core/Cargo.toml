@@ -20,22 +20,14 @@ path = "src/bin/vectors.rs"
 name = "iod-bench"
 path = "src/bin/bench.rs"
 
-[[bin]]
-name = "iod-register-stego-demo"
-path = "src/bin/register_stego_demo.rs"
-
 [dependencies]
 # NOTE: pqcrypto-kyber / pqcrypto-dilithium implement the NIST Round-3
-# submissions (Kyber768, Dilithium2) via audited PQClean C sources. These
-# are the direct algorithmic predecessors of the standardized ML-KEM-768
-# (FIPS 203) and ML-DSA-44 (FIPS 204). We use them (a) because the sandbox
-# toolchain (rustc 1.75, released Dec 2023) cannot build the newer
-# pqcrypto-mlkem/pqcrypto-mldsa crates' build scripts, which require a
-# newer cargo, and (b) because their naming matches the specification's
-# own "Kyber768"/"Dilithium2" terminology exactly. See
-# docs/cryptography.md for the precise standards mapping and the small
-# encoding differences vs. the final FIPS text, and for instructions on
-# swapping to pqcrypto-mlkem/pqcrypto-mldsa on a newer toolchain.
+# submissions (Kyber768, Dilithium2) via PQClean C sources. They are the
+# direct predecessors of the standardized ML-KEM-768 (FIPS 203) and
+# ML-DSA-44 (FIPS 204) but are NOT byte-compatible with the final
+# standards. They are kept because the existing protocol and vectors use
+# them; migrating to pqcrypto-mlkem/pqcrypto-mldsa is listed as a TODO in
+# docs/IMPLEMENTATION_STATUS.md and docs/dependency-rationale.md.
 pqcrypto-kyber = "0.8.1"
 pqcrypto-dilithium = "0.5.0"
 pqcrypto-traits = "0.3"
@@ -54,17 +46,25 @@ hex = "0.4"
 thiserror = "1"
 anyhow = "1"
 
-# Used only by `protocol::registration_stego`'s `HttpStegoClient`, to
-# call the Python steganography service's HTTP endpoints
-# (`/stego/select-and-embed`, `/stego/extract`) for the real R1/R3
-# registration transport. No TLS feature enabled: this client only ever
-# talks to the python-service over plain HTTP on localhost/the Docker
-# network, matching how `node-server` already reaches it.
-ureq = { version = "2", default-features = false, features = ["json"] }
-base64 = "0.22"
 
-# Pins required because this environment's rustc (1.75.0) predates the
-# MSRV of the newest releases of these transitive dependencies.
-zeroize = "=1.7.0"
-getrandom = "=0.2.15"
-jobserver = "=0.1.32"
+# --- Transparent, hash-based STARK stack for the witness-hiding membership
+# proof (see docs/zk-design.md). Plonky3 0.9.0-rc.1 with the hiding-FRI PCS
+# (Habock, ePrint 2024/1037). No elliptic-curve crate is in this tree; the
+# only primes involved are the BabyBear field and its degree-5 extension.
+p3-air = "=0.9.0-rc.1"
+p3-baby-bear = "=0.9.0-rc.1"
+p3-challenger = "=0.9.0-rc.1"
+p3-commit = "=0.9.0-rc.1"
+p3-dft = "=0.9.0-rc.1"
+p3-field = "=0.9.0-rc.1"
+p3-fri = "=0.9.0-rc.1"
+p3-keccak = "=0.9.0-rc.1"
+p3-matrix = "=0.9.0-rc.1"
+p3-merkle-tree = "=0.9.0-rc.1"
+p3-poseidon2 = "=0.9.0-rc.1"
+p3-poseidon2-air = "=0.9.0-rc.1"
+p3-symmetric = "=0.9.0-rc.1"
+p3-uni-stark = "=0.9.0-rc.1"
+# Plonky3 uses rand 0.10; kept under a different name from our rand 0.8.
+rand10 = { package = "rand", version = "0.10" }
+postcard = { version = "1", features = ["use-std"] }

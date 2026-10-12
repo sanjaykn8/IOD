@@ -1,229 +1,212 @@
-//! Top-level orchestrator: runs the complete M1-M8 authentication flow
-//! (and, on success, offers K1-K4 group-key establishment) against a
-//! `GcsState` + two `DroneState`s, producing a `VerificationReport` and
-//! an `EventLog` the UI/API layer can render directly. Also hosts the
-//! simulation-level operations (revoke, move) that mutate GCS state and
-//! must refresh other drones' cached witnesses afterward.
+//! Orchestrator for the v2 protocol: runs M1-M8 (and K1-K3) against a
+//! `GcsState` and two `DroneState`s, producing a `VerificationReport`
+//! and an `EventLog`. Also hosts the membership-management operations
+//! (revoke, re-enroll, move) that mutate GCS state.
+//!
+//! The orchestrator moves *messages* between the entities exactly as a
+//! network would; it never hands one entity another's private state.
+//! Session state needed by K1 (`D1Session`, `D2Session`, the D1
+//! confirmation) is returned to the caller, so K1 can only be started
+//! from a completed M1-M8 run.
 
 use crate::protocol::auth_flow::*;
-use crate::protocol::entities::{DroneState, GcsState};
+use crate::protocol::entities::{DroneState, GcsState, SessionState};
 use crate::protocol::events::{EventLog, EventStatus};
-use crate::protocol::messages::{VerificationReport, ZeroTrustDecision};
+use crate::protocol::group_key::*;
+use crate::protocol::messages::*;
 use crate::protocol::registration;
+use crate::zero_trust::DefaultPolicy;
 
+/// Everything produced by one M1-M8 run.
 pub struct AuthRunResult {
     pub report: VerificationReport,
     pub session_id: String,
-    pub n1: Vec<u8>,
-    pub n2: Vec<u8>,
-    pub pid1: Vec<u8>,
-    pub proof_bundle: crate::protocol::messages::ProofBundle,
+    pub d1_session: D1Session,
+    pub d2_session: D2Session,
+    pub proof_bundle: ProofBundle,
+    pub m8: AuthResultMsg,
+    /// Decision D1 read out of the verified M8 (None if M8 failed to verify).
+    pub d1_decision: Option<ZeroTrustDecision>,
+    /// D1's signed confirmation (present only if M8 verified).
+    pub confirm: Option<SignedSessionConfirm>,
 }
 
-/// Runs M1 through M8 end to end. `d1` and `d2` must already be
-/// registered into the SAME group (cross-group authentication is
-/// rejected structurally: D2 will not find a matching, active
-/// cross-group record). Neither drone's cache is refreshed by this
-/// function — call `registration::refresh_drone_cache` first if you want
-/// a "happy path" run, or skip it deliberately to exercise the
-/// stale-witness scenario.
+fn status(ok: bool) -> EventStatus {
+    if ok {
+        EventStatus::Ok
+    } else {
+        EventStatus::Fail
+    }
+}
+
+/// Runs M1 through M8. `Err` means the run was rejected before a verdict
+/// could be produced (GCS refused M2, D1 could not build M5, ...); a
+/// completed run with a DENY verdict is `Ok` with `report.zero_trust ==
+/// Deny`.
 pub fn run_authentication(
     gcs: &mut GcsState,
     d1: &mut DroneState,
     d2: &DroneState,
     log: &mut EventLog,
-) -> anyhow::Result<AuthRunResult> {
-    let session_id = uuid_like();
-    let group_id = d1.group_id.clone().expect("D1 must be registered");
+) -> Result<AuthRunResult, AuthError> {
+    run_authentication_with(gcs, d1, d2, log, &DefaultPolicy::default())
+}
 
+pub fn run_authentication_with(
+    gcs: &mut GcsState,
+    d1: &mut DroneState,
+    d2: &DroneState,
+    log: &mut EventLog,
+    policy: &dyn crate::zero_trust::PolicyEngine,
+) -> Result<AuthRunResult, AuthError> {
     // M1
-    let comm_req = m1_comm_req(d1);
-    log.push(&session_id, "M1", &d1.drone_id, "D2", EventStatus::Info, format!("CommReq for group '{group_id}'"));
-
+    let comm_req = m1_comm_req(d1)?;
+    // The session id is only known after M3; use a placeholder label for
+    // the first events and re-key the log afterwards via the real id.
     // M2
-    let m2 = m2_cred_req(d2, &comm_req, &gcs.kem_pk)?;
-    log.push(&session_id, "M2", &d2.drone_id, "GCS", EventStatus::Info, "CredReq (KEM+AEAD sealed)");
-
-    let (_plain2, d1_id) = gcs_receive_m2(gcs, &m2.wire)?;
-    log.push(&session_id, "M2", "GCS", &d2.drone_id, EventStatus::Ok, format!("PID resolved internally (D2 did not learn D1's DroneID)"));
-
+    let m2 = m2_cred_req(d2, &comm_req)?;
+    let acc = gcs_receive_m2(gcs, &m2.wire)?;
     // M3
-    let (m3_wire, _m3_plain) = gcs_m3_cred_resp(gcs, &d1_id, &d2.drone_id)?;
-    log.push(&session_id, "M3", "GCS", &d2.drone_id, EventStatus::Info, "CredResp (KEM+AEAD sealed)");
-    let cred_resp = d2_receive_m3(d2, &m3_wire)?;
-    log.push(&session_id, "M3", &d2.drone_id, &d2.drone_id, EventStatus::Ok, "D2 decrypted D1's public credentials + current R_G/V_G");
+    let (m3_wire, m3) = gcs_m3_cred_resp(gcs, &acc)?;
+    let sid = m3.body.session_id.clone();
+    log.push(&sid, "M1", "D1", "D2", EventStatus::Info, "CommReq(G, PID1, ts1, n1)");
+    log.push(&sid, "M2", "D2", "GCS", EventStatus::Info, "CredReq sealed to GCS KEM key, signed sig2");
+    log.push(&sid, "M2", "GCS", "GCS", EventStatus::Ok, "PID1 resolved internally; D2 never learns D1's DroneID");
+    log.push(&sid, "M3", "GCS", "D2", EventStatus::Info, "GCS-signed CredResp sealed to D2 (PID consumed, CRP reserved)");
+    let mut d2s = d2_receive_m3(d2, &m3_wire, &comm_req, &m2)?;
+    log.push(&sid, "M3", "D2", "D2", EventStatus::Ok, "GCS signature, binding and D1 credential verified");
 
     // M4
-    let challenge = m4_challenge(d2, &group_id, &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2)?;
-    log.push(&session_id, "M4", &d2.drone_id, &d1.drone_id, EventStatus::Info, "Challenge (signed by D2, key certified by GCS)");
-    let sig4_ok = d1_verify_challenge(&challenge, &gcs.sign_pk);
-    log.push(
-        &session_id,
-        "M4",
-        &d1.drone_id,
-        &d1.drone_id,
-        if sig4_ok { EventStatus::Ok } else { EventStatus::Fail },
-        "D1 verified Challenge signature",
-    );
-    if !sig4_ok {
-        let report = VerificationReport {
-            freshness_ok: false,
-            zk_membership_ok: false,
-            signature_ok: false,
-            puf_ok: false,
-            root_version_ok: false,
-            credential_consistency_ok: false,
-            zero_trust: ZeroTrustDecision::Deny,
-            reason_code: "D2_CHALLENGE_SIGNATURE_INVALID".to_string(),
-        };
-        log.push(&session_id, "M7", "D2", &d1.drone_id, EventStatus::Fail, "Aborted: challenge signature invalid");
-        return Ok(AuthRunResult {
-            report,
-            session_id,
-            n1: comm_req.n1,
-            n2: m2.plain.n2,
-            pid1: comm_req.pid1,
-            proof_bundle: dummy_proof_bundle(),
-        });
-    }
+    let challenge = m4_challenge(d2, &mut d2s)?;
+    log.push(&sid, "M4", "D2", "D1", EventStatus::Info, "Challenge + GCS-signed M3 + D2 credential + sig4");
+    let d1s = match d1_verify_challenge(d1, &challenge, &comm_req) {
+        Ok(s) => {
+            log.push(&sid, "M4", "D1", "D1", EventStatus::Ok, "GCS sig, D2 credential and sig4 (certified key) verified");
+            s
+        }
+        Err(e) => {
+            log.push(&sid, "M4", "D1", "D1", EventStatus::Fail, format!("rejected: {}", e.code));
+            return Err(e);
+        }
+    };
 
     // M5
-    let ctx = d1_local_auth_context(d1);
-    let proof_bundle = m5_proof_bundle(d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx)?;
-    log.push(&session_id, "M5", &d1.drone_id, &d2.drone_id, EventStatus::Info, "ProofBundle (ZK proof + PUF MAC + Dilithium signature)");
+    let proof = match m5_proof_bundle(d1, &d1s) {
+        Ok(p) => p,
+        Err(e) => {
+            log.push(&sid, "M5", "D1", "D2", EventStatus::Fail, format!("D1 cannot prove membership: {}", e.code));
+            return Err(e);
+        }
+    };
+    log.push(&sid, "M5", "D1", "D2", EventStatus::Info, "ProofBundle (zero-knowledge membership proof + PUF MAC + ML-DSA sig); no key fields, no witness");
 
     // M6
-    let t_base_for_gcs = crate::protocol::transcript::build_t_base(
-        ctx.g_field,
-        ctx.v_g,
-        ctx.r_g,
-        proof_bundle.comm_pk_d1,
-        &comm_req.n1,
-        &m2.plain.n2,
-        comm_req.ts1,
-        challenge.challenge_payload.ts4,
-        &comm_req.pid1,
-    );
-    let m6_wire = m6_puf_verify_req(
-        &proof_bundle,
-        &group_id,
-        ctx.v_g,
-        &challenge.challenge_payload.c_puf,
-        &m2.plain.n2,
-        &t_base_for_gcs,
-        &gcs.kem_pk,
-    )?;
-    log.push(&session_id, "M6", &d2.drone_id, "GCS", EventStatus::Info, "PUFVerifyReq (secure channel)");
-    let puf_resp = gcs_m6_verify(gcs, &m6_wire).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let m6 = m6_puf_verify_req(d2, &d2s, &proof)?;
+    log.push(&sid, "M6", "D2", "GCS", EventStatus::Info, "PUFVerifyReq signed sig6, sealed to GCS");
+    let puf = gcs_m6_verify(gcs, &m6).map_err(|e| AuthError { code: "M6_REJECTED", detail: e.to_string() })?;
     log.push(
-        &session_id,
+        &sid,
         "M6",
         "GCS",
-        &d2.drone_id,
-        if puf_resp.payload.result == crate::protocol::messages::PufVerifyResult::Valid {
-            EventStatus::Ok
-        } else {
-            EventStatus::Fail
-        },
-        format!("PUFVerifyResp: {:?}", puf_resp.payload.result),
+        "D2",
+        status(puf.body.result == PufVerifyResult::Valid),
+        format!("GCS-signed PUFVerifyResp: {:?} ({})", puf.body.result, puf.body.reason_code),
     );
 
     // M7
-    let m7 = m7_verify_and_decide(
-        &cred_resp.cred_d1,
-        &proof_bundle,
-        &comm_req.n1,
-        &m2.plain.n2,
-        comm_req.ts1,
-        challenge.challenge_payload.ts4,
-        &puf_resp,
-        &gcs.sign_pk,
-        &group_id,
-    );
+    let m7 = m7_verify_and_decide(d2, &d2s, &proof, &puf, policy);
+    let r = &m7.report;
     log.push(
-        &session_id,
+        &sid,
         "M7",
-        &d2.drone_id,
-        &d2.drone_id,
-        if m7.report.zero_trust == ZeroTrustDecision::Allow { EventStatus::Ok } else { EventStatus::Fail },
+        "D2",
+        "D2",
+        status(r.zero_trust == ZeroTrustDecision::Allow),
         format!(
-            "freshness={} zk={} sig={} puf={} root_version={} => {:?} ({})",
-            m7.report.freshness_ok,
-            m7.report.zk_membership_ok,
-            m7.report.signature_ok,
-            m7.report.puf_ok,
-            m7.report.root_version_ok,
-            m7.report.zero_trust,
-            m7.report.reason_code
+            "fresh={} cred={} commit={} zk={} sig={} puf={} root/ver={} bind={} => authenticated={} {:?} ({})",
+            r.freshness_ok, r.credential_ok, r.commitment_ok, r.zk_membership_ok, r.signature_ok,
+            r.puf_ok, r.root_version_ok, r.session_binding_ok, r.authenticated, r.zero_trust, r.reason_code
         ),
     );
 
     // M8
-    let auth_result_msg = m8_auth_result(&d2.keys.as_ref().unwrap().dil_sk, &m7.report, &cred_resp.d2_cert)?;
-    log.push(&session_id, "M8", &d2.drone_id, &d1.drone_id, EventStatus::Info, "AuthResult (signed, GCS-certified key)");
-
-    // SECURITY FIX (spec 25-G): D1 verifies M8 using only
-    // `auth_result_msg` + `gcs.sign_pk` -- no reach-into-D2's-state
-    // shortcut. See `d1_verify_m8` docs.
-    let m8_sig_ok = d1_verify_m8(&gcs.sign_pk, &auth_result_msg);
-    log.push(
-        &session_id,
-        "M8",
-        &d1.drone_id,
-        &d1.drone_id,
-        if m8_sig_ok { EventStatus::Ok } else { EventStatus::Fail },
-        "D1 verified AuthResult signature",
-    );
+    let m8 = m8_auth_result(d2, &d2s, &m7.report)?;
+    log.push(&sid, "M8", "D2", "D1", EventStatus::Info, "AuthResult signed sig8 (session-bound)");
+    let mut d1s = d1s;
+    let (d1_decision, confirm) = match d1_verify_m8(&mut d1s, &m8) {
+        Ok(dec) => {
+            log.push(&sid, "M8", "D1", "D1", EventStatus::Ok, format!("verified under certified D2 key: {dec:?}"));
+            let c = d1_session_confirm(d1, &d1s, dec)?;
+            (Some(dec), Some(c))
+        }
+        Err(e) => {
+            log.push(&sid, "M8", "D1", "D1", EventStatus::Fail, format!("rejected: {}", e.code));
+            (None, None)
+        }
+    };
 
     Ok(AuthRunResult {
         report: m7.report,
-        session_id,
-        n1: comm_req.n1,
-        n2: m2.plain.n2,
-        pid1: comm_req.pid1,
-        proof_bundle,
+        session_id: sid,
+        d1_session: d1s,
+        d2_session: d2s,
+        proof_bundle: proof,
+        m8,
+        d1_decision,
+        confirm,
     })
 }
 
-fn dummy_proof_bundle() -> crate::protocol::messages::ProofBundle {
-    // Used only on the early-abort path above (D2's challenge signature
-    // was invalid, so D1 never built a real bundle). Contains no
-    // meaningful data.
-    crate::protocol::messages::ProofBundle {
-        msg_type: "ProofBundle".into(),
-        pid1: vec![],
-        comm_pk_d1: crate::crypto::field::Fp::ZERO,
-        proof_zk: crate::zk::backend::ZkProof {
-            witness_commitment: crate::crypto::field::Fp::ZERO,
-            fs_challenge: crate::crypto::field::Fp::ZERO,
-            opening: crate::zk::backend::WitnessOpening {
-                leaf: crate::crypto::field::Fp::ZERO,
-                siblings: vec![],
-                path_indices: vec![],
-                pk_kem: vec![],
-                pk_dil: vec![],
-                metadata: crate::identity::metadata::MembershipMetadata {
-                    role: String::new(),
-                    issued_at_unix: 0,
-                },
-                rho: [0u8; 32],
-                blinding: [0u8; 32],
-            },
-        },
-        mac1: vec![],
-        sig1: vec![],
-        pk_dil_d1: vec![],
-        pk_kem_d1: vec![],
-        ts5: 0,
-        n5: vec![],
-        ct_kem_d1d2: None,
-    }
+/// Outcome of K1-K3.
+pub struct ChannelEstablished {
+    pub d1_keys: ChannelKeys,
+    pub d2_keys: ChannelKeys,
+    pub d1_cred_id: [u8; 16],
+    pub d2_cred_id: [u8; 16],
 }
 
-fn uuid_like() -> String {
-    let mut bytes = [0u8; 16];
-    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut bytes);
-    hex::encode(bytes)
+/// K1-K3. Requires the completed run (K1 is built from D1's signed
+/// confirmation and the D2 verdict); the GCS independently enforces the
+/// session state, so a DENY run, a forged request or a replay fails.
+pub fn run_group_key_establishment(
+    gcs: &mut GcsState,
+    d1: &DroneState,
+    d2: &DroneState,
+    run: &AuthRunResult,
+    mission_id: &str,
+    log: &mut EventLog,
+) -> Result<ChannelEstablished, AuthError> {
+    let sid = &run.session_id;
+    let confirm = run
+        .confirm
+        .clone()
+        .ok_or(AuthError { code: "SESSION_INCOMPLETE", detail: "D1 did not confirm M8".into() })?;
+    let (wire, _plain) = d2_k1_group_key_req(d2, &run.d2_session, &run.report, confirm, mission_id)?;
+    log.push(sid, "K1", "D2", "GCS", EventStatus::Info, "GroupKeyReq (D2 sig + D1 confirm) sealed to GCS");
+    let resp_wire = match gcs_handle_k1(gcs, &wire) {
+        Ok(w) => w,
+        Err(e) => {
+            log.push(sid, "K1", "GCS", "D2", EventStatus::Fail, format!("refused: {}", e.code));
+            return Err(e);
+        }
+    };
+    log.push(sid, "K1", "GCS", "D2", EventStatus::Ok, "group key issued: signed, sealed separately to D1 and D2");
+    let (resp, delivery) = d2_handle_k1_response(d2, &resp_wire)?;
+    log.push(sid, "K2", "D2", "D1", EventStatus::Info, "KeyDelivery (D1's sealed key forwarded, signed sig8)");
+    if !d1_verify_key_delivery(&run.d1_session, &delivery) {
+        return Err(AuthError { code: "KEY_DELIVERY_INVALID", detail: "K2 not bound to D1's session".into() });
+    }
+    let m1 = d1_decapsulate_group_key(d1, &run.d1_session, &delivery)?;
+    let m2 = d2_decapsulate_group_key(d2, &run.d2_session, &resp)?;
+    log.push(sid, "K3", "D1", "D2", EventStatus::Ok, "both drones hold the GCS-issued group key (GCS knows it)");
+    let d1c = d1.credential.as_ref().unwrap().body.cred_id;
+    let d2c = d2.credential.as_ref().unwrap().body.cred_id;
+    Ok(ChannelEstablished {
+        d1_keys: derive_channel_keys(&m1, &d1c, &d2c),
+        d2_keys: derive_channel_keys(&m2, &d1c, &d2c),
+        d1_cred_id: d1c,
+        d2_cred_id: d2c,
+    })
 }
 
 // ---------------------------------------------------- group management --
@@ -238,60 +221,38 @@ pub enum SimError {
     Registration(#[from] registration::RegistrationError),
 }
 
-/// Revoke a drone from its current group. Updates GCS's authoritative
-/// record (`active = false`) and the group Merkle tree (leaf zeroed,
-/// version incremented). Other active members' locally-cached witnesses
-/// become stale until `refresh_drone_cache` is called for them again —
-/// this is intentional (spec: drones must reject/use caution with stale
-/// membership information; the version check in `m7_verify_and_decide`
-/// and the ZK proof's Fiat-Shamir binding are what actually enforce
-/// this, not an assumption that caches are magically always fresh).
+/// Revoke a drone: record inactive, Merkle leaf zeroed (version++), all
+/// its PIDs expired, open sessions failed. Other members' cached witnesses
+/// become stale until refreshed; M5/M6 enforce root/version equality.
 pub fn revoke_drone(gcs: &mut GcsState, drone_id: &str) -> Result<(), SimError> {
-    let record = gcs
-        .drones
-        .get_mut(drone_id)
-        .ok_or_else(|| SimError::UnknownDrone(drone_id.to_string()))?;
+    let record = gcs.drones.get_mut(drone_id).ok_or_else(|| SimError::UnknownDrone(drone_id.to_string()))?;
     record.active = false;
     let group_id = record.group_id.clone();
     let tree = gcs.groups.get_mut(&group_id).ok_or_else(|| SimError::UnknownDrone(drone_id.to_string()))?;
-    tree.revoke(drone_id)?;
+    if tree.is_active(drone_id) {
+        tree.revoke(drone_id)?;
+    }
+    gcs.expire_pids_of(drone_id);
+    gcs.fail_sessions_of(drone_id, "MEMBER_REVOKED");
     Ok(())
 }
 
-/// Reactivate a previously revoked drone within the SAME group it was
-/// last a member of, reusing its Merkle slot (see
-/// `merkle::group_tree::register`'s re-registration behavior) but with a
-/// fresh leaf (fresh `rho`), since the old leaf's continued presence in
-/// any observer's memory should not grant renewed trust.
-pub fn reactivate_drone(
-    gcs: &mut GcsState,
-    drone: &mut DroneState,
-    merkle_depth: usize,
-) -> Result<usize, SimError> {
+/// Re-enroll a previously revoked drone in its group (fresh rho, fresh
+/// credential, fresh CRPs and PIDs). An operator decision.
+pub fn reactivate_drone(gcs: &mut GcsState, drone: &mut DroneState, merkle_depth: usize) -> Result<usize, SimError> {
     let group_id = drone.group_id.clone().ok_or_else(|| SimError::UnknownDrone(drone.drone_id.clone()))?;
     let metadata = drone
         .metadata
         .clone()
         .unwrap_or(crate::identity::metadata::MembershipMetadata { role: "reactivated".into(), issued_at_unix: 0 });
     drone.revoked = false;
-    let idx = registration::register_drone(gcs, drone, &group_id, metadata, merkle_depth)?;
-    if let Some(record) = gcs.drones.get_mut(&drone.drone_id) {
-        record.active = true;
-    }
-    Ok(idx)
+    Ok(registration::register_drone(gcs, drone, &group_id, metadata, merkle_depth)?)
 }
 
-/// Move a drone from its current group to a different one: revoke from
-/// the old group, then register fresh (new leaf, since the leaf formula
-/// includes the group id) into the new one.
-pub fn move_drone(
-    gcs: &mut GcsState,
-    drone: &mut DroneState,
-    new_group_id: &str,
-    merkle_depth: usize,
-) -> Result<usize, SimError> {
-    if let Some(old_group) = drone.group_id.clone() {
-        if gcs.groups.get(&old_group).map(|t| t.is_active(&drone.drone_id)).unwrap_or(false) {
+/// Move a drone to another group: revoke from the old one, enroll afresh.
+pub fn move_drone(gcs: &mut GcsState, drone: &mut DroneState, new_group_id: &str, merkle_depth: usize) -> Result<usize, SimError> {
+    if let Some(old) = drone.group_id.clone() {
+        if gcs.groups.get(&old).map(|t| t.is_active(&drone.drone_id)).unwrap_or(false) {
             revoke_drone(gcs, &drone.drone_id)?;
         }
     }
@@ -300,15 +261,9 @@ pub fn move_drone(
         .metadata
         .clone()
         .unwrap_or(crate::identity::metadata::MembershipMetadata { role: "member".into(), issued_at_unix: 0 });
-    let idx = registration::register_drone(gcs, drone, new_group_id, metadata, merkle_depth)?;
-    if let Some(record) = gcs.drones.get_mut(&drone.drone_id) {
-        record.active = true;
-    }
-    Ok(idx)
+    Ok(registration::register_drone(gcs, drone, new_group_id, metadata, merkle_depth)?)
 }
 
-/// Refresh witness/root/version caches for every currently-active drone
-/// in a group (spec: "regenerate affected witnesses").
 pub fn refresh_all_in_group(gcs: &GcsState, drones: &mut [&mut DroneState], group_id: &str) {
     for d in drones.iter_mut() {
         if d.group_id.as_deref() == Some(group_id) {
@@ -317,391 +272,283 @@ pub fn refresh_all_in_group(gcs: &GcsState, drones: &mut [&mut DroneState], grou
     }
 }
 
+/// Session state helper for tests / API views.
+pub fn session_state(gcs: &GcsState, session_id: &str) -> Option<SessionState> {
+    gcs.sessions.get(session_id).map(|s| s.state)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::identity::metadata::MembershipMetadata;
-    use crate::protocol::messages::{CommReq, ZeroTrustDecision};
+    use crate::protocol::registration::refresh_drone_cache;
+    use crate::protocol::secure_messaging;
 
-    fn setup_two_drones() -> (GcsState, DroneState, DroneState) {
+    const DEPTH: usize = 4;
+
+    fn md() -> MembershipMetadata {
+        MembershipMetadata { role: "recon".into(), issued_at_unix: 1_700_000_000 }
+    }
+
+    fn setup() -> (GcsState, DroneState, DroneState) {
         let mut gcs = GcsState::new();
         let mut d1 = DroneState::new("drone-1", [11u8; 32]);
         let mut d2 = DroneState::new("drone-2", [22u8; 32]);
-        let md = MembershipMetadata { role: "recon".into(), issued_at_unix: 1_700_000_000 };
-        registration::register_drone(&mut gcs, &mut d1, "alpha", md.clone(), 6).unwrap();
-        registration::register_drone(&mut gcs, &mut d2, "alpha", md, 6).unwrap();
-        // Registering d2 changed the group root/version, so d1's cache
-        // (captured at ITS OWN registration, before d2 joined) is now
-        // stale. A well-behaved deployment pushes fresh witnesses to
-        // every active member after any mutation (spec: "regenerate
-        // affected witnesses") — simulate that here so the "happy path"
-        // fixture is actually representative of a healthy system. The
-        // deliberately-NOT-refreshed scenario is its own dedicated test
-        // below (`stale_witness_after_another_member_joins...`).
-        registration::refresh_drone_cache(&gcs, &mut d1);
+        registration::register_drone(&mut gcs, &mut d1, "alpha", md(), DEPTH).unwrap();
+        registration::register_drone(&mut gcs, &mut d2, "alpha", md(), DEPTH).unwrap();
+        refresh_drone_cache(&gcs, &mut d1);
+        refresh_drone_cache(&gcs, &mut d2);
         (gcs, d1, d2)
+    }
+
+    /// Manual stepping up to (and including) M5, for tamper tests.
+    struct Stage {
+        comm_req: CommReq,
+        m2: M2Output,
+        d2s: D2Session,
+        challenge: ChallengeMsg,
+        d1s: D1Session,
+        proof: ProofBundle,
+    }
+
+    fn up_to_m5(gcs: &mut GcsState, d1: &mut DroneState, d2: &DroneState) -> Stage {
+        let comm_req = m1_comm_req(d1).unwrap();
+        let m2 = m2_cred_req(d2, &comm_req).unwrap();
+        let acc = gcs_receive_m2(gcs, &m2.wire).unwrap();
+        let (m3w, _) = gcs_m3_cred_resp(gcs, &acc).unwrap();
+        let mut d2s = d2_receive_m3(d2, &m3w, &comm_req, &m2).unwrap();
+        let challenge = m4_challenge(d2, &mut d2s).unwrap();
+        let d1s = d1_verify_challenge(d1, &challenge, &comm_req).unwrap();
+        let proof = m5_proof_bundle(d1, &d1s).unwrap();
+        Stage { comm_req, m2, d2s, challenge, d1s, proof }
+    }
+
+    fn m6_m7(gcs: &mut GcsState, d2: &DroneState, st: &Stage, proof: &ProofBundle) -> (PufVerifyResp, VerificationReport) {
+        let w = m6_puf_verify_req(d2, &st.d2s, proof).unwrap();
+        let resp = gcs_m6_verify(gcs, &w).unwrap();
+        let rep = m7_verify_and_decide(d2, &st.d2s, proof, &resp, &DefaultPolicy::default()).report;
+        (resp, rep)
     }
 
     #[test]
     fn happy_path_authentication_allows() {
-        let (mut gcs, mut d1, d2) = setup_two_drones();
+        let (mut gcs, mut d1, d2) = setup();
         let mut log = EventLog::new();
-        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
-        assert_eq!(result.report.zero_trust, ZeroTrustDecision::Allow, "{:?}", result.report);
-        assert!(result.report.freshness_ok);
-        assert!(result.report.zk_membership_ok);
-        assert!(result.report.signature_ok);
-        assert!(result.report.puf_ok);
-        assert!(result.report.root_version_ok);
-        assert!(!log.events.is_empty());
-        // D2 must never learn D1's permanent DroneID: confirm no event
-        // detail contains it verbatim (a crude but effective grep-style
-        // check for this specific privacy property).
-        for ev in &log.events {
-            if ev.sender == d1.drone_id || ev.receiver == d1.drone_id {
-                continue; // the log itself (an internal/simulation artifact) may reference it for the GCS/UI's own audit view
-            }
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
+        assert_eq!(r.report.zero_trust, ZeroTrustDecision::Allow, "{:?}", r.report);
+        assert!(r.report.authenticated);
+        assert_eq!(r.d1_decision, Some(ZeroTrustDecision::Allow));
+        assert_eq!(session_state(&gcs, &r.session_id), Some(SessionState::PufVerified));
+        // D2 must not learn D1's permanent DroneID from anything it received.
+        let json = serde_json::to_string(&r.d2_session.m3).unwrap();
+        assert!(!json.contains("drone-1"));
+    }
+
+    #[test]
+    fn revoked_d1_is_rejected_at_m2() {
+        let (mut gcs, mut d1, d2) = setup();
+        revoke_drone(&mut gcs, "drone-1").unwrap();
+        let mut log = EventLog::new();
+        match run_authentication(&mut gcs, &mut d1, &d2, &mut log) {
+            Err(e) => assert!(e.code == "D1_NOT_ACTIVE_MEMBER" || e.code == "PID_NOT_ACTIVE", "{e}"),
+            Ok(_) => panic!("revoked D1 must not authenticate"),
         }
     }
 
     #[test]
-    fn revoked_drone_fails_authentication() {
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        revoke_drone(&mut gcs, &d1.drone_id).unwrap();
-        let mut log = EventLog::new();
-        // GCS refuses to even issue fresh credentials (M3) for a
-        // revoked D1 — this is a clean, early rejection rather than
-        // letting a doomed session limp through to a ZK failure at M7.
-        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log);
-        match result {
-            Err(e) => assert!(format!("{e}").contains("revoked")),
-            Ok(_) => panic!("authentication for a revoked D1 must fail"),
-        }
-    }
-
-    #[test]
-    fn stale_witness_after_another_member_joins_still_authenticates_since_d1_never_refreshed_its_own_slot() {
-        // Registering a NEW member changes the root, which makes D1's
-        // cached witness (captured at ITS OWN registration time) stale
-        // relative to the new root — this must cause zk_membership_ok
-        // to fail unless D1 refreshes its cache first.
-        let (mut gcs, mut d1, d2) = setup_two_drones();
+    fn stale_cache_cannot_prove_until_refreshed() {
+        let (mut gcs, mut d1, d2) = setup();
         let mut d3 = DroneState::new("drone-3", [33u8; 32]);
-        let md = MembershipMetadata { role: "recon".into(), issued_at_unix: 1 };
-        registration::register_drone(&mut gcs, &mut d3, "alpha", md, 6).unwrap();
-
+        registration::register_drone(&mut gcs, &mut d3, "alpha", md(), DEPTH).unwrap();
         let mut log = EventLog::new();
-        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
-        assert_eq!(result.report.zero_trust, ZeroTrustDecision::Deny);
-        assert!(!result.report.zk_membership_ok);
-
-        // After refreshing D1's cache, authentication succeeds again.
-        registration::refresh_drone_cache(&gcs, &mut d1);
-        let mut log2 = EventLog::new();
-        let result2 = run_authentication(&mut gcs, &mut d1, &d2, &mut log2).unwrap();
-        assert_eq!(result2.report.zero_trust, ZeroTrustDecision::Allow);
+        let e = run_authentication(&mut gcs, &mut d1, &d2, &mut log).err().expect("stale");
+        assert_eq!(e.code, "STALE_MEMBERSHIP");
+        refresh_drone_cache(&gcs, &mut d1);
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut EventLog::new()).unwrap();
+        assert_eq!(r.report.zero_trust, ZeroTrustDecision::Allow);
     }
 
     #[test]
-    fn tampered_signature_in_proof_bundle_is_rejected() {
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        // Run the flow manually up through M5 so we can tamper with sig1
-        // before M7 evaluates it.
-        let comm_req = m1_comm_req(&mut d1);
-        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
-        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
-        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
-        assert!(d1_verify_challenge(&challenge, &gcs.sign_pk));
-        let ctx = d1_local_auth_context(&d1);
-        let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
-
-        proof.sig1[0] ^= 0xFF; // tamper
-
-        let t_base = crate::protocol::transcript::build_t_base(
-            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1,
-            &comm_req.n1, &m2.plain.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
-        );
-        let m6_wire = m6_puf_verify_req(&proof, "alpha", ctx.v_g, &challenge.challenge_payload.c_puf, &m2.plain.n2, &t_base, &gcs.kem_pk).unwrap();
-        let puf_resp = gcs_m6_verify(&mut gcs, &m6_wire).unwrap();
-
-        let m7 = m7_verify_and_decide(
-            &cred_resp.cred_d1, &proof, &comm_req.n1, &m2.plain.n2,
-            comm_req.ts1, challenge.challenge_payload.ts4, &puf_resp, &gcs.sign_pk, "alpha",
-        );
-        assert!(!m7.report.signature_ok);
-        assert_eq!(m7.report.zero_trust, ZeroTrustDecision::Deny);
+    fn tampered_signature_is_denied() {
+        let (mut gcs, mut d1, d2) = setup();
+        let mut st = up_to_m5(&mut gcs, &mut d1, &d2);
+        st.proof.sig1[0] ^= 0xFF;
+        let (_, rep) = m6_m7(&mut gcs, &d2, &st, &st.proof);
+        assert!(!rep.signature_ok);
+        assert_eq!(rep.zero_trust, ZeroTrustDecision::Deny);
     }
 
     #[test]
-    fn spec_25b_forged_signing_key_with_untouched_comm_pk_is_caught_by_credential_consistency_not_by_zk_or_sig() {
-        // SECURITY FIX regression (25-B). Before this fix, M7 verified
-        // the ZK proof against `proof.comm_pk_d1` and the signature
-        // against `proof.pk_dil_d1` independently, with no check that
-        // those two fields -- plus `proof.pk_kem_d1` -- were actually
-        // consistent with EACH OTHER or with what M3 told D2 to expect.
-        // This test builds a forged bundle that passes BOTH the
-        // zk_membership and signature checks on their own (because an
-        // attacker who can intercept and re-sign the public transcript
-        // with a freshly-generated keypair always can -- the transcript
-        // contains no secret), while leaving `comm_pk_d1` untouched
-        // (still the real, ZK-proven one) and `pk_dil_d1` swapped to the
-        // attacker's own key. Only `credential_consistency_ok` (the
-        // comm_pk_d1 recomputation + M3/M5 key-match checks) catches
-        // this, and the overall decision must still be `Deny`.
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        let comm_req = m1_comm_req(&mut d1);
-        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
-        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
-        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
-        let ctx = d1_local_auth_context(&d1);
-        let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
-
-        // Attacker generates their own keypair and re-signs the SAME
-        // public transcript (comm_pk_d1, proof digest, nonces,
-        // timestamps, pid1 are all public / unchanged), then swaps in
-        // their own pk_dil_d1 -- but cannot touch comm_pk_d1 without
-        // breaking the untouched, already-valid ZK proof.
-        let (forged_pk, forged_sk) = crate::crypto::sign::keypair();
-        let proof_digest = crate::protocol::messages::digest_zk_proof(&proof.proof_zk);
-        let t = crate::protocol::transcript::build_auth_transcript(
-            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1, &proof_digest,
-            &comm_req.n1, &m2.plain.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
-        );
-        let forged_sig = crate::crypto::sign::sign_transcript(&forged_sk, &t).unwrap();
-        proof.sig1 = forged_sig.0;
-        proof.pk_dil_d1 = forged_pk.0;
-
-        let t_base = crate::protocol::transcript::build_t_base(
-            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1,
-            &comm_req.n1, &m2.plain.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
-        );
-        let m6_wire = m6_puf_verify_req(&proof, "alpha", ctx.v_g, &challenge.challenge_payload.c_puf, &m2.plain.n2, &t_base, &gcs.kem_pk).unwrap();
-        let puf_resp = gcs_m6_verify(&mut gcs, &m6_wire).unwrap();
-
-        let m7 = m7_verify_and_decide(
-            &cred_resp.cred_d1, &proof, &comm_req.n1, &m2.plain.n2,
-            comm_req.ts1, challenge.challenge_payload.ts4, &puf_resp, &gcs.sign_pk, "alpha",
-        );
-        assert!(m7.report.zk_membership_ok, "the untouched ZK proof must still verify on its own");
-        assert!(m7.report.signature_ok, "the forged-but-self-consistent signature must still verify on its own");
-        assert!(!m7.report.credential_consistency_ok, "the new check must catch the key substitution the old checks missed");
-        assert_eq!(m7.report.zero_trust, ZeroTrustDecision::Deny, "overall decision must still deny");
-        assert_eq!(m7.report.reason_code, "CREDENTIAL_CONSISTENCY_FAILED");
+    fn altered_puf_mac_yields_signed_failure_and_burns_session() {
+        let (mut gcs, mut d1, d2) = setup();
+        let mut st = up_to_m5(&mut gcs, &mut d1, &d2);
+        st.proof.mac1[0] ^= 0xFF;
+        let (resp, rep) = m6_m7(&mut gcs, &d2, &st, &st.proof);
+        assert_eq!(resp.body.result, PufVerifyResult::Invalid);
+        assert!(verify_m6_signature(&gcs.sign_pk, &resp), "failure result must be GCS-signed");
+        assert!(!rep.puf_ok);
+        assert_eq!(rep.zero_trust, ZeroTrustDecision::Deny);
+        assert_eq!(session_state(&gcs, &st.d2s.m3.body.session_id), Some(SessionState::Failed));
     }
 
     #[test]
-    fn altered_puf_mac_is_rejected() {
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        let comm_req = m1_comm_req(&mut d1);
-        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
-        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
-        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
-        let ctx = d1_local_auth_context(&d1);
-        let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
-
-        proof.mac1[0] ^= 0xFF; // tamper with the PUF MAC specifically
-
-        let t_base = crate::protocol::transcript::build_t_base(
-            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1,
-            &comm_req.n1, &m2.plain.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
-        );
-        let m6_wire = m6_puf_verify_req(&proof, "alpha", ctx.v_g, &challenge.challenge_payload.c_puf, &m2.plain.n2, &t_base, &gcs.kem_pk).unwrap();
-        let puf_resp = gcs_m6_verify(&mut gcs, &m6_wire).unwrap();
-        assert_eq!(puf_resp.payload.result, crate::protocol::messages::PufVerifyResult::Invalid);
+    fn tampered_zk_proof_is_denied() {
+        let (mut gcs, mut d1, d2) = setup();
+        let mut st = up_to_m5(&mut gcs, &mut d1, &d2);
+        let n = st.proof.proof.bytes.len();
+        st.proof.proof.bytes[n / 2] ^= 1;
+        let (_, rep) = m6_m7(&mut gcs, &d2, &st, &st.proof);
+        assert!(!rep.zk_membership_ok);
+        assert_eq!(rep.zero_trust, ZeroTrustDecision::Deny);
     }
 
     #[test]
-    fn spec_25a_a_self_asserted_d2_key_not_certified_by_gcs_is_rejected_at_m4() {
-        // SECURITY FIX regression (25-A): an attacker who can forge a
-        // Challenge message but does not control GCS's signing key
-        // (e.g. a MITM impersonating D2 toward D1, or just D2's own
-        // untrusted self-assertion) must not be able to get D1 to trust
-        // an uncertified public key. Build a Challenge whose `d2_cert`
-        // carries a DIFFERENT (attacker-controlled) Dilithium key than
-        // the one that actually signed `sig4`, with a cert signature
-        // forged by a random keypair instead of GCS's real `sign_sk`.
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        let comm_req = m1_comm_req(&mut d1);
-        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
-        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
-        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let mut challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
-
-        // Real cert, real sig4 -- this must pass.
-        assert!(d1_verify_challenge(&challenge, &gcs.sign_pk));
-
-        // Now forge: attacker signs their OWN cert with a random (not
-        // GCS's) signing key and swaps it in.
-        let (attacker_pk, attacker_sk) = crate::crypto::sign::keypair();
-        let mut forged_cert = cred_resp.d2_cert.clone();
-        forged_cert.pk_dil = attacker_pk.0;
-        let forged_sig = crate::crypto::sign::sign_transcript(&attacker_sk, &forged_cert.signing_bytes()).unwrap();
-        forged_cert.sig = forged_sig.0;
-        challenge.d2_cert = forged_cert;
-        assert!(!d1_verify_challenge(&challenge, &gcs.sign_pk), "a cert not signed by GCS must be rejected");
+    fn replayed_m2_is_rejected() {
+        let (mut gcs, mut d1, d2) = setup();
+        let comm_req = m1_comm_req(&mut d1).unwrap();
+        let m2 = m2_cred_req(&d2, &comm_req).unwrap();
+        let acc = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+        gcs_m3_cred_resp(&mut gcs, &acc).unwrap();
+        let e = gcs_receive_m2(&mut gcs, &m2.wire).err().unwrap();
+        assert!(e.code == "NONCE_REPLAY" || e.code == "PID_NOT_ACTIVE", "{e}");
     }
 
     #[test]
-    fn spec_25g_m8_is_verifiable_from_the_message_alone_and_rejects_an_uncertified_key() {
-        // SECURITY FIX regression (25-G): `AuthResultMsg` must carry its
-        // own GCS-certified key (D1 never reaches into D2's in-memory
-        // state to verify it). Tamper the embedded cert's key the same
-        // way as the 25-A test above and confirm `d1_verify_m8` rejects
-        // it, then confirm the untampered message verifies.
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        let mut log = EventLog::new();
-        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
-        assert_eq!(result.report.zero_trust, ZeroTrustDecision::Allow);
-
-        let auth_result_msg = {
-            let cred_resp_d2_cert = {
-                // Rebuild M3 once more to get a cert object to tamper
-                // with (the real flow doesn't expose the M8 message
-                // from `run_authentication`, by design -- it only
-                // returns the final report).
-                let comm_req = m1_comm_req(&mut d1);
-                let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-                let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
-                let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
-                d2_receive_m3(&d2, &m3_wire).unwrap().d2_cert
-            };
-            m8_auth_result(&d2.keys.as_ref().unwrap().dil_sk, &result.report, &cred_resp_d2_cert).unwrap()
-        };
-        assert!(d1_verify_m8(&gcs.sign_pk, &auth_result_msg), "a genuinely GCS-certified M8 must verify");
-
-        let mut tampered = auth_result_msg.clone();
-        let (attacker_pk, attacker_sk) = crate::crypto::sign::keypair();
-        let mut forged_cert = tampered.d2_cert.clone();
-        forged_cert.pk_dil = attacker_pk.0;
-        let forged_sig = crate::crypto::sign::sign_transcript(&attacker_sk, &forged_cert.signing_bytes()).unwrap();
-        forged_cert.sig = forged_sig.0;
-        tampered.d2_cert = forged_cert;
-        assert!(!d1_verify_m8(&gcs.sign_pk, &tampered), "an uncertified key embedded in M8 must be rejected");
+    fn consumed_pid_cannot_start_second_session() {
+        let (mut gcs, mut d1, d2) = setup();
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut EventLog::new()).unwrap();
+        let _ = r;
+        // Re-use the PID with fresh nonces.
+        let mut replay = CommReq { g: "alpha".into(), pid1: r.d1_session.pid1.clone(), ts1: crate::protocol::events::now_unix_ms(), n1: fresh_nonce(16) };
+        replay.n1[0] ^= 1;
+        let m2 = m2_cred_req(&d2, &replay).unwrap();
+        assert_eq!(gcs_receive_m2(&mut gcs, &m2.wire).err().unwrap().code, "PID_NOT_ACTIVE");
     }
 
     #[test]
-    fn reused_nonce_at_m6_is_rejected() {
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        let mut log = EventLog::new();
-        let r1 = run_authentication(&mut gcs, &mut d1, &d2, &mut log);
-        assert!(r1.is_ok());
+    fn unknown_pid_and_cross_group_rejected_at_m2() {
+        let (mut gcs, _d1, d2) = setup();
+        let bogus = CommReq { g: "alpha".into(), pid1: vec![0xAA; 16], ts1: crate::protocol::events::now_unix_ms(), n1: fresh_nonce(16) };
+        let m2 = m2_cred_req(&d2, &bogus).unwrap();
+        assert_eq!(gcs_receive_m2(&mut gcs, &m2.wire).err().unwrap().code, "UNKNOWN_PID");
 
-        // Manually replay an M6 request reusing the same N2 the first
-        // session already consumed.
-        let comm_req = m1_comm_req(&mut d1);
-        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-        let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
-        let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
-        let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-        let challenge = m4_challenge(&d2, "alpha", &cred_resp.cred_d1, &cred_resp.d2_cert, &r1.unwrap().n2 /* reused N2 */).unwrap();
-        let ctx = d1_local_auth_context(&d1);
-        let proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
-        let t_base = crate::protocol::transcript::build_t_base(
-            ctx.g_field, ctx.v_g, ctx.r_g, proof.comm_pk_d1,
-            &comm_req.n1, &challenge.challenge_payload.n2, comm_req.ts1, challenge.challenge_payload.ts4, &comm_req.pid1,
-        );
-        let m6_wire = m6_puf_verify_req(&proof, "alpha", ctx.v_g, &challenge.challenge_payload.c_puf, &challenge.challenge_payload.n2, &t_base, &gcs.kem_pk).unwrap();
-        let result = gcs_m6_verify(&mut gcs, &m6_wire);
-        assert!(matches!(result, Err(GcsPufVerifyError::NonceReused)));
-    }
-
-    #[test]
-    fn unknown_pid_at_m2_is_rejected() {
-        let (mut gcs, _d1, d2) = setup_two_drones();
-        let bogus = CommReq {
-            msg_type: "CommReq".into(),
-            g: "alpha".into(),
-            pid1: vec![0xAAu8; 16],
-            ts1: crate::protocol::events::now_unix_ms(),
-            n1: vec![1, 2, 3],
-        };
-        let m2 = m2_cred_req(&d2, &bogus, &gcs.kem_pk).unwrap();
+        let mut d3 = DroneState::new("drone-3", [33u8; 32]);
+        let mut d4 = DroneState::new("drone-4", [44u8; 32]);
+        registration::register_drone(&mut gcs, &mut d3, "alpha", md(), DEPTH).unwrap();
+        registration::register_drone(&mut gcs, &mut d4, "bravo", md(), DEPTH).unwrap();
+        let cr = m1_comm_req(&mut d3).unwrap();
+        let m2 = m2_cred_req(&d4, &cr).unwrap();
         assert!(gcs_receive_m2(&mut gcs, &m2.wire).is_err());
     }
 
     #[test]
-    fn spec_25f_replaying_an_already_consumed_pid1_to_start_a_second_session_is_rejected() {
-        // SECURITY FIX regression (25-F: PID lifecycle
-        // ACTIVE/CONSUMED/EXPIRED). The pid_pool's module docs always
-        // claimed pseudonyms are "consumed as sessions start," but
-        // nothing enforced it until this fix -- a pid1 could start
-        // unlimited independent sessions. Build one real CommReq/M2
-        // (consuming its pid1), confirm a SECOND, independent M2 replay
-        // of the exact same pid1 is now rejected, and confirm the
-        // drone's NEXT (unused) pid1 still works normally.
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-
-        let comm_req_1 = m1_comm_req(&mut d1); // consumes pid_counter=0 locally, derives pid1 for it
-        assert_eq!(
-            gcs.pid_state(&comm_req_1.pid1),
-            Some(crate::protocol::entities::PidState::Active),
-            "freshly pre-provisioned pid1 must start Active"
-        );
-        let m2_first = m2_cred_req(&d2, &comm_req_1, &gcs.kem_pk).unwrap();
-        assert!(gcs_receive_m2(&mut gcs, &m2_first.wire).is_ok(), "the first use of a fresh pid1 must succeed");
-        assert_eq!(gcs.pid_state(&comm_req_1.pid1), Some(crate::protocol::entities::PidState::Consumed));
-
-        // Replay: an attacker (or a buggy retry) presents the EXACT
-        // SAME pid1 again to start a brand-new session.
-        let m2_replay = m2_cred_req(&d2, &comm_req_1, &gcs.kem_pk).unwrap();
-        let replay_result = gcs_receive_m2(&mut gcs, &m2_replay.wire);
-        assert!(replay_result.is_err(), "a second, independent session must not be startable with an already-consumed pid1");
-        assert!(format!("{}", replay_result.unwrap_err()).contains("already been consumed"));
-
-        // The drone's NEXT pid1 (a different, still-Active pseudonym
-        // from the same pre-provisioned pool) must work normally --
-        // this is single-PID replay rejection, not a blanket drone ban.
-        let comm_req_2 = m1_comm_req(&mut d1);
-        assert_ne!(comm_req_2.pid1, comm_req_1.pid1);
-        let m2_second = m2_cred_req(&d2, &comm_req_2, &gcs.kem_pk).unwrap();
-        assert!(gcs_receive_m2(&mut gcs, &m2_second.wire).is_ok(), "a fresh, never-used pid1 from the same pool must still work");
+    fn forged_m4_key_is_rejected_by_d1() {
+        let (mut gcs, mut d1, d2) = setup();
+        let comm_req = m1_comm_req(&mut d1).unwrap();
+        let m2 = m2_cred_req(&d2, &comm_req).unwrap();
+        let acc = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+        let (m3w, _) = gcs_m3_cred_resp(&mut gcs, &acc).unwrap();
+        let mut d2s = d2_receive_m3(&d2, &m3w, &comm_req, &m2).unwrap();
+        let mut ch = m4_challenge(&d2, &mut d2s).unwrap();
+        // Attacker swaps in its own signing key and re-signs M4.
+        let (apk, ask) = crate::crypto::sign::keypair();
+        ch.d2_cred.body.pk_dil = apk.0.clone();
+        ch.sig4 = crate::crypto::sign::sign_transcript(&ask, &ch.payload.signing_bytes()).unwrap().0;
+        assert_eq!(d1_verify_challenge(&d1, &ch, &comm_req).err().unwrap().code, "CREDENTIAL_INVALID");
     }
 
     #[test]
-    fn cross_group_authentication_is_rejected_at_m2() {
-        let mut gcs = GcsState::new();
-        let mut d1 = DroneState::new("drone-1", [11u8; 32]);
-        let mut d2 = DroneState::new("drone-2", [22u8; 32]);
-        let md = MembershipMetadata { role: "recon".into(), issued_at_unix: 1 };
-        registration::register_drone(&mut gcs, &mut d1, "alpha", md.clone(), 6).unwrap();
-        registration::register_drone(&mut gcs, &mut d2, "bravo", md, 6).unwrap();
-
-        let comm_req = m1_comm_req(&mut d1); // g = "alpha"
-        let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap(); // D2 is in "bravo"
-        assert!(gcs_receive_m2(&mut gcs, &m2.wire).is_err());
+    fn invalid_gcs_signature_on_m3_is_rejected() {
+        let (mut gcs, mut d1, d2) = setup();
+        let comm_req = m1_comm_req(&mut d1).unwrap();
+        let m2 = m2_cred_req(&d2, &comm_req).unwrap();
+        let acc = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+        let (m3w, _) = gcs_m3_cred_resp(&mut gcs, &acc).unwrap();
+        let mut d2s = d2_receive_m3(&d2, &m3w, &comm_req, &m2).unwrap();
+        let mut ch = m4_challenge(&d2, &mut d2s).unwrap();
+        ch.m3.sig3[0] ^= 1;
+        assert_eq!(d1_verify_challenge(&d1, &ch, &comm_req).err().unwrap().code, "GCS_SIGNATURE_INVALID");
     }
 
     #[test]
-    fn move_drone_between_groups_then_authenticate_in_new_group() {
-        let (mut gcs, mut d1, mut d2) = setup_two_drones();
-        gcs.create_group("bravo", 6);
-        move_drone(&mut gcs, &mut d2, "bravo", 6).unwrap();
-        move_drone(&mut gcs, &mut d1, "bravo", 6).unwrap();
+    fn k1_rejected_before_auth_and_after_deny() {
+        let (mut gcs, mut d1, d2) = setup();
+        let st = up_to_m5(&mut gcs, &mut d1, &d2);
+        // K1 before M6: session is CredIssued.
+        let rep = VerificationReport { zero_trust: ZeroTrustDecision::Allow, ..empty_report(st.d2s.session_ctx) };
+        let confirm = {
+            let mut s1 = st.d1s;
+            // forge a "completed" session locally to build a confirm
+            s1.completed = true;
+            d1_session_confirm(&d1, &s1, ZeroTrustDecision::Allow).unwrap()
+        };
+        let (w, _) = d2_k1_group_key_req(&d2, &st.d2s, &rep, confirm, "m1").unwrap();
+        assert_eq!(gcs_handle_k1(&mut gcs, &w).err().unwrap().code, "SESSION_NOT_AUTHENTICATED");
 
-        assert!(!gcs.groups.get("alpha").unwrap().is_active("drone-1"));
-        assert!(gcs.groups.get("bravo").unwrap().is_active("drone-1"));
+        // After a failed M6 (DENY) the session is Failed.
+        let (mut gcs, mut d1, d2) = setup();
+        let mut st = up_to_m5(&mut gcs, &mut d1, &d2);
+        st.proof.mac1[0] ^= 1;
+        let _ = m6_m7(&mut gcs, &d2, &st, &st.proof);
+        let rep = VerificationReport { zero_trust: ZeroTrustDecision::Allow, ..empty_report(st.d2s.session_ctx) };
+        let mut s1 = st.d1s;
+        s1.completed = true;
+        let confirm = d1_session_confirm(&d1, &s1, ZeroTrustDecision::Allow).unwrap();
+        let (w, _) = d2_k1_group_key_req(&d2, &st.d2s, &rep, confirm, "m1").unwrap();
+        assert_eq!(gcs_handle_k1(&mut gcs, &w).err().unwrap().code, "SESSION_DENIED");
+    }
 
+    fn empty_report(ctx: crate::zkhash::Limbs) -> VerificationReport {
+        VerificationReport {
+            freshness_ok: true, credential_ok: true, commitment_ok: true, zk_membership_ok: true,
+            signature_ok: true, puf_ok: true, root_version_ok: true, session_binding_ok: true,
+            authenticated: true, zero_trust: ZeroTrustDecision::Allow, reason_code: String::new(), session_ctx: ctx,
+        }
+    }
+
+    #[test]
+    fn full_flow_k1_once_per_session_and_aead() {
+        let (mut gcs, mut d1, d2) = setup();
         let mut log = EventLog::new();
-        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
-        assert_eq!(result.report.zero_trust, ZeroTrustDecision::Allow);
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
+        let ch = run_group_key_establishment(&mut gcs, &d1, &d2, &r, "mission-7", &mut log).unwrap();
+        assert_eq!(session_state(&gcs, &r.session_id), Some(SessionState::KeyIssued));
+        assert_eq!(ch.d1_keys.channel_tag, ch.d2_keys.channel_tag);
+        let m = secure_messaging::send_message(&ch.d1_keys.d1_to_d2, &crate::transport::PassthroughTransport, ch.d1_keys.channel_tag, 1, 1, b"hello").unwrap();
+        let pt = secure_messaging::receive_message(&ch.d2_keys.d1_to_d2, ch.d2_keys.channel_tag, 1, &m.0, 0).unwrap();
+        assert_eq!(pt, b"hello");
+        // Second K1 for the same session is refused.
+        let again = run_group_key_establishment(&mut gcs, &d1, &d2, &r, "mission-7", &mut log);
+        assert!(again.is_err());
     }
 
     #[test]
-    fn reactivate_after_revocation_restores_authentication() {
-        let (mut gcs, mut d1, d2) = setup_two_drones();
-        revoke_drone(&mut gcs, &d1.drone_id).unwrap();
-        d1.revoked = false; // operator decision to allow re-provisioning
-        reactivate_drone(&mut gcs, &mut d1, 6).unwrap();
-
+    fn revocation_after_auth_blocks_k1() {
+        let (mut gcs, mut d1, d2) = setup();
         let mut log = EventLog::new();
-        let result = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
-        assert_eq!(result.report.zero_trust, ZeroTrustDecision::Allow, "{:?}", result.report);
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut log).unwrap();
+        revoke_drone(&mut gcs, "drone-1").unwrap();
+        assert!(run_group_key_establishment(&mut gcs, &d1, &d2, &r, "m", &mut log).is_err());
+    }
+
+    #[test]
+    fn move_and_reactivate() {
+        let (mut gcs, mut d1, mut d2) = setup();
+        gcs.create_group("bravo", DEPTH);
+        move_drone(&mut gcs, &mut d2, "bravo", DEPTH).unwrap();
+        move_drone(&mut gcs, &mut d1, "bravo", DEPTH).unwrap();
+        refresh_drone_cache(&gcs, &mut d1);
+        refresh_drone_cache(&gcs, &mut d2);
+        assert!(!gcs.groups["alpha"].is_active("drone-1"));
+        assert!(gcs.groups["bravo"].is_active("drone-1"));
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut EventLog::new()).unwrap();
+        assert_eq!(r.report.zero_trust, ZeroTrustDecision::Allow);
+
+        revoke_drone(&mut gcs, "drone-1").unwrap();
+        reactivate_drone(&mut gcs, &mut d1, DEPTH).unwrap();
+        refresh_drone_cache(&gcs, &mut d1);
+        refresh_drone_cache(&gcs, &mut d2);
+        let r = run_authentication(&mut gcs, &mut d1, &d2, &mut EventLog::new()).unwrap();
+        assert_eq!(r.report.zero_trust, ZeroTrustDecision::Allow, "{:?}", r.report);
     }
 }

@@ -9,7 +9,7 @@
 //! "Version MUST be bound into the authentication state").
 
 use super::tree::{verify_witness, MerkleTree, MerkleWitness};
-use crate::crypto::field::Fp;
+use crate::zkhash::Digest;
 use std::collections::HashMap;
 
 #[derive(thiserror::Error, Debug, PartialEq, Eq)]
@@ -47,7 +47,7 @@ impl GroupMembershipTree {
         }
     }
 
-    pub fn root(&self) -> Fp {
+    pub fn root(&self) -> Digest {
         self.tree.root()
     }
 
@@ -67,7 +67,7 @@ impl GroupMembershipTree {
         self.member_index.get(drone_id).copied()
     }
 
-    pub fn register(&mut self, drone_id: &str, leaf: Fp) -> Result<usize, GroupError> {
+    pub fn register(&mut self, drone_id: &str, leaf: Digest) -> Result<usize, GroupError> {
         if self.member_index.contains_key(drone_id) {
             return Err(GroupError::AlreadyMember(drone_id.to_string()));
         }
@@ -93,7 +93,7 @@ impl GroupMembershipTree {
             .member_index
             .remove(drone_id)
             .ok_or_else(|| GroupError::NotAMember(drone_id.to_string()))?;
-        self.tree.set_leaf(index, Fp::ZERO);
+        self.tree.set_leaf(index, Digest::ZERO);
         self.version += 1;
         Ok(())
     }
@@ -120,7 +120,7 @@ impl GroupMembershipTree {
             .collect()
     }
 
-    pub fn verify(&self, leaf: Fp, witness: &MerkleWitness) -> bool {
+    pub fn verify(&self, leaf: Digest, witness: &MerkleWitness) -> bool {
         verify_witness(self.root(), leaf, witness)
     }
 
@@ -171,7 +171,7 @@ pub struct GroupTreeSnapshot {
     pub next_free_index: usize,
     pub member_index: HashMap<String, usize>,
     pub all_index: HashMap<String, usize>,
-    pub leaves: Vec<(usize, Fp)>,
+    pub leaves: Vec<(usize, Digest)>,
 }
 
 #[cfg(test)]
@@ -182,13 +182,13 @@ mod tests {
     fn register_revoke_lifecycle() {
         let mut g = GroupMembershipTree::new("alpha", 4);
         assert_eq!(g.version, 0);
-        g.register("drone-1", Fp::new(111)).unwrap();
+        g.register("drone-1", Digest([111, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         assert_eq!(g.version, 1);
         assert!(g.is_active("drone-1"));
         let w = g.witness_for("drone-1").unwrap();
-        assert!(g.verify(Fp::new(111), &w));
+        assert!(g.verify(Digest([111, 0, 0, 0, 0, 0, 0, 0]), &w));
 
-        g.register("drone-2", Fp::new(222)).unwrap();
+        g.register("drone-2", Digest([222, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         assert_eq!(g.version, 2);
 
         g.revoke("drone-1").unwrap();
@@ -196,15 +196,15 @@ mod tests {
         assert!(!g.is_active("drone-1"));
 
         // drone-1's old witness is now stale against the new root:
-        assert!(!g.verify(Fp::new(111), &w));
+        assert!(!g.verify(Digest([111, 0, 0, 0, 0, 0, 0, 0]), &w));
     }
 
     #[test]
     fn double_registration_rejected() {
         let mut g = GroupMembershipTree::new("alpha", 4);
-        g.register("drone-1", Fp::new(1)).unwrap();
+        g.register("drone-1", Digest([1, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         assert_eq!(
-            g.register("drone-1", Fp::new(2)),
+            g.register("drone-1", Digest([2, 0, 0, 0, 0, 0, 0, 0])),
             Err(GroupError::AlreadyMember("drone-1".to_string()))
         );
     }
@@ -221,16 +221,16 @@ mod tests {
     #[test]
     fn other_members_witness_refresh_after_mutation() {
         let mut g = GroupMembershipTree::new("alpha", 4);
-        g.register("drone-1", Fp::new(1)).unwrap();
-        g.register("drone-2", Fp::new(2)).unwrap();
+        g.register("drone-1", Digest([1, 0, 0, 0, 0, 0, 0, 0])).unwrap();
+        g.register("drone-2", Digest([2, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         let old_w2 = g.witness_for("drone-2").unwrap();
 
         g.revoke("drone-1").unwrap(); // changes the tree, so drone-2's witness may go stale
 
-        let stale_ok = g.verify(Fp::new(2), &old_w2);
+        let stale_ok = g.verify(Digest([2, 0, 0, 0, 0, 0, 0, 0]), &old_w2);
         let refreshed = g.refresh_all_witnesses();
         let new_w2 = refreshed.get("drone-2").unwrap();
-        assert!(g.verify(Fp::new(2), new_w2), "refreshed witness must always verify");
+        assert!(g.verify(Digest([2, 0, 0, 0, 0, 0, 0, 0]), new_w2), "refreshed witness must always verify");
         // whether or not the *old* witness happened to still verify
         // (siblings outside the revoked subtree can remain unaffected),
         // the refreshed one is always guaranteed correct:
@@ -241,31 +241,31 @@ mod tests {
     fn tree_full_is_rejected_cleanly() {
         let mut g = GroupMembershipTree::new("tiny", 2); // capacity 4
         for i in 0..4 {
-            g.register(&format!("d{i}"), Fp::new(i as u64)).unwrap();
+            g.register(&format!("d{i}"), Digest([i as u32, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         }
-        assert_eq!(g.register("d4", Fp::new(4)), Err(GroupError::TreeFull(4)));
+        assert_eq!(g.register("d4", Digest([4, 0, 0, 0, 0, 0, 0, 0])), Err(GroupError::TreeFull(4)));
     }
 
     #[test]
     fn re_registration_reuses_original_slot() {
         let mut g = GroupMembershipTree::new("alpha", 4);
-        g.register("drone-1", Fp::new(111)).unwrap();
+        g.register("drone-1", Digest([111, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         let idx1 = g.leaf_index_of("drone-1").unwrap();
         g.revoke("drone-1").unwrap();
-        g.register("drone-1", Fp::new(999)).unwrap(); // reactivation with a fresh leaf
+        g.register("drone-1", Digest([999, 0, 0, 0, 0, 0, 0, 0])).unwrap(); // reactivation with a fresh leaf
         let idx2 = g.leaf_index_of("drone-1").unwrap();
         assert_eq!(idx1, idx2);
         let w = g.witness_for("drone-1").unwrap();
-        assert!(g.verify(Fp::new(999), &w));
+        assert!(g.verify(Digest([999, 0, 0, 0, 0, 0, 0, 0]), &w));
     }
 
     #[test]
     fn snapshot_round_trip_preserves_root_and_membership() {
         let mut g = GroupMembershipTree::new("alpha", 4);
-        g.register("drone-1", Fp::new(111)).unwrap();
-        g.register("drone-2", Fp::new(222)).unwrap();
+        g.register("drone-1", Digest([111, 0, 0, 0, 0, 0, 0, 0])).unwrap();
+        g.register("drone-2", Digest([222, 0, 0, 0, 0, 0, 0, 0])).unwrap();
         g.revoke("drone-1").unwrap();
-        g.register("drone-3", Fp::new(333)).unwrap();
+        g.register("drone-3", Digest([333, 0, 0, 0, 0, 0, 0, 0])).unwrap();
 
         let snap = g.snapshot();
         let bytes = serde_json::to_vec(&snap).unwrap();
@@ -277,6 +277,6 @@ mod tests {
         assert!(restored.is_active("drone-2"));
         assert!(!restored.is_active("drone-1"));
         let w = restored.witness_for("drone-2").unwrap();
-        assert!(restored.verify(Fp::new(222), &w));
+        assert!(restored.verify(Digest([222, 0, 0, 0, 0, 0, 0, 0]), &w));
     }
 }

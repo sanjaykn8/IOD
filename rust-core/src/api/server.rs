@@ -79,7 +79,7 @@ pub fn run(bind_addr: &str, db_path: &str) -> anyhow::Result<()> {
                 Response::from_string("")
                     .with_header(cors_header())
                     .with_header(Header::from_bytes(&b"Access-Control-Allow-Methods"[..], &b"GET, POST, OPTIONS"[..]).unwrap())
-                    .with_header(Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type"[..]).unwrap()),
+                    .with_header(Header::from_bytes(&b"Access-Control-Allow-Headers"[..], &b"Content-Type, X-Admin-Token"[..]).unwrap()),
             );
             continue;
         }
@@ -180,37 +180,6 @@ fn route(
             }
         }
 
-        (Method::Post, ["api", "drones", drone_id, "register-stego"]) => {
-            let body = read_body_json(request);
-            let Some(group_id) = str_field(&body, "group_id") else { return err(400, "missing group_id") };
-            let role = str_field(&body, "role").unwrap_or("member");
-            let decode_cover = |field: &str| -> Result<Option<Vec<u8>>, String> {
-                match body.get(field).and_then(|v| v.as_str()) {
-                    None => Ok(None),
-                    Some(b64) => {
-                        use base64::Engine;
-                        base64::engine::general_purpose::STANDARD
-                            .decode(b64)
-                            .map(Some)
-                            .map_err(|e| format!("invalid {field}: {e}"))
-                    }
-                }
-            };
-            let cover_r1 = match decode_cover("cover_image_r1_b64") {
-                Ok(v) => v,
-                Err(e) => return err(400, e),
-            };
-            let cover_r3 = match decode_cover("cover_image_r3_b64") {
-                Ok(v) => v,
-                Err(e) => return err(400, e),
-            };
-            let mut s = state.lock().unwrap();
-            match s.register_drone_via_stego(drone_id, group_id, role, cover_r1, cover_r3) {
-                Ok(outcome) => ok(serde_json::to_value(outcome).unwrap()),
-                Err(e) => err(400, e),
-            }
-        }
-
         (Method::Post, ["api", "drones", drone_id, "revoke"]) => {
             let mut s = state.lock().unwrap();
             match s.revoke_drone(drone_id) {
@@ -251,28 +220,40 @@ fn route(
 
         (Method::Post, ["api", "group-key"]) => {
             let body = read_body_json(request);
-            let (Some(d1), Some(d2)) = (str_field(&body, "d1_id"), str_field(&body, "d2_id")) else {
-                return err(400, "missing d1_id/d2_id");
-            };
             let mission_id = str_field(&body, "mission_id").unwrap_or("default-mission");
             let mut s = state.lock().unwrap();
-            match s.establish_group_key(d1, d2, mission_id) {
-                Ok(()) => ok(json!({ "status": "group_key_established" })),
-                Err(e) => err(400, e),
+            // K1 is bound to a completed session. A client may name the
+            // session directly or the pair (resolved to that pair's latest
+            // session); the GCS still enforces ALLOW + exact session.
+            let sid = match (str_field(&body, "session_id"), str_field(&body, "d1_id"), str_field(&body, "d2_id")) {
+                (Some(sid), _, _) => sid.to_string(),
+                (None, Some(a), Some(b)) => match s.latest_session(a, b) {
+                    Some(sid) => sid,
+                    None => return err(409, "NO_AUTH_SESSION: authenticate first"),
+                },
+                _ => return err(400, "missing session_id (or d1_id/d2_id)"),
+            };
+            match s.establish_group_key(&sid, mission_id) {
+                Ok(()) => ok(json!({ "status": "group_key_established", "session_id": sid })),
+                Err(e) => err(403, e),
             }
         }
 
         (Method::Post, ["api", "secure-message"]) => {
             let body = read_body_json(request);
-            let (Some(from), Some(to), Some(text)) = (
-                str_field(&body, "from_id"),
-                str_field(&body, "to_id"),
-                str_field(&body, "plaintext"),
-            ) else {
-                return err(400, "missing from_id/to_id/plaintext");
+            let (Some(from), Some(text)) = (str_field(&body, "from_id"), str_field(&body, "plaintext")) else {
+                return err(400, "missing from_id/plaintext");
             };
             let mut s = state.lock().unwrap();
-            match s.send_secure_message(from, to, text) {
+            let sid = match (str_field(&body, "session_id"), str_field(&body, "to_id")) {
+                (Some(sid), _) => sid.to_string(),
+                (None, Some(to)) => match s.latest_session(from, to) {
+                    Some(sid) => sid,
+                    None => return err(409, "NO_AUTH_SESSION"),
+                },
+                _ => return err(400, "missing session_id (or to_id)"),
+            };
+            match s.send_secure_message(&sid, from, text) {
                 Ok(decrypted) => ok(json!({ "status": "delivered", "decrypted_by_receiver": decrypted })),
                 Err(e) => err(400, e),
             }
@@ -318,10 +299,17 @@ fn route(
         }
 
         (Method::Post, ["api", "trace", "request"]) => {
+            // Administrator status comes ONLY from the X-Admin-Token
+            // header verified against IOD_ADMIN_TOKEN; any role in the
+            // body is ignored.
+            let token = request
+                .headers()
+                .iter()
+                .find(|h| h.field.equiv("X-Admin-Token"))
+                .map(|h| h.value.as_str().to_string());
             let body = read_body_json(request);
-            let (Some(requested_by), Some(role), Some(reason), Some(pid_hex)) = (
+            let (Some(requested_by), Some(reason), Some(pid_hex)) = (
                 str_field(&body, "requested_by"),
-                str_field(&body, "requester_role"),
                 str_field(&body, "reason"),
                 str_field(&body, "target_pid_hex"),
             ) else {
@@ -329,14 +317,12 @@ fn route(
             };
             let Ok(target_pid) = hex::decode(pid_hex) else { return err(400, "target_pid_hex is not valid hex") };
             let mut s = state.lock().unwrap();
-            let resolved = if role == "administrator" {
-                s.gcs.resolve_pid(&target_pid).map(|d| d.to_string())
-            } else {
-                None
-            };
-            let record = s.trace.request_trace(role, resolved, requested_by, reason, &target_pid);
+            let is_admin = s.admin.verify(token.as_deref());
+            let s = &mut *s;
+            let record = s.trace.request_trace(&s.gcs, is_admin, requested_by, reason, &target_pid);
             let _ = s.db.append_trace_record(&record);
-            ok(serde_json::to_value(record).unwrap())
+            let status = if record.authorized { 200 } else if is_admin { 422 } else { 403 };
+            json_response(status, serde_json::to_value(record).unwrap())
         }
 
         (Method::Get, ["api", "trace"]) => {

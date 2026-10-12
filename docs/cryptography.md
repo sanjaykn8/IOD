@@ -56,27 +56,16 @@ production parameter-selection tooling).
   Dilithium always signs an unambiguous byte string, never a raw
   JSON/serde dump.
 
-## Hashing: Poseidon (in-circuit / algebraic) and SHAKE256 (transcripts)
+## Hashing: Poseidon2/BabyBear (algebraic) and SHAKE256 (transcripts)
 
-- **Poseidon** (`crypto::poseidon`): a from-scratch implementation (not
-  a wrapper around a curve-tied arkworks Poseidon) over a 64-bit
-  Goldilocks-style prime field `p = 2^64 - 2^32 + 1` (`crypto::field`).
-  This field is used purely as an algebraic structure for the
-  permutation's S-box/MDS layer — no curve group is ever formed, no
-  scalar multiplication, no pairing. Parameters: t=3 (rate 2, capacity
-  1), 8 full rounds + 22 partial rounds, S-box x^7, a deterministic
-  Cauchy-construction MDS matrix, round constants generated
-  transparently via SHAKE256 from a fixed, published seed string.
-  **This is a research-parameterized instantiation** — it has not been
-  run through the formal Poseidon parameter-selection/security-margin
-  tooling used in production deployments, and has not been
-  independently audited. Suitable for this research prototype; not for
-  production use without that additional work.
-- **SHAKE256** (`crypto::kdf`): used for transcript hashing (`T_base`,
-  `T`), PID derivation, and the fuzzy extractor's strong-extractor step.
-  Standardized (FIPS 202), extendable-output, no known classical or
-  quantum break beyond generic (2^(n/2)/2^n) bounds for its output
-  length.
+- **Poseidon2** (`zkhash.rs`): Poseidon2 over BabyBear (`p = 2013265921`),
+  width 16, S-box x^7, 8 full + 13 partial rounds, Plonky3 constants; digest
+  = 8 field elements (248 bits); byte strings are packed injectively, 3 bytes
+  per element. This replaced the v1 hand-written 64-bit Goldilocks Poseidon
+  (≈2^32 collision resistance). No curve group is ever formed. Collision
+  resistance ≈2^124 classical / ≈2^83 quantum (BHT); see `zk-design.md`.
+- **SHAKE256**: transcripts, `comm_PK`, `G`, metadata and session digests, always
+  over length-prefixed canonical inputs (`protocol/canon.rs`).
 
 ## AEAD: ChaCha20-Poly1305
 

@@ -6,51 +6,43 @@ fuzzy extractor, ML-KEM-768/Kyber768 and ML-DSA-44/Dilithium2, a Poseidon
 Merkle membership tree, a transparent (non-ECC) ZK membership proof, the
 full M1-M8 authentication handshake, K1-K4 GCS-assisted group-key
 establishment, AEAD secure messaging, Zero Trust authorization, a Trace
-Manager, device registration (R1-R3) transported through real 2D image
-steganography with RAG-assisted, measurement-grounded algorithm
-selection, a collaborative RAG/mock-LLM simulation (now a secondary,
-non-load-bearing subsystem -- see `docs/rag.md`), and a full web
+Manager, a collaborative RAG/mock-LLM simulation, and a full web
 dashboard — built across Rust (security-critical core), Node.js/
-TypeScript (API gateway), Python (steganography + RAG), and React
-(dashboard).
+TypeScript (API gateway), Python (RAG), and React (dashboard).
 
 **Zero elliptic-curve cryptography anywhere in this project** — see
 `docs/ecc-audit.md` for the full, methodical audit.
 
 ## Honest status before you read anything else
 
-This is a research prototype, not a production system, and this README
-will tell you exactly which parts are which. The single most important
-document to read before citing this project's security properties is
-`docs/zk-membership.md` — the implemented ZK proof backend is sound and
-correctly binds the protocol's version/root, but it does **not** hide
-the witness from the verifier (a documented, deliberate scope decision,
-not an oversight). `docs/IMPLEMENTATION_STATUS.md` has the complete,
-phase-by-phase REAL/SIMULATED/PLACEHOLDER breakdown, including every
-real bug found and fixed during development and how it was caught.
+This is a research prototype, not a production system. **Protocol v2** replaced the
+v1 witness-revealing "ZK" backend with a witness-hiding zk-STARK (hiding FRI,
+Poseidon2/BabyBear, no ECC), made every key come from a GCS-signed ML-DSA
+credential, gated group-key issue on a completed authentication session, and
+hardened PID/replay/trace handling. Read `docs/IMPLEMENTATION_STATUS.md` (the
+REAL/SIMULATED/PLACEHOLDER table and known limitations),
+`docs/zk-security-analysis.md` (assumptions and what is *not* claimed) and
+`docs/protocol.md` (including the v1→v2 correction note) before citing any
+security property. Benchmarks are host-simulation measurements only.
 
 ## What's REAL, what's SIMULATED, what's PLACEHOLDER/FUTURE
 
 | Component | Classification |
 |---|---|
 | ML-KEM-768/Kyber768, ML-DSA-44/Dilithium2 | **REAL** (audited PQClean-derived libraries; Round-3 API, see `docs/cryptography.md` for the exact standards mapping) |
-| Poseidon hash, Merkle tree | **REAL** (from-scratch, non-ECC field; research-parameterized, not independently audited) |
+| Poseidon2/BabyBear hash, Merkle tree | **REAL** (Plonky3 Poseidon2 constants, 248-bit digest; not independently audited) |
 | SRAM-PUF, fuzzy extractor | **SIMULATED** (necessarily — no physical silicon), with a real code-offset construction and a computed reliability table (`docs/puf.md`) |
 | CRP-based PUF verification | **SIMULATED** (noise-free challenge-response; the noisy case is demonstrated at the seed-reconstruction layer instead) |
-| ZK membership proof | **REAL soundness/binding, SIMULATED hiding** — see `docs/zk-membership.md`; this is the largest scope limitation in the project |
+| ZK membership proof | **REAL witness-hiding zk-STARK** (Plonky3 `0.9.0-rc.1` hiding FRI; 128 b conjectured / 120 b proven) — see `docs/zk-design.md`; privacy tested structurally, RC library not independently audited |
 | M1-M8 authentication, K1-K4 group key, AEAD messaging | **REAL**, fully implemented and tested |
 | Zero Trust | **REAL** (deterministic, configurable, replaceable policy engine — not ML-based) |
 | Trace Manager | **REAL** |
 | SQLite persistence | **REAL** |
-| 2D steganography algorithms (Adaptive LSB, PVD, DCT, DWT, SVD) | **REAL** (real pixel embed/extract against real cover images; see `docs/steganography.md`) |
-| Registration-time algorithm selection | **REAL selection logic over REAL measurements** (deterministic, importance-weighted; see `docs/algorithm-selection.md`) — the "RAG" in "RAG-assisted" is retrieval + narrative only, never the number-producing step |
-| Registration-time RAG narrative/evidence | **SIMULATED retrieval** (word-overlap over a hand-written knowledge base, not embeddings), quoting only real numbers it is handed — see `docs/rag-stego-selection.md` |
-| R1-R3 registration transported via steganography | **REAL** end-to-end (real ML-KEM-768/ML-DSA-44 keys, real KEM-then-AEAD sealing, real embed/extract), live via the dashboard's Registration (Stego) page and `iod-register-stego-demo` — see `docs/registration-stego.md` |
-| Collaborative drone-contribution RAG pipeline (retrieval/validation/fusion) | **SIMULATED**, still present and tested, but superseded as of this stage for registration — see `docs/rag.md`'s "Historical subsystem" section |
-| RAG retrieval (collaborative pipeline) | **SIMULATED** (word-overlap, not embeddings) |
-| RAG Byzantine-ish validation (collaborative pipeline) | **SIMULATED** (a labeled heuristic, not a real BFT defense) |
+| RAG retrieval | **SIMULATED** (word-overlap, not embeddings) |
+| RAG Byzantine-ish validation | **SIMULATED** (a labeled heuristic, not a real BFT defense) |
 | Mock LLM | **REAL** (genuinely deterministic, template-based; no network call) |
 | Ollama LLM provider | **PLACEHOLDER/FUTURE** (interface only, `NotImplementedError`) |
+| Steganography transport | **PLACEHOLDER/FUTURE** (interface only, per explicit project scope) |
 | Node.js↔Rust live updates | **REAL SSE to the browser**, via internal polling on the Rust↔Node leg (documented toolchain-driven decision, see `docs/architecture.md`) |
 | Docker configuration | **Best-effort, UNTESTED** — no Docker daemon was available in the development sandbox; the native (non-Docker) path is what was actually verified |
 
@@ -68,10 +60,9 @@ WebSockets) in `docs/architecture.md`.
 
 ## Prerequisites
 
-- **Rust** (stable toolchain; this project was developed and tested
-  against rustc 1.75.0 — see `docs/dependency-rationale.md` for why some
-  dependency versions are pinned, and `docs/troubleshooting.md` for how
-  to relax those pins on a newer toolchain).
+- **Rust** stable, tested with rustc/cargo 1.97.0 (Plonky3 needs a recent
+  toolchain; the old 1.75 pins were removed). A C compiler is needed for
+  PQClean and bundled SQLite (MSVC Build Tools on Windows).
 - **Node.js** 18+ and npm.
 - **Python** 3.9+ and pip.
 - A C compiler (for `rusqlite`'s bundled SQLite build): `build-essential`
@@ -148,22 +139,13 @@ through the identical scenario visually.
 ## Using the web dashboard
 
 Open `http://127.0.0.1:5173` after starting the dashboard dev server (or
-serve the production build after `npm run build` with any static file
-server). Nine pages, all functional (not mockups): Overview, Drones,
-Groups, Authentication, Secure Communication, **Registration (Stego)**,
-Trace Manager, Event Log (live via SSE), and System. The Registration
-(Stego) page runs the real R1-R3 flow end-to-end from the browser --
-pick (or create) an unregistered drone, optionally supply your own R1/R3
-cover images, and it drives a real RAG-assisted algorithm selection,
-real embed/extract against `python-service`, and real registration,
-showing every candidate algorithm's real measurements, the selector's
-reasoning, and the resulting stego images (see `docs/registration-stego.md`).
-It replaces the former RAG-chatbot page in primary navigation; that page
-and its collaborative pipeline still exist and still work, reachable
-directly, but are no longer load-bearing for registration (`docs/rag.md`).
-Every control was actually driven end-to-end with a headless browser
-(Playwright) during development — see `docs/testing.md` for the full
-verification writeup and the one real UI bug it caught and fixed.
+serve `web-ui/dist/` after `npm run build` with any static file server).
+Nine pages, all functional (not mockups): Dashboard, Drones, Groups,
+Authentication, Secure Communication, RAG Simulation, Trace Manager,
+Protocol Logs (live via SSE), and Settings. Every control was actually
+driven end-to-end with a headless browser (Playwright) during
+development — see `docs/testing.md` for the full verification writeup
+and the one real UI bug it caught and fixed.
 
 ## Tests
 
@@ -172,13 +154,9 @@ verification writeup and the one real UI bug it caught and fixed.
 .\scripts\windows\test.ps1     # Windows
 ```
 
-**213 automated tests, all passing**: 132 Rust unit tests + 3 end-to-end
-integration tests (including a full chained Stego Registration →
-Authentication → Authorization → Group Key → Secure Message →
-Revocation → denied Re-authentication run) + 3 dedicated
-security-negative tests + 75 Python tests (steganography algorithms,
-selector, benchmark, RAG knowledge, and the original collaborative RAG
-pipeline). Full checklist-to-test mapping (every item from "stale
+**125 automated tests, all passing**: 107 Rust unit tests + 2 end-to-end
+integration tests + 3 dedicated security-negative tests + 13 Python
+tests. Full checklist-to-test mapping (every item from "stale
 timestamp" through "invalid AEAD authentication tag") in
 `docs/testing.md`.
 
@@ -204,14 +182,14 @@ interpretation guidance in `docs/benchmarking.md`.
 Writes `examples/test-vectors/generated_vectors.json`. Explicitly split
 into a fully-deterministic section (verified byte-for-byte identical
 across two runs) and a captured-real-run section (honestly documented as
-non-reproducible, and why) — see `docs/zk-membership.md`'s companion,
+non-reproducible, and why) — see
 the top of `rust-core/src/bin/vectors.rs`.
 
 ## Known limitations
 
-1. **The ZK membership proof does not hide the witness from the
-   verifier.** See `docs/zk-membership.md`. This is the single largest
-   scope limitation in the project.
+1. **Moderate anonymity only.** The ZK proof hides leaf index/path and `rho`
+   from D2, but sessions are linkable (stable keys/credential id) and
+   metadata is public; the GCS knows everything. See `docs/zk-security-analysis.md`.
 2. **Deterministic PUF-seed-to-keypair regeneration is not literally
    achieved** — keys are generated once from real entropy and persisted
    on-device instead (the underlying pqcrypto library exposes no seeded
@@ -232,37 +210,18 @@ the top of `rust-core/src/bin/vectors.rs`.
    see `docs/IMPLEMENTATION_STATUS.md`), **but were not executable-tested
    on an actual Windows machine** in this session (none was available).
    Please report any remaining issues.
-7. Several Rust dependency versions are pinned to stay buildable on this
-   project's rustc 1.75.0 development toolchain — see
-   `docs/dependency-rationale.md` for the exact list and how to relax
-   them on a newer toolchain.
-8. RAG simulation state (both the collaborative pipeline and the
-   registration-time selector's per-request measurements) is
-   in-memory/process-lifetime only (not persisted to SQLite) — a
-   documented simplification.
-9. **Registration via steganography requires `python-service` to be
-   reachable** (`IOD_STEGO_SERVICE_URL`, default `http://127.0.0.1:5001`)
-   — unlike the plain (non-stego) registration path, which has no such
-   dependency. If the service is down, the dashboard's Registration
-   (Stego) page and `iod-register-stego-demo` fail with a clear error
-   rather than silently falling back to a non-steganographic path. See
-   `docs/registration-stego.md`.
-10. The registration-time algorithm selector's importance weighting
-    (`CRITICAL` by default) is a chosen deployment policy, not a fact
-    the project claims to have derived empirically — see
-    `docs/algorithm-selection.md`.
+7. v2 builds with rustc 1.97 (Plonky3 `=0.9.0-rc.1` is pinned exactly); the
+   PQ crates are Round-3 Kyber768/Dilithium2, not final FIPS 203/204.
+8. RAG simulation state is in-memory/process-lifetime only (not
+   persisted to SQLite) — a documented simplification.
 
 ## Documentation index
 
 `docs/architecture.md` · `docs/protocol.md` · `docs/cryptography.md` ·
-`docs/zk-membership.md` · `docs/puf.md` · `docs/merkle-tree.md` ·
+`docs/zk-specification.md` · `docs/zk-design.md` · `docs/zk-security-analysis.md` · `docs/zk-implementation.md` · `docs/zk-test-results.md` · `docs/paper-evidence.md` · `docs/puf.md` · `docs/merkle-tree.md` ·
 `docs/zero-trust.md` · `docs/rag.md` · `docs/threat-model.md` ·
 `docs/security-assumptions.md` · `docs/api.md` · `docs/development.md` ·
 `docs/testing.md` · `docs/benchmarking.md` · `docs/troubleshooting.md` ·
 `docs/research-notes.md` · `docs/dependency-rationale.md` ·
 `docs/ecc-audit.md` · `docs/security-review.md` ·
-`docs/steganography.md` · `docs/rag-stego-selection.md` ·
-`docs/registration-stego.md` · `docs/image-pipeline.md` ·
-`docs/algorithm-selection.md` · `docs/data-and-evaluation.md` ·
-`docs/migration-notes.md` · `docs/claims-and-limitations.md` ·
 `docs/IMPLEMENTATION_STATUS.md` (the complete, phase-by-phase build log)

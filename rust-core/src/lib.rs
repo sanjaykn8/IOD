@@ -9,3 +9,4 @@ pub mod trace;
 pub mod transport;
 pub mod zero_trust;
 pub mod zk;
+pub mod zkhash;

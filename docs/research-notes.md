@@ -6,22 +6,9 @@ follow-on research effort would plug in, and the trade-offs made in this
 version that a paper or thesis building on this codebase should
 acknowledge explicitly.
 
-## The single biggest open problem: hiding-ZK for the membership relation
+## Resolved in v2: hiding-ZK for the membership relation
 
-See `docs/zk-membership.md` in full. The concrete research question:
-*can a transparent (no trusted setup), non-ECC construction hide `rho`
-and the Merkle path/leaf-index from the verifier, for this specific
-relation, at a proof size and verification cost competitive with the
-current disclosure-based backend's ~540 bytes and ~0.11ms?* Candidate
-directions, roughly in order of implementation effort: (1) a
-purpose-built FRI-STARK over just the Merkle-path-folding computation
-(smaller AIR than a general-purpose STARK, since the Poseidon
-permutation itself could stay outside the proven circuit if the leaf and
-commitment are proven via a separate disclosure step — a hybrid
-approach), (2) an MPC-in-the-head scheme specialized to Merkle inclusion
-rather than a fully generic circuit, (3) adapting a lattice-based
-vector-commitment scheme to get additive blinding on Merkle nodes.
-
+The v1 open problem (a transparent, non-ECC proof that hides `rho` and the Merkle path) is addressed by the hiding-FRI zk-STARK described in `zk-design.md` and `zk-security-analysis.md`. Remaining research questions: unlinkable (anonymous-credential) membership that also hides keys and metadata; quantum-ROM soundness of the FRI-based proof; smaller proofs (currently ≈250 KB); PUF-derived keys; removing the GCS from the group-key trust base.
 ## Poseidon parameterization needs formal review
 
 The current instantiation (t=3, 8 full + 22 partial rounds, x^7 S-box,

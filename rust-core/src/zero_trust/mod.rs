@@ -19,13 +19,15 @@ use serde::{Deserialize, Serialize};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ZeroTrustInputs {
     pub freshness_ok: bool,
+    pub credential_ok: bool,
+    pub commitment_ok: bool,
+    pub session_binding_ok: bool,
     pub zk_membership_ok: bool,
     pub signature_ok: bool,
     pub puf_ok: bool,
     pub root_version_ok: bool,
-    /// Spec item 25-B: see `messages::VerificationReport::credential_consistency_ok`.
-    pub credential_consistency_ok: bool,
     pub group_id: String,
+    pub peer_role: String,
     pub requested_operation: String,
     /// Structural extension point for a mission-time-window policy
     /// (e.g. "only allow authentication during an active mission
@@ -88,11 +90,17 @@ impl PolicyEngine for DefaultPolicy {
         if !inputs.freshness_ok {
             return deny("STALE_TIMESTAMP_OR_NONCE");
         }
+        if !inputs.credential_ok {
+            return deny("GCS_CREDENTIAL_INVALID");
+        }
+        if !inputs.session_binding_ok {
+            return deny("SESSION_BINDING_FAILED");
+        }
+        if !inputs.commitment_ok {
+            return deny("COMMITMENT_MISMATCH");
+        }
         if !inputs.root_version_ok {
             return deny("STALE_MEMBERSHIP_ROOT_OR_VERSION");
-        }
-        if !inputs.credential_consistency_ok {
-            return deny("CREDENTIAL_CONSISTENCY_FAILED");
         }
         if !inputs.zk_membership_ok {
             return deny("ZK_MEMBERSHIP_PROOF_INVALID");
@@ -134,12 +142,15 @@ mod tests {
     fn base() -> ZeroTrustInputs {
         ZeroTrustInputs {
             freshness_ok: true,
+            credential_ok: true,
+            commitment_ok: true,
+            session_binding_ok: true,
             zk_membership_ok: true,
             signature_ok: true,
             puf_ok: true,
             root_version_ok: true,
-            credential_consistency_ok: true,
             group_id: "alpha".into(),
+            peer_role: "recon".into(),
             requested_operation: "authenticate".into(),
             mission_active: true,
             device_health_ok: true,
@@ -158,18 +169,6 @@ mod tests {
         let r = evaluate(&i);
         assert_eq!(r.decision, Decision::Deny);
         assert_eq!(r.reason_code, "PUF_VERIFICATION_FAILED");
-    }
-
-    #[test]
-    fn credential_inconsistency_denies_even_if_crypto_checks_passed() {
-        // Spec 25-B regression: the policy layer itself must treat a
-        // failed comm_pk_d1/M3-M5 consistency check as a hard deny,
-        // independent of (and checked before) the ZK/signature booleans.
-        let mut i = base();
-        i.credential_consistency_ok = false;
-        let r = evaluate(&i);
-        assert_eq!(r.decision, Decision::Deny);
-        assert_eq!(r.reason_code, "CREDENTIAL_CONSISTENCY_FAILED");
     }
 
     #[test]

@@ -2,9 +2,7 @@
 
 ## Prerequisites
 
-- Rust (stable toolchain; developed and tested against 1.75.0 — see
-  `docs/dependency-rationale.md` for why some dependency versions are
-  pinned). `cargo` and `rustc` on `PATH`.
+- Rust stable (tested with 1.97.0); `cargo` and `rustc` on `PATH`.
 - Node.js 18+ and `npm`.
 - Python 3.9+ and `pip` (a virtualenv is recommended and is what
   `scripts/*/setup.*` create).

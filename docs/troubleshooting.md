@@ -2,7 +2,7 @@
 
 ## Rust build fails with "requires rustc X.YY or newer" for some transitive dependency
 
-This project was developed against rustc 1.75.0 and several dependency
+This project was developed against rustc 1.75.0 (historical; v2 uses rustc 1.97) and several dependency
 versions are pinned in `rust-core/Cargo.toml` specifically to stay
 buildable on that toolchain (see `docs/dependency-rationale.md`). If
 you're on a newer Rust toolchain (which is fine and expected for most

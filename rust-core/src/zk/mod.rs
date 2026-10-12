@@ -1,104 +1,206 @@
-//! Transparent, hash-based, non-ECC "ZK membership" proof subsystem.
+//! Witness-hiding, transparent, non-ECC proof of group membership.
 //!
-//! # READ THIS BEFORE TRUSTING ANY "ZERO-KNOWLEDGE" CLAIM IN THIS MODULE
+//! Construction: a zero-knowledge STARK (AIR + hiding FRI) from Plonky3
+//! 0.9.0-rc.1: random masking of every committed polynomial, a randomizing
+//! codeword, and Merkle-tree commitments with salted leaves
+//! (Haböck, "A note on adding zero-knowledge to STARKs", ePrint 2024/1037).
+//! All hashing is Keccak-256 (commitments, Fiat–Shamir) and Poseidon2 over
+//! BabyBear (statement hash). No pairing, no elliptic curve, no trusted
+//! setup. See `docs/zk-design.md` and `docs/zk-security-analysis.md`.
 //!
-//! This module implements the *logical statement* from the
-//! specification's Circom-style circuit:
-//!
-//!   Public:  G, R_G, V_G, comm_PK
-//!   Witness: leaf, siblings[], path_indices[], PK_KEM, PK_Dil, metadata, rho
-//!   Prove:   leaf = Poseidon(0x01, PK_KEM, PK_Dil, G, metadata, rho)
-//!         AND comm_PK = Poseidon(0x02, PK_KEM, PK_Dil)
-//!         AND MerklePath(leaf, siblings, path_indices) == R_G
-//!         AND the proof is cryptographically bound to (G, R_G, V_G, comm_PK)
-//!
-//! per the explicit project requirement to avoid Circom+Groth16 (or any
-//! other elliptic-curve-backed SNARK) and instead use "the strongest
-//! feasible transparent, hash-based/post-quantum-compatible approach
-//! available without ECC."
-//!
-//! ## What IS real in this implementation
-//!
-//! - **Soundness of the algebraic relation**: `verify()` really
-//!   recomputes the leaf Poseidon hash, the PK-commitment Poseidon hash,
-//!   and folds the real Merkle path (via `merkle::tree::verify_witness`)
-//!   up to the claimed root. A prover without a witness satisfying every
-//!   one of these equations cannot produce an accepting proof, except by
-//!   breaking Poseidon's collision/preimage resistance — a real security
-//!   property, not a stub.
-//! - **G_public / G_witness binding** (spec correction #3): `verify()`
-//!   recomputes the leaf hash using the VERIFIER's own trusted `G` from
-//!   the public statement, not a separate copy carried inside the
-//!   witness/opening. There is structurally no way for a proof to bind
-//!   to one group in the Merkle-path check and a different group in the
-//!   leaf-construction check.
-//! - **V_G actually binds the proof** (spec correction #4/#5): the
-//!   Fiat-Shamir challenge `fs_challenge = Poseidon(FS_DOMAIN, G, R_G,
-//!   V_G, comm_PK, witness_commitment)` is recomputed by the verifier
-//!   using ITS OWN current, trusted `V_G` (obtained independently, e.g.
-//!   from the verifier's own group state / from `CredResp`), not a copy
-//!   embedded in the proof. If the group's version has since advanced
-//!   (a revocation or new registration happened), a verifier holding the
-//!   new `V_G` will recompute a different challenge and REJECT a proof
-//!   generated against the old version, even if every other equation
-//!   still happens to hold. This is exercised directly in the "stale
-//!   version is rejected" unit test below.
-//! - **Session/replay binding**: because the Fiat-Shamir challenge folds
-//!   in the live public statement, a proof cannot be replayed against a
-//!   different `(G, R_G, V_G, comm_PK)` tuple.
-//! - **Transparency**: every hash used (Poseidon, SHAKE256) is a fixed,
-//!   published, unkeyed function; there is no structured reference
-//!   string, no trusted setup ceremony, and no elliptic curve of any
-//!   kind anywhere in this module or its dependencies.
-//!
-//! ## What is a DOCUMENTED SIMULATION / NOT achieved
-//!
-//! - **Zero-knowledge hiding of the witness from the verifier.** A
-//!   genuine ZK proof lets a verifier become convinced a statement is
-//!   true *without learning the witness*. Achieving that for an
-//!   arbitrary hash-based relation like this one (a Merkle path plus a
-//!   Poseidon preimage), without ECC-based SNARKs, requires either a
-//!   hash-based polynomial-IOP/STARK (FRI), an MPC-in-the-head
-//!   construction (e.g. ZKBoo/Ligero-style), or a lattice-based
-//!   homomorphic commitment scheme. All three are substantial standalone
-//!   research/engineering undertakings; a subtly-incorrect from-scratch
-//!   attempt at one of them, built under time pressure and *presented as
-//!   real*, would be a materially worse outcome than an honestly-labeled
-//!   simplification. This module therefore does NOT attempt one.
-//!   Instead: `ZkProof` DOES include a genuine hiding Poseidon commitment
-//!   to the full witness (`witness_commitment`, freshly blinded with 256
-//!   random bits — this alone reveals nothing), but the proof ALSO
-//!   carries an `opening` with the actual witness values, because
-//!   `verify()` needs them to run the real algebraic checks above. Any
-//!   party that runs `verify()` (in this protocol, that is D2 for the
-//!   M5→M7 step) therefore fully learns `rho` and the Merkle
-//!   siblings/path (i.e. the leaf's tree position). Note this does not
-//!   change what D2 already learns from `CredResp` (M3): `PK_KEM_D1`,
-//!   `PK_Dil_D1`, and `membership_metadata_1` are sent to D2 in the
-//!   clear by the specification's own M3 design regardless of the ZK
-//!   layer. The *additional* information this backend's `opening`
-//!   discloses to D2, beyond what M3 already discloses, is exactly
-//!   `rho` and the Merkle path/index — i.e. the drone's position within
-//!   the group's tree.
-//! - **Practical implication**: with this backend, this system provides
-//!   a real, checked, Fiat-Shamir-bound **non-interactive proof of
-//!   knowledge with full witness disclosure to the verifier** — not a
-//!   hiding zero-knowledge proof. It is suitable for demonstrating the
-//!   protocol's structure, binding properties, and message flow, and
-//!   for a research prototype's threat-model discussion, but must not be
-//!   cited as providing witness privacy against the specific verifier
-//!   the proof is shown to.
-//!
-//! ## How a real hiding backend would slot in later
-//!
-//! `ZkBackend` (see `backend.rs`) is a trait with `prove` and `verify`
-//! methods over the same `ZkStatement`/`ZkWitness`/`ZkProof` types used
-//! throughout the `protocol` module. A future FRI-based STARK backend,
-//! or an MPC-in-the-head backend, could implement the same trait and be
-//! swapped in via `protocol::config` without touching any call site in
-//! `protocol/messages.rs` — this is the "clean interface" the project
-//! brief requires for exactly this situation.
+//! The proof carries NO witness field: the prover never serializes `rho`,
+//! the siblings or the path bits. Only the STARK transcript is sent.
 
-pub mod backend;
-pub mod statement;
-pub mod witness;
+pub mod air;
+mod config;
+
+use crate::zkhash::*;
+use air::*;
+use serde::{Deserialize, Serialize};
+
+pub const PROTOCOL_VERSION: u32 = 2;
+pub use config::{security_estimate, security_report, SecurityEstimate, ZkParams};
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MembershipPublicInputs {
+    pub protocol_version: u32,
+    /// V_G, the group-tree version this root corresponds to.
+    pub group_version: u32,
+    /// G: SHAKE256-derived group digest limbs.
+    pub group_digest: Limbs,
+    pub root: Digest,
+    /// comm_PK_D1 = SHAKE256(PK_KEM_D1, PK_Dil_D1) limbs.
+    pub comm_pk: Limbs,
+    /// Digest of the (public) membership metadata bound into the leaf.
+    pub metadata_digest: Limbs,
+    /// Domain-separated digest of the session context (see spec §6).
+    pub session_digest: Limbs,
+}
+
+impl MembershipPublicInputs {
+    /// Canonical ordered public-value vector (54 field elements).
+    pub fn to_field_vec(&self) -> Result<Vec<Bb>, ZkError> {
+        if self.group_version >= P || self.protocol_version >= P {
+            return Err(ZkError::OutOfRange);
+        }
+        let all = [
+            &self.group_digest,
+            &self.comm_pk,
+            &self.metadata_digest,
+            &self.session_digest,
+        ];
+        if all.iter().any(|l| l.iter().any(|&x| x >= P)) || self.root.0.iter().any(|&x| x >= P) {
+            return Err(ZkError::OutOfRange);
+        }
+        let mut v = Vec::with_capacity(NUM_PV);
+        v.push(bb(self.protocol_version));
+        v.push(bb(self.group_version));
+        v.extend(self.group_digest.iter().map(|&x| bb(x)));
+        v.extend(self.root.to_bb());
+        v.extend(self.comm_pk.iter().map(|&x| bb(x)));
+        v.extend(self.metadata_digest.iter().map(|&x| bb(x)));
+        v.extend(self.session_digest.iter().map(|&x| bb(x)));
+        debug_assert_eq!(v.len(), NUM_PV);
+        Ok(v)
+    }
+}
+
+/// Private witness. Deliberately NOT `Serialize`; `Debug` is redacted.
+pub struct MembershipPrivateWitness {
+    pub rho: [u32; RHO_LIMBS],
+    pub siblings: Vec<Digest>,
+    /// path_bits[i] == true: the current node is the RIGHT child at level i.
+    pub path_bits: Vec<bool>,
+}
+
+impl core::fmt::Debug for MembershipPrivateWitness {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("MembershipPrivateWitness(<redacted>)")
+    }
+}
+
+impl Drop for MembershipPrivateWitness {
+    fn drop(&mut self) {
+        self.rho = [0; RHO_LIMBS];
+        for s in self.siblings.iter_mut() {
+            *s = Digest::ZERO;
+        }
+        for b in self.path_bits.iter_mut() {
+            *b = false;
+        }
+    }
+}
+
+/// Opaque serialized proof: `magic(4) || param_id(1) || postcard(STARK proof)`.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MembershipProof {
+    #[serde(with = "hex_bytes")]
+    pub bytes: Vec<u8>,
+}
+
+mod hex_bytes {
+    pub fn serialize<S: serde::Serializer>(b: &[u8], s: S) -> Result<S::Ok, S::Error> {
+        s.serialize_str(&hex::encode(b))
+    }
+    pub fn deserialize<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<u8>, D::Error> {
+        let s: String = serde::Deserialize::deserialize(d)?;
+        hex::decode(s).map_err(serde::de::Error::custom)
+    }
+}
+
+impl MembershipProof {
+    pub fn len(&self) -> usize {
+        self.bytes.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.bytes.is_empty()
+    }
+}
+
+#[derive(thiserror::Error, Debug, PartialEq, Eq)]
+pub enum ZkError {
+    #[error("public input out of canonical range")]
+    OutOfRange,
+    #[error("witness does not satisfy the membership relation: {0}")]
+    InvalidWitness(&'static str),
+    #[error("proving failed: {0}")]
+    Prover(String),
+    #[error("malformed proof encoding")]
+    Malformed,
+    #[error("proof verification failed")]
+    Rejected,
+    #[error("unsupported protocol/proof version")]
+    Version,
+}
+
+const MAGIC: &[u8; 4] = b"IMP2";
+
+/// Check the relation natively (prover-side sanity; never sent anywhere).
+fn check_relation(
+    params: &ZkParams,
+    pi: &MembershipPublicInputs,
+    w: &MembershipPrivateWitness,
+) -> Result<[Bb; LEAF_STREAM_LEN], ZkError> {
+    if w.siblings.len() != params.depth || w.path_bits.len() != params.depth {
+        return Err(ZkError::InvalidWitness("path length != tree depth"));
+    }
+    if w.rho.iter().any(|&x| x >= P) || w.siblings.iter().any(|s| s.0.iter().any(|&x| x >= P)) {
+        return Err(ZkError::InvalidWitness("non-canonical field element"));
+    }
+    let stream = leaf_stream(&pi.group_digest, &pi.comm_pk, &pi.metadata_digest, &w.rho);
+    let mut cur = leaf_hash(&pi.group_digest, &pi.comm_pk, &pi.metadata_digest, &w.rho);
+    for (s, &right) in w.siblings.iter().zip(w.path_bits.iter()) {
+        cur = if right { node_hash(s, &cur) } else { node_hash(&cur, s) };
+    }
+    if cur != pi.root {
+        return Err(ZkError::InvalidWitness("Merkle path does not reach the public root"));
+    }
+    Ok(stream)
+}
+
+pub fn prove_membership(
+    params: &ZkParams,
+    pi: &MembershipPublicInputs,
+    w: &MembershipPrivateWitness,
+) -> Result<MembershipProof, ZkError> {
+    let stream = check_relation(params, pi, w)?;
+    let pv = pi.to_field_vec()?;
+    let air = MembershipAir::new(params.depth);
+    let height = params.trace_height(&air);
+    let ti = TraceInputs {
+        stream: &stream,
+        siblings: &w.siblings,
+        bits: &w.path_bits,
+        pc: pc_from_pv(&pv),
+    };
+    let trace = build_trace(&air, &ti, height);
+    let proof = config::prove(params, &air, trace, &pv)?;
+    let mut bytes = Vec::with_capacity(proof.len() + 5);
+    bytes.extend_from_slice(MAGIC);
+    bytes.push(params.param_id());
+    bytes.extend_from_slice(&proof);
+    Ok(MembershipProof { bytes })
+}
+
+pub fn verify_membership(
+    params: &ZkParams,
+    pi: &MembershipPublicInputs,
+    proof: &MembershipProof,
+) -> Result<(), ZkError> {
+    if pi.protocol_version != PROTOCOL_VERSION {
+        return Err(ZkError::Version);
+    }
+    let b = &proof.bytes;
+    if b.len() < 5 || &b[..4] != MAGIC {
+        return Err(ZkError::Malformed);
+    }
+    if b[4] != params.param_id() {
+        return Err(ZkError::Version);
+    }
+    let pv = pi.to_field_vec()?;
+    let air = MembershipAir::new(params.depth);
+    config::verify(params, &air, &b[5..], &pv)
+}
+
+#[cfg(test)]
+mod tests;

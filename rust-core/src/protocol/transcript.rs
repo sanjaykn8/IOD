@@ -1,106 +1,108 @@
-//! Canonical transcript construction for `T_base` (PUF-MAC) and `T`
-//! (the Dilithium-signed authentication transcript).
-//!
-//! Both use `crypto::kdf::shake256_transcript`, which length-prefixes
-//! every segment before hashing — this is the "do not sign vague JSON
-//! strings without canonicalization" requirement in concrete form: the
-//! signer and verifier both build these bytes from the same explicit,
-//! ordered list of fixed-width/length-prefixed fields, so there is no
-//! possible reordering or re-encoding ambiguity between them.
+//! Session context digest, T_base (PUF MAC input) and the auth
+//! transcript T (ML-DSA signature input). All use `canon::Canon`.
 
 use crate::crypto::domains::{TRANSCRIPT_AUTH, TRANSCRIPT_BASE_PUF};
-use crate::crypto::field::Fp;
 use crate::crypto::kdf::shake256_transcript;
+use crate::protocol::canon::Canon;
+use crate::zkhash::{shake_limbs, Digest, Limbs};
 
-pub fn build_t_base(
-    g: Fp,
-    v_g: u64,
-    r_g: Fp,
-    comm_pk_d1: Fp,
-    n1: &[u8],
-    n2: &[u8],
-    ts1: u64,
-    ts4: u64,
-    pid1: &[u8],
-) -> [u8; 32] {
-    shake256_transcript(
-        TRANSCRIPT_BASE_PUF,
-        &[
-            &g.to_bytes_le(),
-            &v_g.to_le_bytes(),
-            &r_g.to_bytes_le(),
-            &comm_pk_d1.to_bytes_le(),
-            n1,
-            n2,
-            &ts1.to_le_bytes(),
-            &ts4.to_le_bytes(),
-            pid1,
-        ],
-    )
+pub const DOMAIN_SESSION_CTX: &[u8] = b"IOD/v2/SESSION-CTX";
+
+/// Everything both drones and the GCS agree on for one session.
+pub struct SessionCtxInputs<'a> {
+    pub protocol_version: u32,
+    pub session_id: &'a str,
+    pub group_id: &'a str,
+    pub v_g: u64,
+    pub r_g: &'a Digest,
+    pub pid1: &'a [u8],
+    pub d2_cred_id: &'a [u8; 16],
+    pub n1: &'a [u8],
+    pub ts1: u64,
+    pub n2: &'a [u8],
+    pub ts4: u64,
+    pub c_puf: &'a [u8],
 }
 
-/// `T = SHAKE256("AuthTranscript" || G || V_G || R_G || comm_PK_D1 ||
-/// proof_ZK || N1 || N2 || TS1 || TS4 || PID1)`.
-///
-/// `proof_zk_digest` is the SHA-independent digest of the serialized
-/// `ZkProof` (see `protocol::messages::digest_zk_proof`) rather than the
-/// raw proof bytes, per the specification's own "(or its hash if large)"
-/// allowance — this keeps the signed transcript a fixed, small size
-/// regardless of proof size, while still cryptographically binding the
-/// exact proof that was presented (any change to the proof changes its
-/// digest, which changes `T`, which invalidates `sig1`).
-#[allow(clippy::too_many_arguments)]
+pub fn session_ctx_bytes(i: &SessionCtxInputs) -> Vec<u8> {
+    let mut c = Canon::new("SESSION-CTX");
+    c.u32(i.protocol_version)
+        .str(i.session_id)
+        .str(i.group_id)
+        .u64(i.v_g)
+        .limbs(&i.r_g.0)
+        .bytes(i.pid1)
+        .bytes(i.d2_cred_id)
+        .bytes(i.n1)
+        .u64(i.ts1)
+        .bytes(i.n2)
+        .u64(i.ts4)
+        .bytes(i.c_puf);
+    c.into_vec()
+}
+
+/// `session_context_digest`: public input of the ZK statement.
+pub fn session_ctx_digest(i: &SessionCtxInputs) -> Limbs {
+    shake_limbs(DOMAIN_SESSION_CTX, &[&session_ctx_bytes(i)])
+}
+
+pub fn build_t_base(session_ctx: &Limbs, comm_pk: &Limbs) -> [u8; 32] {
+    let sc = crate::zkhash::limbs_to_bytes(session_ctx);
+    let cm = crate::zkhash::limbs_to_bytes(comm_pk);
+    shake256_transcript(TRANSCRIPT_BASE_PUF, &[&sc, &cm])
+}
+
 pub fn build_auth_transcript(
-    g: Fp,
-    v_g: u64,
-    r_g: Fp,
-    comm_pk_d1: Fp,
-    proof_zk_digest: &[u8; 32],
-    n1: &[u8],
-    n2: &[u8],
-    ts1: u64,
-    ts4: u64,
-    pid1: &[u8],
+    session_ctx: &Limbs,
+    comm_pk: &Limbs,
+    cred_id_d1: &[u8; 16],
+    proof_digest: &[u8; 32],
 ) -> [u8; 32] {
-    shake256_transcript(
-        TRANSCRIPT_AUTH,
-        &[
-            &g.to_bytes_le(),
-            &v_g.to_le_bytes(),
-            &r_g.to_bytes_le(),
-            &comm_pk_d1.to_bytes_le(),
-            proof_zk_digest,
-            n1,
-            n2,
-            &ts1.to_le_bytes(),
-            &ts4.to_le_bytes(),
-            pid1,
-        ],
-    )
+    let sc = crate::zkhash::limbs_to_bytes(session_ctx);
+    let cm = crate::zkhash::limbs_to_bytes(comm_pk);
+    shake256_transcript(TRANSCRIPT_AUTH, &[&sc, &cm, cred_id_d1, proof_digest])
+}
+
+pub fn proof_digest(proof_bytes: &[u8]) -> [u8; 32] {
+    let d = crate::crypto::kdf::shake256_bytes(b"IOD-ZKPROOF-DIGEST-v2", proof_bytes, 32);
+    let mut out = [0u8; 32];
+    out.copy_from_slice(&d);
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    #[test]
-    fn t_base_deterministic() {
-        let a = build_t_base(Fp::new(1), 2, Fp::new(3), Fp::new(4), b"n1", b"n2", 5, 6, b"pid");
-        let b = build_t_base(Fp::new(1), 2, Fp::new(3), Fp::new(4), b"n1", b"n2", 5, 6, b"pid");
-        assert_eq!(a, b);
+    fn inputs<'a>(v: u64, n1: &'a [u8], cid: &'a [u8; 16], r: &'a Digest) -> SessionCtxInputs<'a> {
+        SessionCtxInputs {
+            protocol_version: 2, session_id: "s", group_id: "g", v_g: v, r_g: r, pid1: b"p",
+            d2_cred_id: cid, n1, ts1: 1, n2: b"n2", ts4: 2, c_puf: b"c",
+        }
     }
 
     #[test]
-    fn t_base_sensitive_to_version() {
-        let a = build_t_base(Fp::new(1), 2, Fp::new(3), Fp::new(4), b"n1", b"n2", 5, 6, b"pid");
-        let b = build_t_base(Fp::new(1), 3, Fp::new(3), Fp::new(4), b"n1", b"n2", 5, 6, b"pid");
-        assert_ne!(a, b, "T_base must change when V_G changes (version binding)");
+    fn digest_binds_every_field() {
+        let r = Digest([1; 8]);
+        let cid = [3u8; 16];
+        let base = session_ctx_digest(&inputs(1, b"n1", &cid, &r));
+        assert_eq!(base, session_ctx_digest(&inputs(1, b"n1", &cid, &r)));
+        assert_ne!(base, session_ctx_digest(&inputs(2, b"n1", &cid, &r)));
+        assert_ne!(base, session_ctx_digest(&inputs(1, b"nX", &cid, &r)));
+        assert_ne!(base, session_ctx_digest(&inputs(1, b"n1", &[4u8; 16], &r)));
+        assert_ne!(base, session_ctx_digest(&inputs(1, b"n1", &cid, &Digest([2; 8]))));
     }
 
     #[test]
-    fn auth_transcript_sensitive_to_proof_digest() {
-        let a = build_auth_transcript(Fp::new(1), 2, Fp::new(3), Fp::new(4), &[0u8; 32], b"n1", b"n2", 5, 6, b"pid");
-        let b = build_auth_transcript(Fp::new(1), 2, Fp::new(3), Fp::new(4), &[1u8; 32], b"n1", b"n2", 5, 6, b"pid");
-        assert_ne!(a, b);
+    fn t_base_and_transcript_depend_on_session_and_comm() {
+        let a = [1u32; 11];
+        let b = [2u32; 11];
+        assert_ne!(build_t_base(&a, &b), build_t_base(&b, &b));
+        assert_ne!(build_t_base(&a, &a), build_t_base(&a, &b));
+        let cid = [0u8; 16];
+        assert_ne!(
+            build_auth_transcript(&a, &b, &cid, &[0u8; 32]),
+            build_auth_transcript(&a, &b, &cid, &[1u8; 32])
+        );
     }
 }

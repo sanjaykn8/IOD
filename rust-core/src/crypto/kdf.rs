@@ -46,7 +46,7 @@ pub fn hmac_verify(key: &[u8], msg: &[u8], tag: &[u8]) -> bool {
 }
 
 /// SHAKE256 over a set of already-length-prefixed byte segments. Callers
-/// MUST length-prefix each segment (see `crypto::canonical` for the
+/// MUST length-prefix each segment (see `protocol::canon` for the
 /// analogous concern on the Poseidon/field side) so that transcript
 /// construction is unambiguous.
 pub fn shake256_transcript(domain: &[u8], segments: &[&[u8]]) -> [u8; 32] {

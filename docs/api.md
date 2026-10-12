@@ -1,87 +1,21 @@
-# API Reference
+# HTTP API (Rust core, `iod-server`; relayed by the Node gateway)
 
-All endpoints below are served by the Node.js gateway at
-`http://127.0.0.1:4000/api` (configurable via `IOD_NODE_PORT`). Every
-endpoint except the `/rag/*` ones is a direct, unmodified proxy to the
-Rust core's HTTP API at `http://127.0.0.1:8787/api` (same paths, minus
-the gateway's `/api` prefix duplication — see
-`node-server/src/api/routes.ts` for the exact 1:1 mapping). The `/rag/*`
-endpoints proxy to the Python service at `http://127.0.0.1:5001`.
+JSON over HTTP. Env: `IOD_BIND_ADDR` (default `127.0.0.1:8787`), `IOD_DB_PATH`, `IOD_ADMIN_TOKEN` (≥16 chars; if unset nobody is an administrator). No response contains private keys, PUF data, `rho`, Merkle witnesses, AEAD keys or KEM secrets (views are hand-built: `api/views.rs`).
 
-Request/response bodies are JSON. All examples use `curl`.
-
-## Simulation control
-
-| Method | Path | Body | Notes |
-|---|---|---|---|
-| POST | `/reset` | — | Deletes every drone, group, session, and log entry. Irreversible. |
-| GET | `/state` | — | Overview: drone/group counts, full group list, full drone list. |
-| GET | `/health` | — | Node's own health, plus whether it can reach the Rust core. |
-
-## Groups
-
-| Method | Path | Body | Notes |
-|---|---|---|---|
-| POST | `/groups` | `{"group_id": "alpha"}` | Creates a group with a fresh Merkle tree (depth from server config, default 8 → capacity 256). |
-| GET | `/groups` | — | List all groups with root/version/members. |
-| GET | `/groups/:id` | — | One group's detail. |
-
-## Drones
-
-| Method | Path | Body | Notes |
-|---|---|---|---|
-| POST | `/drones` | `{"drone_id": "drone-3"}` | Creates a simulated device (SRAM PUF initialized), not yet registered to any group. |
-| GET | `/drones` | — | List all drones (public fingerprints only — see "Secret redaction" below). |
-| GET | `/drones/:id` | — | One drone's detail. |
-| POST | `/drones/:id/register` | `{"group_id": "alpha", "role": "recon"}` | Runs R1-R3; refreshes every other active member's witness cache in that group afterward. |
-| POST | `/drones/:id/register-stego` | `{"group_id": "alpha", "role": "recon", "cover_image_r1_b64"?: "...", "cover_image_r3_b64"?: "..."}` | Runs R1-R3 transported through real 2D steganography (RAG-assisted algorithm selection, real embed/extract via `python-service`). Cover images optional (bundled fixtures used if omitted). Returns `leaf_index`, per-step chosen algorithm, every candidate's real measurements, RAG narrative, and both stego images as base64 PNG. Fails with a clear 400 if `python-service` is unreachable or the drone is already registered. See `docs/registration-stego.md`. |
-| GET | `/stego/algorithms` | — | Lists registered steganography algorithm ids (proxied to `python-service`). |
-| POST | `/drones/:id/revoke` | — | Zeroes the drone's Merkle leaf, bumps the group version, marks it inactive. |
-| POST | `/drones/:id/reactivate` | — | Re-registers a previously-revoked drone with a FRESH leaf (new `rho`), reusing its original Merkle slot. |
-| POST | `/drones/:id/move` | `{"group_id": "bravo"}` | Revokes from the old group, registers fresh into the new one. |
-
-## Authentication and key establishment
-
-| Method | Path | Body | Notes |
-|---|---|---|---|
-| POST | `/authenticate` | `{"d1_id": "drone-1", "d2_id": "drone-2"}` | Runs the full M1-M8 flow; returns the `VerificationReport` (5 sub-checks + decision + reason code). |
-| POST | `/group-key` | `{"d1_id": "...", "d2_id": "...", "mission_id": "m1"}` | Runs K1-K4; the resulting AEAD session key is held server-side (Rust), never returned to any caller. |
-| POST | `/secure-message` | `{"from_id": "...", "to_id": "...", "plaintext": "..."}` | Requires a prior `/group-key` call for that pair. Seals with AEAD, "transmits" over the passthrough transport, opens on the "receiver" side, and returns the receiver's decrypted plaintext (a simulation convenience — in the browser this demonstrates round-trip correctness; it does not imply that the server is a message relay for a real deployment). |
-
-## Events
-
-| Method | Path | Notes |
+| Method & path | Body | Result |
 |---|---|---|
-| GET | `/events?since=<cursor>` | Incremental fetch from the CURRENT process's in-memory log (Rust-side path; not directly exposed by the Node gateway — used internally by the SSE relay). |
-| GET | `/events/history?limit=<n>` | Reads from the durable SQLite `protocol_events` table — survives process restarts. |
-| GET | `/events/stream` | Server-Sent-Events stream (Node-side only; polls the Rust core's `/events` endpoint internally, see `docs/architecture.md`). |
+| `POST /api/reset` | — | wipe state |
+| `GET /api/state` | — | counts, groups, drones |
+| `POST /api/groups`, `GET /api/groups[/id]` | `{group_id}` | group views (`root_hex` = 32-byte hex Poseidon2 digest, `version`) |
+| `POST /api/drones`, `GET /api/drones[/id]` | `{drone_id}` | drone view (public-key fingerprints only) |
+| `POST /api/drones/{id}/register` | `{group_id, role}` | R1–R3; `leaf_index` |
+| `POST /api/drones/{id}/revoke` / `reactivate` / `move` | `{group_id}` for move | revocation expires PIDs and fails open sessions |
+| `POST /api/authenticate` | `{d1_id, d2_id}` | M1–M8: `{session_id, decision, reason_code, freshness_ok, credential_ok, commitment_ok, zk_membership_ok, signature_ok, puf_ok, root_version_ok, session_binding_ok, authenticated}`; HTTP 400 with a reason code when the GCS/drones reject before a verdict |
+| `POST /api/group-key` | `{session_id, mission_id}` (or `{d1_id,d2_id}` → that pair's latest session) | K1–K3 for a **completed** session only; 409 `NO_AUTH_SESSION`, 403 with the GCS reason (`SESSION_NOT_AUTHENTICATED`, `SESSION_DENIED`, `NOT_ALLOWED`, `D1_CONFIRM_INVALID`, `SESSION_REPLAY`, …) |
+| `POST /api/secure-message` | `{session_id, from_id, plaintext}` (or `to_id` instead of session) | K4 message sent and decrypted by the peer |
+| `GET /api/events?since=n`, `GET /api/events/history` | — | protocol events |
+| `POST /api/trace/flag` | `{session_id, flagged_by, reason}` | suspicion flag |
+| `POST /api/trace/request` | `{requested_by, reason, target_pid_hex}` + header `X-Admin-Token` | 200 resolved; 403 `NOT_ADMIN`; 422 `EMPTY_REASON`/`PID_NOT_FLAGGED`/`UNKNOWN_PID`. A `requester_role` in the body is ignored. Every attempt is audited |
+| `GET /api/trace` | — | flags and audit records |
 
-## Trace Manager
-
-| Method | Path | Body | Notes |
-|---|---|---|---|
-| POST | `/trace/flag` | `{"session_id": "...", "flagged_by": "...", "reason": "..."}` | Records a suspicion flag. |
-| POST | `/trace/request` | `{"requested_by": "...", "requester_role": "administrator", "reason": "...", "target_pid_hex": "..."}` | Only resolves a DroneID when `requester_role == "administrator"`; every attempt is logged regardless. |
-| GET | `/trace` | — | Full flag + trace-record audit trail. |
-
-## RAG (proxied to Python)
-
-| Method | Path | Body | Notes |
-|---|---|---|---|
-| POST | `/rag/contribute` | `{"drone_id": "...", "content": "...", "confidence": 0.85}` | |
-| POST | `/rag/run` | `{"query": "...", "top_k": 5}` | Runs retrieval → validation → fusion → mock-LLM generation. |
-| GET | `/rag/state` | — | Current contributions + last run result. |
-| POST | `/rag/reset` | — | Clears in-memory RAG state (independent of `/reset`, which only clears Rust-side state). |
-
-## Secret redaction (structural, not a formatting choice)
-
-Every Rust-side response is built from a hand-written `*View` DTO
-(`rust-core/src/api/views.rs`) — there is no code path from an internal
-`DroneState`/`GcsState` (which hold private keys, PUF golden patterns,
-KEM shared secrets, and AEAD keys) to an HTTP response body that
-bypasses these DTOs. Fields you will see: `kem_pk_fingerprint` /
-`dil_pk_fingerprint` (an 8-byte SHAKE256-derived fingerprint, not the
-key itself), `root_hex` (a public Merkle root), `cached_version`, and
-boolean/string verification results. Fields you will NEVER see from any
-endpoint: a private key, a PUF seed or golden pattern, a KEM shared
-secret, or an AEAD key.
+Session objects needed for K1 live in process memory; after a server restart a new authentication is required before K1 (the GCS-side session record persists).

@@ -47,7 +47,7 @@ pub fn drone_view(gcs: &GcsState, d: &DroneState) -> DroneView {
             .as_ref()
             .and_then(|g| gcs.groups.get(g))
             .and_then(|t| t.leaf_index_of(&d.drone_id)),
-        cached_root_hex: d.cached_root.map(|r| hex::encode(r.to_bytes_le())),
+        cached_root_hex: d.cached_root.map(|r| r.to_hex()),
         cached_version: d.cached_version,
     }
 }
@@ -65,7 +65,7 @@ pub fn group_view(group_id: &str, gcs: &GcsState) -> Option<GroupView> {
     let t = gcs.groups.get(group_id)?;
     Some(GroupView {
         group_id: group_id.to_string(),
-        root_hex: hex::encode(t.root().to_bytes_le()),
+        root_hex: t.root().to_hex(),
         version: t.version,
         capacity: t.capacity(),
         active_members: t.active_members(),
@@ -76,6 +76,10 @@ pub fn group_view(group_id: &str, gcs: &GcsState) -> Option<GroupView> {
 pub struct AuthResultView {
     pub session_id: String,
     pub freshness_ok: bool,
+    pub credential_ok: bool,
+    pub commitment_ok: bool,
+    pub session_binding_ok: bool,
+    pub authenticated: bool,
     pub zk_membership_ok: bool,
     pub signature_ok: bool,
     pub puf_ok: bool,
@@ -88,6 +92,10 @@ pub fn auth_result_view(session_id: &str, report: &VerificationReport) -> AuthRe
     AuthResultView {
         session_id: session_id.to_string(),
         freshness_ok: report.freshness_ok,
+        credential_ok: report.credential_ok,
+        commitment_ok: report.commitment_ok,
+        session_binding_ok: report.session_binding_ok,
+        authenticated: report.authenticated,
         zk_membership_ok: report.zk_membership_ok,
         signature_ok: report.signature_ok,
         puf_ok: report.puf_ok,

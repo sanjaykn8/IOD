@@ -8,14 +8,6 @@
 //! "domain separation" and "do not reuse the same raw seed across
 //! unrelated primitives" requirements.
 
-// --- Poseidon domains (u64 tags absorbed as the sponge capacity seed) ---
-pub const POSEIDON_LEAF: u64 = 0x01;
-pub const POSEIDON_PK_COMMITMENT: u64 = 0x02;
-pub const POSEIDON_MERKLE_NODE: u64 = 0x10;
-pub const POSEIDON_ZK_WITNESS_COMMITMENT: u64 = 0x20;
-pub const POSEIDON_ZK_FS_CHALLENGE: u64 = 0x21;
-pub const POSEIDON_GROUP_ID: u64 = 0x30;
-
 // --- KDF / seed-derivation domain strings (HKDF "info" parameters) ---
 pub const SEED_DOMAIN_KEM: &[u8] = b"IOD-SEED-KEM-v1";
 pub const SEED_DOMAIN_DILITHIUM: &[u8] = b"IOD-SEED-DILITHIUM-v1";
@@ -25,9 +17,6 @@ pub const SEED_DOMAIN_AEAD: &[u8] = b"IOD-SEED-AEAD-KEY-v1";
 pub const SEED_DOMAIN_FUZZY_EXTRACTOR: &[u8] = b"IOD-SEED-FUZZY-EXTRACTOR-v1";
 pub const SEED_DOMAIN_ENVELOPE: &[u8] = b"IOD-SEED-ENVELOPE-KEY-v1";
 pub const SEED_DOMAIN_GROUP_KEY_AEAD: &[u8] = b"IOD-SEED-GROUPKEY-AEAD-v1";
-/// Spec item 25-C ("explicit PUF<->credential<->Merkle-member<->ML-DSA-
-/// key binding"). See `identity::leaf::derive_puf_bound_rho` docs.
-pub const SEED_DOMAIN_LEAF_RHO: &[u8] = b"IOD-SEED-LEAF-RHO-v1";
 
 // --- SHAKE256 transcript domains (byte string prefixes) ---
 pub const TRANSCRIPT_AUTH: &[u8] = b"AuthTranscript-v1";

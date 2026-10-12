@@ -29,10 +29,10 @@ fn stale_timestamp_fails_freshness_check() {
     comm_req.ts1 -= 10 * 60 * 1000; // 10 minutes in the past, beyond MAX_TIMESTAMP_SKEW_MS
 
     let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-    let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+    let (_plain2, d1_id) = gcs_receive_m2(&gcs, &m2.wire).unwrap();
     let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
     let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-    let challenge = m4_challenge(&d2, "neg-group", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
+    let challenge = m4_challenge(&d2, "neg-group", &cred_resp.cred_d1, &m2.plain.n2).unwrap();
     let ctx = d1_local_auth_context(&d1);
     let proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
 
@@ -61,10 +61,10 @@ fn claiming_a_different_public_key_than_registered_fails_zk_and_signature_checks
 
     let comm_req = m1_comm_req(&mut d1);
     let m2 = m2_cred_req(&d2, &comm_req, &gcs.kem_pk).unwrap();
-    let (_plain2, d1_id) = gcs_receive_m2(&mut gcs, &m2.wire).unwrap();
+    let (_plain2, d1_id) = gcs_receive_m2(&gcs, &m2.wire).unwrap();
     let (m3_wire, _m3_plain) = gcs_m3_cred_resp(&gcs, &d1_id, &d2.drone_id).unwrap();
     let cred_resp = d2_receive_m3(&d2, &m3_wire).unwrap();
-    let challenge = m4_challenge(&d2, "neg-group", &cred_resp.cred_d1, &cred_resp.d2_cert, &m2.plain.n2).unwrap();
+    let challenge = m4_challenge(&d2, "neg-group", &cred_resp.cred_d1, &m2.plain.n2).unwrap();
     let ctx = d1_local_auth_context(&d1);
     let mut proof = m5_proof_bundle(&d1, &challenge, &comm_req.n1, comm_req.ts1, &comm_req.pid1, &ctx).unwrap();
 
@@ -91,7 +91,7 @@ fn claiming_a_different_public_key_than_registered_fails_zk_and_signature_checks
 
 #[test]
 fn malformed_m2_envelope_is_rejected_not_panicked_on() {
-    let (mut gcs, _d1, _d2) = two_registered_drones();
+    let (gcs, _d1, _d2) = two_registered_drones();
     let malformed = iod_core::protocol::envelope::SecureEnvelope {
         kem_ciphertext: vec![0xFFu8; 10], // wrong length / garbage, not a real Kyber768 ciphertext
         sealed: iod_core::crypto::aead::SealedMessage {
@@ -100,6 +100,6 @@ fn malformed_m2_envelope_is_rejected_not_panicked_on() {
             ciphertext: vec![1, 2, 3],
         },
     };
-    let result = gcs_receive_m2(&mut gcs, &malformed);
+    let result = gcs_receive_m2(&gcs, &malformed);
     assert!(result.is_err(), "a malformed envelope must be rejected with an error, not panic or silently succeed");
 }
