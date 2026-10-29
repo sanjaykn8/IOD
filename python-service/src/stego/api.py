@@ -11,6 +11,7 @@ log = logging.getLogger("stego")
 bp = Blueprint("stego", __name__, url_prefix="/stego")
 
 _BODY_LIMIT = 4 * ((config.HARD_MAX_FRAME_BYTES + 2) // 3) + 64 * 1024
+_UPLOAD_BODY_LIMIT = cover_mod.MAX_UPLOAD_B64 + 64 * 1024
 _FORBIDDEN = {"path", "paths", "file", "filename", "dir", "directory", "artifact_dir", "artifact_path",
               "key", "keys", "secret", "mac_key", "meta_key", "aead_key", "password", "token", "plaintext"}
 
@@ -41,11 +42,12 @@ def _on_exc(exc):
 
 @bp.before_request
 def _limit_body():
+    limit = _UPLOAD_BODY_LIMIT if request.path.endswith("/cover/upload") else _BODY_LIMIT
     try:
-        request.max_content_length = _BODY_LIMIT
+        request.max_content_length = limit
     except Exception:
         pass
-    if request.content_length is not None and request.content_length > _BODY_LIMIT:
+    if request.content_length is not None and request.content_length > limit:
         raise StegoError("FRAME_TOO_LARGE", "request body too large")
 
 
@@ -77,6 +79,11 @@ def camera_probe():
         if isinstance(ts, bool) or not isinstance(ts, (int, float)) or not 0.05 <= ts <= 30:
             raise StegoError("INVALID_REQUEST", "timeout_s must be a number in [0.05, 30]")
     return jsonify(cover_mod.probe(ci, ts))
+
+
+@bp.post("/cover/upload")
+def cover_upload():
+    return jsonify(service.upload_cover(_body()))
 
 
 @bp.post("/capture")

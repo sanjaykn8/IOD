@@ -257,3 +257,36 @@ fn all_five_algorithms_deliver_both_directions_on_a_natural_rgb_cover() {
     let urgent = pipeline::run_analyze(&st, 200, &cover, "urgent", None).unwrap();
     assert!(urgent["selection"]["selected"].is_string());
 }
+
+#[test]
+fn browser_webcam_frame_upload_becomes_the_cover_and_is_labelled() {
+    use iod_core::transport::b64;
+    let Some(py) = start_python("browsercam") else { return };
+    let (st, sid) = state(&py);
+    // a PNG that stands in for a frame captured in the browser (canvas.toBlob -> base64)
+    let tmp = py.dir.join("frame.png");
+    tamper("make-cover", &tmp, None);
+    let png = std::fs::read(&tmp).unwrap();
+    let backend = st.lock().unwrap().backend.clone();
+    let limits = st.lock().unwrap().stego_cfg.limits();
+    let up = backend.cover_upload(&b64::encode(&png), "browser_webcam", &limits).expect("upload");
+    let cover_id = up["cover"]["artifact_id"].as_str().unwrap().to_string();
+    assert_eq!(up["cover"]["source"], "browser_webcam");
+    assert_eq!(up["cover"]["width"], 320);
+    let cover = json!({"source": "browser_webcam", "cover_id": cover_id});
+    for (from, text) in [("drone-1", "from the browser camera D1->D2"), ("drone-2", "from the browser camera D2->D1")] {
+        let v = pipeline::run_message(&st, req(&sid, from, text, None, cover.clone())).unwrap_or_else(|f| panic!("{}", f.error));
+        assert_eq!(v["delivered_message"], text);
+        assert_eq!(v["cover"]["source"], "browser_webcam");
+        assert_eq!(v["cover"]["artifact_id"], cover_id.as_str());
+        assert_eq!(v["verification"]["frame_match"], true);
+    }
+    // events record the cover source
+    let events = st.lock().unwrap().db.query_stego_events(&Default::default()).unwrap();
+    assert!(events.iter().any(|e| e.to_string().contains("browser_webcam")));
+    // non-PNG and traversal-shaped input is rejected without storing anything
+    let bad = backend.cover_upload(&b64::encode(b"GIF89a-not-a-png"), "browser_webcam", &limits).unwrap_err();
+    assert_eq!(bad.code, "IMAGE_DECODE_ERROR");
+    let bad = backend.analyze(&json!({"frame_bytes": 100, "cover": {"source": "browser_webcam", "cover_id": "../../etc/passwd"}})).unwrap_err();
+    assert!(bad.code == "INVALID_REQUEST", "{}", bad.code);
+}

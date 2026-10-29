@@ -146,3 +146,14 @@ def test_existing_retrieve_behaviour_untouched():
     from rag.retrieval import retrieve
     cs = [Contribution("a", "red apple pie", 1.0), Contribution("b", "blue car", 1.0)]
     assert retrieve("apple pie", cs, 1)[0].drone_id == "a"
+
+
+def test_extended_kb_entries_are_complete_and_unique():
+    kb = ex.load_kb()
+    ids = [e["id"] for e in kb["entries"]]
+    assert len(ids) == len(set(ids)) and len(ids) >= 18
+    for e in kb["entries"]:
+        for k in ("id", "kind", "title", "mechanics", "capacity", "distortion", "cost", "limitations", "keywords"):
+            assert isinstance(e[k], str) and e[k], (e["id"], k)
+    assert {"concept-tie-break", "concept-priority-classes", "frame-integrity", "limits-detectability",
+            "failure-codes", "rag-role", "cover-webcam", "cover-procedural-bw"} <= set(ids)

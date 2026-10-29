@@ -41,7 +41,7 @@ def cover_descriptor(cov, artifact_id, png_bytes):
 
 def _persist_cover(cov, store, artifact_id=None):
     """Save the cover as <id>.cover.png (unless it already is a stored test cover)."""
-    if cov.source == "test_cover":
+    if cov.artifact_id is not None:  # already a stored cover (test cover / browser webcam / upload)
         return cov.artifact_id, store.read(cov.artifact_id, "cover")
     aid = artifact_id or artifacts.new_id()
     png = images.encode_png(cov.array)
@@ -69,6 +69,14 @@ def capture(req, store=None):
     aid, png = _persist_cover(cov, store)
     store.enforce_retention(keep_id=aid)
     return {"ok": True, "cover": cover_descriptor(cov, aid, png), "timings_ms": {"capture": t1, "save": _ms(t0) - t1}}
+
+
+def upload_cover(req, store=None):
+    store = store or get_store()
+    limits = config.parse_limits(req.get("limits"))
+    t0 = time.perf_counter()
+    cov, aid, png = cover_mod.store_uploaded_cover(req.get("image_b64"), req.get("origin", "browser_webcam"), limits, store)
+    return {"ok": True, "cover": cover_descriptor(cov, aid, png), "timings_ms": {"store": _ms(t0)}}
 
 
 def analyze(req, store=None):
@@ -141,7 +149,7 @@ def encode(req, store=None):
 
     t = time.perf_counter()
     aid = artifacts.new_id()
-    wrote_cover = cov.source != "test_cover"
+    wrote_cover = cov.artifact_id is None
     cover_png = None
     try:
         if wrote_cover:

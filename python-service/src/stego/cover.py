@@ -11,7 +11,9 @@ from . import config, images
 from .errors import StegoError
 from .procedural import decode_latent, encode_text
 
-SOURCES = ("webcam", "procedural", "test_cover")
+SOURCES = ("webcam", "procedural", "test_cover", "browser_webcam", "uploaded")
+STORED_SOURCES = ("test_cover", "browser_webcam", "uploaded")  # covers already saved via /cover/upload
+WARMUP_FRAMES = 5
 
 
 class CameraError(Exception):
@@ -70,12 +72,22 @@ class OpenCVCameraAdapter(CameraAdapter):
             raise CameraPermissionDenied("no permission for camera device")
         cap = None
         try:
-            cap = cv2.VideoCapture(camera_index)
+            if os.name == "nt" and hasattr(cv2, "CAP_DSHOW"):
+                cap = cv2.VideoCapture(camera_index, cv2.CAP_DSHOW)  # faster, more reliable open on Windows
+            else:
+                cap = cv2.VideoCapture(camera_index)
             if not cap.isOpened():
                 if os.name == "posix" and not os.path.exists(dev):
                     raise CameraAbsent("no camera device")
                 raise CameraCaptureFailed("camera could not be opened")
-            ok, frame = cap.read()
+            # Discard a few frames: cameras often deliver dark/unexposed frames right after opening.
+            ok, frame = False, None
+            for _ in range(WARMUP_FRAMES):
+                ok, frame = cap.read()
+                if not ok or frame is None:
+                    break
+            if not ok or frame is None:
+                ok, frame = cap.read()
             if not ok or frame is None:
                 raise CameraCaptureFailed("camera returned no frame")
             frame = np.asarray(frame)
@@ -200,6 +212,9 @@ def parse_cover_spec(spec):
     if source == "test_cover":
         from .artifacts import validate_id
         out["test_cover_id"] = validate_id(spec.get("test_cover_id"), "cover.test_cover_id")
+    if source in ("browser_webcam", "uploaded"):
+        from .artifacts import validate_id
+        out["cover_id"] = validate_id(spec.get("cover_id"), "cover.cover_id")
     return out
 
 
@@ -212,6 +227,12 @@ def acquire(spec, limits, store=None):
         data = store.read(spec["test_cover_id"], "cover")
         arr, transforms = images.decode_png(data, limits, convert=True)
         return Cover(arr, "test_cover", None, transforms, None, spec["test_cover_id"])
+    if source in ("browser_webcam", "uploaded"):
+        if store is None:
+            raise StegoError("INTERNAL_ERROR", "no artifact store")
+        data = store.read(spec["cover_id"], "cover")
+        arr, transforms = images.decode_png(data, limits, convert=True)
+        return Cover(arr, source, None, transforms, None, spec["cover_id"])
     if source == "procedural":
         arr, transforms, seed = procedural_cover(spec.get("seed"), limits=limits)
         return Cover(arr, "procedural", None, transforms, seed)
@@ -224,3 +245,37 @@ def acquire(spec, limits, store=None):
             reason = "CAMERA_CAPTURE_FAILED"  # invalid frame: recorded fallback, never resized
     arr, transforms, seed = procedural_cover(spec.get("seed"), limits=limits)
     return Cover(arr, "procedural_fallback", reason, transforms, seed)
+
+
+UPLOAD_ORIGINS = ("browser_webcam", "uploaded")
+MAX_UPLOAD_B64 = 12 * 1024 * 1024
+MAX_UPLOAD_BYTES = 8 * 1024 * 1024
+
+
+def store_uploaded_cover(image_b64, origin, limits, store):
+    """Validate a client-supplied PNG (e.g. a browser-webcam frame) and save it as a cover artifact.
+
+    The image is fully decoded and re-encoded (metadata dropped, mode normalised, never resized),
+    so only pixels the service itself produced are stored. Returns (Cover, artifact_id, png_bytes).
+    """
+    import base64
+    import binascii
+    from . import artifacts
+    if origin not in UPLOAD_ORIGINS:
+        raise StegoError("INVALID_REQUEST", "origin must be browser_webcam or uploaded")
+    if not isinstance(image_b64, str) or not image_b64 or len(image_b64) > MAX_UPLOAD_B64:
+        raise StegoError("INVALID_REQUEST", "image_b64 must be a non-empty base64 string within the size limit")
+    try:
+        raw = base64.b64decode(image_b64, validate=True)
+    except (binascii.Error, ValueError) as exc:
+        raise StegoError("INVALID_REQUEST", "image_b64 is not valid base64") from exc
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise StegoError("FRAME_TOO_LARGE", "uploaded image too large")
+    if not raw.startswith(b"\x89PNG\r\n\x1a\n"):
+        raise StegoError("IMAGE_DECODE_ERROR", "only PNG images are accepted (lossless)")
+    arr, transforms = images.decode_png(raw, limits, convert=True)
+    png = images.encode_png(arr)
+    aid = artifacts.new_id()
+    store.write(aid, "cover", png)
+    store.enforce_retention(keep_id=aid)
+    return Cover(arr, origin, None, transforms, None, aid), aid, png

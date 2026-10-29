@@ -14,6 +14,8 @@ pub const ALGS: [&str; 5] = ["lsb_replacement", "lsb_matching", "pvd", "edge_ada
 pub trait StegoBackend: Send + Sync {
     fn health(&self) -> Result<Value, StegoError>;
     fn camera_probe(&self, camera_index: i64, timeout_ms: u64) -> Result<Value, StegoError>;
+    /// Validate and store a client-supplied PNG (browser webcam frame / uploaded image) as a cover artifact.
+    fn cover_upload(&self, image_b64: &str, origin: &str, limits: &Value) -> Result<Value, StegoError>;
     /// Acquire + persist cover, run the deterministic selector (or validate a manual override).
     fn analyze(&self, req: &Value) -> Result<Value, StegoError>;
     /// Embed `frame_b64` into the saved cover with the chosen algorithm and save the PNG.
@@ -49,6 +51,9 @@ impl StegoBackend for HttpBackend {
     }
     fn camera_probe(&self, camera_index: i64, timeout_ms: u64) -> Result<Value, StegoError> {
         self.post("/stego/camera/probe", &serde_json::json!({"camera_index": camera_index, "timeout_s": timeout_ms as f64 / 1000.0}))
+    }
+    fn cover_upload(&self, image_b64: &str, origin: &str, limits: &Value) -> Result<Value, StegoError> {
+        self.post("/stego/cover/upload", &serde_json::json!({"image_b64": image_b64, "origin": origin, "limits": limits}))
     }
     fn analyze(&self, req: &Value) -> Result<Value, StegoError> {
         self.post("/stego/analyze", req)

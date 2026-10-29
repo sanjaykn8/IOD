@@ -23,3 +23,5 @@ Alternatives rejected for the proof system: arkworks/Groth16/Halo2/KZG-based (el
 ## Steganography integration additions
 * Rust: none. Base64 and the minimal HTTP/1.1 client are hand-written (std `TcpStream`, timeouts, size caps) to avoid new crates and any TLS stack (ECC risk).
 * Python: `numpy` (pixel arrays, DCT), `Pillow` (lossless PNG I/O). Flask bumped 3.0.3 → 3.1.3 for the per-request body limit. Optional `opencv-python-headless` (webcam), isolated in `requirements-camera.txt`.
+
+Webcam update: no new dependencies. The browser path uses the standard `getUserMedia`/canvas APIs and the existing Pillow/numpy; `opencv-python-headless` stays optional for the server-side path.

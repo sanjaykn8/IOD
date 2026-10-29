@@ -71,6 +71,16 @@ impl StegoBackend for FakeStegoBackend {
     fn camera_probe(&self, _i: i64, _t: u64) -> Result<Value, StegoError> {
         Ok(json!({"available": false, "reason": "CAMERA_ABSENT"}))
     }
+    fn cover_upload(&self, image_b64: &str, origin: &str, _limits: &Value) -> Result<Value, StegoError> {
+        let raw = b64::decode(image_b64, 1 << 24).map_err(|e| StegoError::new("INVALID_REQUEST", "prepare", 400, e))?;
+        if !raw.starts_with(b"\x89PNG") {
+            return Err(StegoError::new("IMAGE_DECODE_ERROR", "prepare", 422, "only PNG images are accepted"));
+        }
+        let id = rand_id(&self.counter);
+        std::fs::write(self.dir.join(format!("{id}.cover.png")), &raw).map_err(|e| StegoError::new("IMAGE_WRITE_FAILED", "prepare", 500, e.to_string()))?;
+        Ok(json!({"ok": true, "cover": {"artifact_id": id, "source": origin, "fallback_reason": Value::Null, "width": 64, "height": 64, "mode": "RGB",
+                  "channels": 3, "transforms": [], "sha256": sha(&raw)}, "timings_ms": {"store": 1.0}}))
+    }
     fn analyze(&self, req: &Value) -> Result<Value, StegoError> {
         if let Some(code) = self.fail_analyze.lock().unwrap().clone() {
             return Err(StegoError::new(&code, "capture_select", 422, "forced failure"));

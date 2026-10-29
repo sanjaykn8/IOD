@@ -1,7 +1,7 @@
 // Steganography Lab client. Talks ONLY to the Node gateway (`/api/stego/*`),
 // which relays 1:1 to the Rust core. No keys, no policy, no crypto here.
 import type {
-  StegoAnalyzeResult, StegoBenchmarkRequest, StegoBenchmarkResult, StegoCameraProbe, StegoCoverRequest, StegoErrorBody, StegoEvent,
+  StegoAnalyzeResult, StegoBenchmarkRequest, StegoCoverUploadResult, StegoBenchmarkResult, StegoCameraProbe, StegoCoverRequest, StegoErrorBody, StegoEvent,
   StegoEventFilter, StegoFailure, StegoMessageResult, StegoPriority, StegoReport, StegoStage, StegoStatus,
 } from "../types/api";
 
@@ -52,6 +52,8 @@ export interface StegoMessageRequest {
 export const stegoApi = {
   status: () => call<StegoStatus>("GET", "/status"),
   probeCamera: (camera_index?: number) => call<StegoCameraProbe>("POST", "/camera/probe", camera_index === undefined ? {} : { camera_index }),
+  /** Store a PNG (browser webcam frame or user file) as a cover; the service re-validates and re-encodes it. */
+  uploadCover: (image_b64: string, origin: "browser_webcam" | "uploaded") => call<StegoCoverUploadResult>("POST", "/cover/upload", { image_b64, origin }),
   analyze: (body: { frame_bytes?: number; cover?: StegoCoverRequest; priority?: StegoPriority }) => call<StegoAnalyzeResult>("POST", "/analyze", body),
   /** Full send -> save -> receive -> verify transaction. Failures keep `stages` and `error.stage`. */
   message: (body: StegoMessageRequest) => call<StegoMessageResult>("POST", "/message", body),

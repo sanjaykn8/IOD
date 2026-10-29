@@ -96,8 +96,10 @@ export interface TraceRecord {
 // ---------------------------------------------------------------------
 export type StegoAlgorithm = "lsb_replacement" | "lsb_matching" | "pvd" | "edge_adaptive_lsb" | "dct";
 export type StegoPriority = "urgent" | "normal" | "background";
-export type StegoCoverSource = "webcam" | "procedural" | "test_cover";
-export interface StegoCoverRequest { source: StegoCoverSource; camera_index?: number; test_cover_id?: string; seed?: string }
+export type StegoCoverSource = "webcam" | "procedural" | "test_cover" | "browser_webcam" | "uploaded";
+export interface StegoCoverRequest { source: StegoCoverSource; camera_index?: number; test_cover_id?: string; cover_id?: string; seed?: string }
+export interface StegoUploadedCover { artifact_id: string; source: string; width: number; height: number; mode?: string; sha256?: string; transforms?: string[] }
+export interface StegoCoverUploadResult { ok: true; cover: StegoUploadedCover }
 export interface StegoErrorBody { code: string; message: string; stage?: string | null; details?: Record<string, unknown> | null }
 export type StegoStageStatus = "ok" | "failed" | "skipped" | string;
 export interface StegoStage { name: string; status: StegoStageStatus; ms?: number | null; detail?: string | null }

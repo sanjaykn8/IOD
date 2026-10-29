@@ -6,7 +6,10 @@ import { rust } from "./services/rustClient";
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+// Only the cover-upload route (browser webcam frame / uploaded PNG) may carry a large body; everything else keeps the small default.
+const smallJson = express.json();
+const coverJson = express.json({ limit: "14mb" });
+app.use((req, res, next) => (req.path === "/api/stego/cover/upload" ? coverJson(req, res, next) : smallJson(req, res, next)));
 
 app.use("/api", router);
 

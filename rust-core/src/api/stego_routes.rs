@@ -99,7 +99,14 @@ fn cover_from(body: &Value) -> Result<Value, StegoError> {
             }
             out["test_cover_id"] = json!(id);
         }
-        _ => return Err(bad("cover.source must be webcam, procedural or test_cover")),
+        "browser_webcam" | "uploaded" => {
+            let id = c.get("cover_id").and_then(|s| s.as_str()).unwrap_or("");
+            if !is_artifact_id(id) {
+                return Err(bad("browser_webcam/uploaded covers require cover_id (32 lowercase hex characters)"));
+            }
+            out["cover_id"] = json!(id);
+        }
+        _ => return Err(bad("cover.source must be webcam, procedural, test_cover, browser_webcam or uploaded")),
     }
     if let Some(i) = c.get("camera_index") {
         let i = i.as_i64().filter(|i| (0..=16).contains(i)).ok_or_else(|| bad("camera_index must be an integer within 0..=16"))?;
@@ -216,6 +223,25 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
             };
             let idx = body.get("camera_index").and_then(|i| i.as_i64()).filter(|i| (0..=16).contains(i)).unwrap_or(cfg.camera_index);
             match backend.camera_probe(idx, cfg.capture_timeout_ms) {
+                Ok(v) => json_resp(200, v),
+                Err(e) => err_resp(&e),
+            }
+        }
+        (Method::Post, ["cover", "upload"]) => {
+            // ~12 MiB of base64 (<= 8 MiB PNG). Python re-validates and fully re-encodes the image.
+            let body = match read_body_strict(request, 12 * 1024 * 1024 + 4096) { Ok(b) => b, Err(e) => return err_resp(&e) };
+            let origin = body.get("origin").and_then(|v| v.as_str()).unwrap_or("browser_webcam");
+            if origin != "browser_webcam" && origin != "uploaded" {
+                return err_resp(&bad("origin must be browser_webcam or uploaded"));
+            }
+            let Some(img) = body.get("image_b64").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
+                return err_resp(&bad("image_b64 is required"));
+            };
+            let (backend, cfg) = {
+                let s = state.lock().unwrap();
+                (s.backend.clone(), s.stego_cfg.clone())
+            };
+            match backend.cover_upload(img, origin, &cfg.limits()) {
                 Ok(v) => json_resp(200, v),
                 Err(e) => err_resp(&e),
             }

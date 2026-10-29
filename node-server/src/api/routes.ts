@@ -95,6 +95,7 @@ function relayRaw(res: Response, r: RustRawResponse, extraHeaders?: Record<strin
 const stego = (path: string) => `/api/stego${path}`;
 
 router.get("/stego/status", guard(async (_req, res) => relay(res, await rust.get(stego("/status")))));
+router.post("/stego/cover/upload", guard(async (req, res) => relay(res, await rust.post(stego("/cover/upload"), req.body ?? {}))));
 router.post("/stego/camera/probe", guard(async (req, res) => relay(res, await rust.post(stego("/camera/probe"), req.body ?? {}))));
 router.post("/stego/analyze", guard(async (req, res) => relay(res, await rust.post(stego("/analyze"), req.body ?? {}))));
 router.post("/stego/message", guard(async (req, res) => relay(res, await rust.post(stego("/message"), req.body ?? {}))));

@@ -175,11 +175,30 @@ Default for application messages: webcam via OpenCV (`IOD_STEGO_CAMERA_INDEX`, t
 `IOD_STEGO_CAPTURE_TIMEOUT_MS`), falling back to the procedural B/W generator with a recorded reason
 (`CAMERA_ABSENT`, `CAMERA_PERMISSION_DENIED`, `CAMERA_TIMEOUT`, `CAMERA_BACKEND_UNAVAILABLE`,
 `CAMERA_CAPTURE_FAILED`, `CAMERA_DISABLED`). `IOD_STEGO_CAMERA=disabled` forces the fallback. The Lab can
-also reuse a previously saved cover (`test_cover`). Install `opencv-python-headless` (see
-`python-service/requirements-camera.txt`) to enable the webcam; on Windows the OS camera-privacy setting
-must allow desktop apps; on Linux the user needs access to `/dev/video*`. Automated tests use mock adapters
-only — **no physical camera was available in the build environment**, so the OpenCV adapter has not been
-exercised against real hardware.
+also reuse a previously saved cover (`test_cover`).
+
+There are **two webcam paths**:
+
+1. **Browser webcam (recommended, works on any laptop).** The Steganography Lab page calls
+   `navigator.mediaDevices.getUserMedia`, shows a live preview, and **Capture frame as cover** draws one frame
+   to a canvas, encodes it as a lossless PNG (downscaled in the browser only above 1280x960, and the page says
+   so) and `POST`s it to `/api/stego/cover/upload` (Node relays to Rust, Rust to Python). Python accepts PNG
+   only (magic bytes), decodes it with size limits, **re-encodes** it (metadata dropped, never resized), saves
+   it as `<id>.cover.png`, and returns an artifact id. Messages then use `cover = {source: "browser_webcam",
+   cover_id}`; the source is recorded in the selection report, events and reports. The browser requires a
+   secure context: use `http://127.0.0.1:5173` or `http://localhost:5173` (not a LAN IP) and allow camera
+   permission. One captured frame can be reused for several messages; capture again for a fresh cover.
+   The same endpoint backs **Upload PNG cover** (`source: "uploaded"`); JPEG is refused (lossy).
+2. **Server-side OpenCV** (`source: "webcam"`): the Python service opens the camera itself. It discards 5
+   warm-up frames (auto-exposure), converts BGR to RGB, uses DirectShow on Windows, enforces a timeout and
+   releases the device in all cases. Install `opencv-python-headless` (`python-service/requirements-camera.txt`);
+   on Windows the OS camera-privacy setting must allow desktop apps; on Linux the user needs access to
+   `/dev/video*`. Failures fall back to the procedural cover with a recorded reason.
+
+Verification status: the browser path was exercised end to end (real Chromium `getUserMedia` with Chromium's
+synthetic test camera -> upload -> embed -> save -> receive; plus Python/Rust automated tests). The OpenCV
+adapter is tested with a fake `cv2` module (warm-up, colour order, error mapping). **No physical camera
+hardware was available in the build environment**, so neither path has been run against a real webcam device.
 
 ## 8. Artifacts, retention, safety limits
 
@@ -243,7 +262,7 @@ across a Python call.
 
 ## 12. API summary
 
-`GET /api/stego/status` · `POST /api/stego/camera/probe` · `POST /api/stego/analyze` · `POST /api/stego/message`
+`GET /api/stego/status` · `POST /api/stego/camera/probe` · `POST /api/stego/cover/upload` · `POST /api/stego/analyze` · `POST /api/stego/message`
 (full transaction) · `POST /api/stego/send` · `POST /api/stego/receive` · `GET /api/stego/events[?session_id,direction,algorithm,outcome,since_ms,until_ms,limit]`
 · `GET /api/stego/events/{id}` · `GET /api/stego/report?format=json|csv` · `POST /api/stego/benchmark` ·
 `GET /api/stego/artifacts/{id}/stego|cover`. The legacy `POST /api/secure-message` now goes through the same
@@ -256,7 +275,7 @@ pipeline and returns its old keys plus a `stego` object. Request/response exampl
   (high entropy), which does not make detection impossible.
 * The steganographic layer adds obscurity and a carrier, **not** cryptographic strength: confidentiality,
   integrity and replay protection come from the ML-KEM-derived AEAD keys and the HMAC-protected frame.
-* Webcam capture was not tested on hardware; only the mocked paths and the procedural fallback are verified.
+* Webcam capture was not tested on physical hardware; the browser path was verified with Chromium's synthetic camera, the OpenCV path with a fake `cv2` module. A browser-captured frame is trusted only as pixels: it is re-validated and re-encoded by the service.
 * RAG is simulated and explanation-only.
 * Round-3 PQ crates (Kyber768/Dilithium2), unaudited Plonky3 RC: see `docs/IMPLEMENTATION_STATUS.md`.
 * Timings are host-simulation measurements, not drone hardware.

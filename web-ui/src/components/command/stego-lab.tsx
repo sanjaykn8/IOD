@@ -4,6 +4,7 @@ import { api } from "@/lib/api";
 import { stegoApi, stegoUrl, downloadStegoReport, type StegoResult } from "@/lib/stego-api";
 import { CAMERA_REASONS, describeStegoError } from "@/lib/stego-errors";
 import { usePolling } from "@/hooks/use-polling";
+import { BrowserWebcam, CoverFileUpload } from "./stego-webcam";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -11,7 +12,7 @@ import { BusyLabel, DataTable, Empty, Field, Metric, PageHeader, Panel, Status, 
 import type { ProtocolEvent } from "@/lib/api";
 import type {
   StegoCameraProbe, StegoCandidate, StegoCoverRequest, StegoErrorBody, StegoEvent, StegoExplanation, StegoMessageResult,
-  StegoNum, StegoPriority, StegoReport, StegoSelection, StegoStage,
+  StegoNum, StegoPriority, StegoReport, StegoSelection, StegoStage, StegoUploadedCover,
 } from "@/types/api";
 
 /* ------------------------------------------------------------------ formatting */
@@ -209,7 +210,7 @@ export function SteganographyLabPage() {
   const [d1, setD1] = useState(""), [d2, setD2] = useState("");
   const [sessionSel, setSessionSel] = useState("auto");
   const [dir, setDir] = useState<keyof typeof DIRS>("D1_D2");
-  const [coverSrc, setCoverSrc] = useState<"webcam" | "procedural" | "test_cover">("webcam");
+  const [coverSrc, setCoverSrc] = useState<"webcam" | "procedural" | "test_cover" | "browser_webcam" | "uploaded">("webcam");
   const [algo, setAlgo] = useState("auto");
   const [priority, setPriority] = useState<StegoPriority>("normal");
   const [message, setMessage] = useState("Perimeter clear, proceeding to waypoint 2.");
@@ -218,6 +219,8 @@ export function SteganographyLabPage() {
   const [selView, setSelView] = useState<{ sel: StegoSelection; origin: string } | null>(null);
   const [probe, setProbe] = useState<StegoResult<StegoCameraProbe> | null>(null);
   const [reuseCoverId, setReuseCoverId] = useState<string | null>(null);
+  const [captured, setCaptured] = useState<{ cover: StegoUploadedCover; preview: string; origin: "browser_webcam" | "uploaded" } | null>(null);
+  const onCaptured = (origin: "browser_webcam" | "uploaded") => (cover: StegoUploadedCover, preview: string) => { setCaptured({ cover, preview, origin }); setCoverSrc(origin); };
 
   /* ---- readiness (derived from the existing protocol event history) */
   const sessions = useMemo(() => {
@@ -255,8 +258,9 @@ export function SteganographyLabPage() {
   const fromId = dir === "D1_D2" ? d1 : d2;
 
   function coverReq(): StegoCoverRequest {
+    if ((coverSrc === "browser_webcam" || coverSrc === "uploaded") && captured && captured.origin === coverSrc) return { source: coverSrc, cover_id: captured.cover.artifact_id };
     if (coverSrc === "test_cover" && reuseCoverId) return { source: "test_cover", test_cover_id: reuseCoverId };
-    return { source: coverSrc === "test_cover" ? "procedural" : coverSrc };
+    return { source: coverSrc === "test_cover" || coverSrc === "browser_webcam" || coverSrc === "uploaded" ? "procedural" : coverSrc };
   }
 
   /* ---- events + report */
@@ -360,7 +364,7 @@ export function SteganographyLabPage() {
       {backendUp ? (
         webcamAvailable === true
           ? <Notice tone="info" title="Webcam available">{`Probe succeeded${probed?.width ? ` (${probed.width}×${probed.height})` : ""}. "Webcam with fallback" will use it and fall back to a procedural cover if a capture fails.`}</Notice>
-          : <Notice tone="info" title={webcamAvailable === false || !camLikely ? "No webcam: procedural fallback will be used" : "Webcam backend present (not probed)"}>
+          : <Notice tone="info" title={webcamAvailable === false || !camLikely ? "No server-side webcam: the default source falls back to a procedural cover (use the browser webcam below)" : "Webcam backend present (not probed)"}>
               {webcamAvailable === false
                 ? `Probe result: ${probed?.reason ?? "unavailable"}${probed?.reason && CAMERA_REASONS[probed.reason] ? ` (${CAMERA_REASONS[probed.reason]})` : ""}. A procedural cover image will be generated instead; this is a fallback, not an error.`
                 : !camLikely ? `Camera mode "${camMode}", OpenCV ${cam?.opencv_available ? "present" : "not available"}. The procedural cover generator will be used. Use "Probe webcam" to confirm.`
@@ -376,9 +380,10 @@ export function SteganographyLabPage() {
       <div className="form-grid stego-grid-4">
         <Field label="Direction"><select className={selectClass} value={dir} onChange={(ev) => setDir(ev.target.value as keyof typeof DIRS)} aria-label="Direction"><option value="D1_D2">{DIRS.D1_D2}</option><option value="D2_D1">{DIRS.D2_D1}</option></select></Field>
         <Field label="Cover source"><select className={selectClass} value={coverSrc} onChange={(ev) => setCoverSrc(ev.target.value as typeof coverSrc)} aria-label="Cover source">
-          <option value="webcam">Webcam with procedural fallback (default)</option><option value="procedural">Procedural (force generator)</option>
+          <option value="webcam">Server webcam (OpenCV) with procedural fallback (default)</option><option value="procedural">Procedural (force generator)</option>
           <option value="test_cover" disabled={!reuseCoverId}>Reuse cover of last result{reuseCoverId ? "" : " (send once first)"}</option>
-          <option disabled>Upload test cover — not available</option>
+          <option value="browser_webcam" disabled={captured?.origin !== "browser_webcam"}>Browser webcam frame{captured?.origin === "browser_webcam" ? " (captured)" : " (capture one below)"}</option>
+          <option value="uploaded" disabled={captured?.origin !== "uploaded"}>Uploaded PNG{captured?.origin === "uploaded" ? "" : " (upload one below)"}</option>
         </select></Field>
         <Field label="Algorithm"><select className={selectClass} value={algo} onChange={(ev) => setAlgo(ev.target.value)} aria-label="Algorithm">
           <option value="auto">Automatic (deterministic policy)</option>
@@ -387,7 +392,11 @@ export function SteganographyLabPage() {
         <Field label="Priority class"><select className={selectClass} value={priority} onChange={(ev) => setPriority(ev.target.value as StegoPriority)} aria-label="Priority class"><option value="urgent">urgent</option><option value="normal">normal</option><option value="background">background</option></select></Field>
       </div>
       {algo !== "auto" ? <Notice tone="warning" title="Controlled experiment: manual algorithm override"><FlaskConical className="stego-inline-icon" aria-hidden="true" /> The deterministic policy is bypassed for <code>{algo}</code>. Safety limits still apply: an ineligible algorithm is rejected with ALGORITHM_NOT_ELIGIBLE.</Notice> : null}
-      <p className="stego-muted">Uploading your own test cover is not available: the core API has no cover-upload endpoint, so this page does not fake it. A cover from a previous result can be reused instead.</p>
+      <div className="stego-cover-tools">
+        <BrowserWebcam disabled={!backendUp || !!busy} onCover={onCaptured("browser_webcam")} />
+        <CoverFileUpload disabled={!backendUp || !!busy} onCover={onCaptured("uploaded")} />
+        {captured ? <figure className="stego-cover-thumb"><img src={captured.preview} alt="Selected cover" style={{ maxWidth: 160, borderRadius: 4 }} /><figcaption className="stego-muted">{captured.origin === "browser_webcam" ? "Browser webcam frame" : "Uploaded PNG"} · {captured.cover.width}×{captured.cover.height} · {short(captured.cover.artifact_id, 10)}</figcaption></figure> : null}
+      </div>
       <Field label="Message payload"><Textarea value={message} onChange={(ev) => setMessage(ev.target.value)} rows={3} aria-label="Message payload" /></Field>
       <div className="button-row">
         <Button disabled={!!busy || needsPair || !message || (sessionSel !== "auto" && !effective)} onClick={() => void send()}><Send /><BusyLabel busy={busy === "send"} idle="Send as image" busyText="Embedding, saving, verifying" /></Button>

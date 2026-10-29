@@ -149,7 +149,7 @@ and the one real UI bug it caught and fixed.
 
 ## Steganography transport (application messages)
 
-After M1–M8 and K1–K3 (unchanged), each application message is AEAD-sealed in Rust, wrapped as AppWire v1 and a Frame v1 (header + wire + HKDF-keyed HMAC-SHA256 tag), embedded in a PNG by one of five algorithms (LSB replacement, LSB matching, PVD, edge-adaptive LSB, DCT), saved, and the receiver reads **only the saved file**. Both directions use images; there is no plaintext fallback, and failures are structured errors persisted as events. A deterministic policy selector (`sel-policy-1`) chooses the algorithm; RAG only explains the choice. UI: **Steganography Lab** (`/steganography`). Cover: webcam if available, else a procedural B/W image (the webcam path is **unverified on hardware**). Limits: PNG-lossless only, not robust to JPEG/resize, plaintext loopback hop, simulation. Full detail: `docs/stego-transport.md`.
+After M1–M8 and K1–K3 (unchanged), each application message is AEAD-sealed in Rust, wrapped as AppWire v1 and a Frame v1 (header + wire + HKDF-keyed HMAC-SHA256 tag), embedded in a PNG by one of five algorithms (LSB replacement, LSB matching, PVD, edge-adaptive LSB, DCT), saved, and the receiver reads **only the saved file**. Both directions use images; there is no plaintext fallback, and failures are structured errors persisted as events. A deterministic policy selector (`sel-policy-1`) chooses the algorithm; RAG only explains the choice. UI: **Steganography Lab** (`/steganography`). Cover: **browser webcam** (live preview and capture in the Lab, any laptop, use `http://127.0.0.1:5173`), a PNG you upload, the server-side OpenCV webcam, or a procedural B/W fallback. Tested with Chromium's synthetic camera and a fake `cv2`; **not run against a physical webcam**. Limits: PNG-lossless only, not robust to JPEG/resize, plaintext loopback hop, simulation. Full detail: `docs/stego-transport.md`.
 
 Quick check: `python3 scripts/stego_smoke.py` (with services running; see the script header). Standalone tool: `tools/stego-standalone/`.
 
@@ -160,7 +160,7 @@ Quick check: `python3 scripts/stego_smoke.py` (with services running; see the sc
 .\scripts\windows\test.ps1     # Windows
 ```
 
-**Current results** (see `docs/testing.md`): Rust `cargo test --release` = 133 lib + 16 protocol integration + 1 end-to-end + 15 stego pipeline + 5 stego e2e (real Python service); Python `pytest` = 428; plus the 38-check `scripts/stego_smoke.py`. Full checklist-to-test mapping (every item from "stale
+**Current results** (see `docs/testing.md`): Rust `cargo test --release` = 133 lib + 16 protocol integration + 1 end-to-end + 15 stego pipeline + 6 stego e2e (real Python service); Python `pytest` = 443; plus the 38-check `scripts/stego_smoke.py`. Full checklist-to-test mapping (every item from "stale
 timestamp" through "invalid AEAD authentication tag") in
 `docs/testing.md`.
 

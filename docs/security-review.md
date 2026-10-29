@@ -26,3 +26,6 @@ GCS-known group key; linkable sessions; ZK adds little to authenticity in the mo
 
 ## Steganography integration review (2026-10-29)
 Checks done: MAC verified before AppWire parse and before AEAD open; constant-time compare; `recv_seen` committed only after successful open; bootstrap validated (CRC, length bounds vs capacity) before extraction; artifact ids whitelisted; atomic exclusive writes; state mutex not held across Python calls; secrets/witness never logged. Open: no TLS on the loopback hop (deliberate, ECC avoidance); no steganalysis resistance; camera path untested on hardware.
+
+## Webcam / cover upload review (2026-10-30)
+Upload route validated by tests (non-PNG, JPEG, garbage PNG, bad base64, size limits, id traversal) and a real-browser run. Body limits are raised only for `/api/stego/cover/upload`. The captured frame is re-encoded server-side, so the saved cover contains only decoded pixels. Open: no camera hardware test; frames are not liveness-checked (the simulator does not claim that the cover proves anything).

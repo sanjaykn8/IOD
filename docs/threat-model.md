@@ -21,3 +21,6 @@ Out of scope / not mitigated: compromised GCS; physical PUF cloning/modelling at
 
 ## Steganography transport (added 2026-10-29)
 Defended: tampered or truncated stego files, wrong algorithm/metadata (keyed MAC before parse), replay, wrong channel/direction, path traversal via artifact ids, oversize payloads, formula injection in CSV. **Not** defended: steganalysis (detectability is not claimed to be low), lossy handoff (fails closed), a malicious local Python service or loopback eavesdropper (plaintext HTTP carries cover and stego images, not plaintext messages), GCS visibility of plaintext in the simulation, side channels. Artifacts on disk are unencrypted.
+
+### Cover upload (browser webcam / uploaded PNG)
+A client can submit arbitrary bytes to `/api/stego/cover/upload`. Mitigations: PNG magic check, base64 validation and 8 MiB / 12 MiB-base64 caps (Rust 12 MiB request, Node 14 MB on this route only), dimension limits checked before pixel decode, full decode and **re-encode** (no metadata or trailing data stored), server-generated uuid4 ids, forbidden path/key fields. Not defended: a malicious local user filling the artifact directory (use `IOD_STEGO_RETENTION_MAX_ARTIFACTS`); the camera image is not trusted for any security property (it is only a carrier).

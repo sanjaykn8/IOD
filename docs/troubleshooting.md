@@ -76,3 +76,11 @@ start).
 Ensure you're using the project's virtualenv (`python-service/venv`),
 not a system Python — the setup scripts create this automatically. If
 building from scratch, Python 3.9+ is required.
+
+## Browser webcam does not start in the Steganography Lab
+
+* Open the UI at `http://127.0.0.1:5173` or `http://localhost:5173`. Browsers refuse camera access on plain-HTTP LAN addresses.
+* "Permission denied": allow the camera for this site (address-bar camera icon); on Windows also enable *Settings -> Privacy -> Camera* for browsers; on macOS *System Settings -> Privacy -> Camera*.
+* "Camera is busy": close other apps using the camera (video calls). "No camera found": check the device and drivers.
+* Upload rejected with `IMAGE_DECODE_ERROR`: only lossless PNG is accepted. `IMAGE_TOO_LARGE`: lower the resolution (limit 4096 per side by default).
+* The server-side (OpenCV) path is separate: install `python-service/requirements-camera.txt`; `CAMERA_ABSENT`/`CAMERA_PERMISSION_DENIED` in the result means it fell back to the procedural cover.
