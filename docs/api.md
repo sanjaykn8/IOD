@@ -19,3 +19,6 @@ JSON over HTTP. Env: `IOD_BIND_ADDR` (default `127.0.0.1:8787`), `IOD_DB_PATH`, 
 | `GET /api/trace` | — | flags and audit records |
 
 Session objects needed for K1 live in process memory; after a server restart a new authentication is required before K1 (the GCS-side session record persists).
+
+## Steganography endpoints (Rust; relayed by Node under `/api/stego/*`)
+`GET /api/stego/status`, `POST /api/stego/camera/probe`, `POST /api/stego/analyze`, `POST /api/stego/message` (analyze+send+receive), `POST /api/stego/send`, `POST /api/stego/receive` (artifact id only), `GET /api/stego/events[?direction&outcome&since_ms&limit]`, `GET /api/stego/events/{id}`, `GET /api/stego/report[?format=csv]`, `POST /api/stego/benchmark`, `GET /api/stego/artifacts/{id}/{stego|cover}` (id must match `^[0-9a-f]{32}$`). Errors: `{code,message,stage,details}` with stable codes. `POST /api/secure-message` now routes through the same image transport. Details and examples: `docs/stego-transport.md`.

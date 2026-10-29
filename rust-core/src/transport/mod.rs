@@ -1,23 +1,22 @@
-//! Transport abstraction, deliberately kept minimal in this version.
+//! Transport layer.
 //!
-//! Per the project brief, steganography is OUT OF SCOPE for this
-//! version — this module exists solely to provide the clean interface
-//! boundary a future adaptive-steganography subsystem would implement,
-//! without requiring any change to `protocol::secure_messaging` or
-//! anything upstream of it. The currently-active transport is the
-//! identity/passthrough implementation: AEAD ciphertext bytes are
-//! transmitted as-is.
-//!
-//! ```text
-//! plaintext -> AEAD -> ciphertext -> TransportProvider -> "on the wire" bytes
-//! ```
-//!
-//! A future `SteganographyTransportProvider` (PLACEHOLDER/FUTURE — not
-//! implemented) would implement the same `TransportProvider` trait,
-//! embedding `ciphertext` into e.g. image data on `encode` and
-//! extracting it on `decode`, and could be swapped in via
-//! `protocol::secure_messaging` construction without touching the AEAD
-//! layer, the group-key layer, or any authentication code above it.
+//! * `TransportProvider` / `PassthroughTransport` -- the original minimal
+//!   interface, retained for unit tests of the sealing layer only. The live
+//!   application-message path does NOT use passthrough.
+//! * `pipeline` -- the image-based transport (frame v1 + bootstrap v1 over
+//!   a Python image service). See `docs/stego-transport.md`.
+
+pub mod b64;
+pub mod backend;
+pub mod config;
+pub mod error;
+pub mod explain;
+pub mod fake;
+pub mod frame;
+pub mod http;
+pub mod pipeline;
+pub mod report;
+pub mod wire;
 
 pub trait TransportProvider: Send + Sync {
     /// Encode already-AEAD-protected ciphertext bytes into whatever this

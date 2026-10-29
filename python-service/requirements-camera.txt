@@ -1,0 +1,3 @@
+# Optional: enables the webcam cover source. Without it the camera adapter
+# degrades to the procedural cover (fallback_reason CAMERA_BACKEND_UNAVAILABLE).
+opencv-python-headless

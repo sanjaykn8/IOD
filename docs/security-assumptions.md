@@ -9,3 +9,6 @@
 7. **Moderate anonymity**: sessions linkable by stable keys/credentials; metadata public.
 8. Randomness: OS CSPRNG (`rand`, `getrandom`).
 9. The host and storage are trusted: the SQLite snapshot contains private keys and the simulated PUF pattern (documented simulation shortcut).
+
+## Steganography transport assumptions
+Meta MAC key = HKDF-SHA256 of the directional AEAD key (domain-separated); the Rust↔Python hop is trusted loopback; Python never sees keys or plaintext; steganography provides no confidentiality beyond the AEAD and no robustness.

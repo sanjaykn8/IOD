@@ -56,3 +56,6 @@ Admin token (`IOD_ADMIN_TOKEN`, ≥16 chars, constant-time HMAC compare, fail cl
 
 ## Known limitations
 GCS knows `K_G,M`, `rho`, and all identities; sessions are linkable; private keys are not PUF-derived (library has no seeded keygen); CRP provisioning is simulated and there is no CRP refill; GCS does not itself verify the ZK proof; pqcrypto Round-3 Kyber/Dilithium rather than final FIPS 203/204 encodings; wire format is JSON (byte arrays as number lists), so message sizes are inflated; no real network transport.
+
+## Note: K4 transport (2026-10-29)
+Application messages (K4) are now carried as AEAD → AppWire → Frame → PNG steganography; M1–M8 and K1–K3 are unchanged. See `stego-transport.md`.

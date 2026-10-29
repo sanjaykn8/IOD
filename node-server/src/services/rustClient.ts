@@ -28,7 +28,22 @@ async function call(method: string, path: string, body?: unknown, extra?: Record
   return { ok: res.ok, status: res.status, body: json };
 }
 
+export interface RustRawResponse {
+  status: number;
+  contentType: string;
+  body: Buffer;
+}
+
+// Raw/text relay for non-JSON bodies (CSV report, image/png artifacts):
+// the bytes and Content-Type are passed through unmodified.
+async function callRaw(method: string, path: string): Promise<RustRawResponse> {
+  const res = await fetch(`${config.rustBaseUrl}${path}`, { method });
+  const body = await res.buffer();
+  return { status: res.status, contentType: res.headers.get("content-type") || "application/octet-stream", body };
+}
+
 export const rust = {
+  getRaw: (path: string) => callRaw("GET", path),
   get: (path: string) => call("GET", path),
   post: (path: string, body?: unknown, extra?: Record<string, string>) => call("POST", path, body, extra),
 };

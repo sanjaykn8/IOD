@@ -99,6 +99,10 @@ fn route(
 ) -> Response<std::io::Cursor<Vec<u8>>> {
     let segs: Vec<&str> = path.trim_matches('/').split('/').collect();
 
+    if segs.len() >= 3 && segs[0] == "api" && segs[1] == "stego" {
+        return crate::api::stego_routes::handle(request, method, &segs, query, state);
+    }
+
     match (method, segs.as_slice()) {
         (Method::Post, ["api", "reset"]) => {
             let mut s = state.lock().unwrap();
@@ -240,23 +244,9 @@ fn route(
         }
 
         (Method::Post, ["api", "secure-message"]) => {
+            // Application messages travel as images; the pipeline never holds the state lock across backend calls.
             let body = read_body_json(request);
-            let (Some(from), Some(text)) = (str_field(&body, "from_id"), str_field(&body, "plaintext")) else {
-                return err(400, "missing from_id/plaintext");
-            };
-            let mut s = state.lock().unwrap();
-            let sid = match (str_field(&body, "session_id"), str_field(&body, "to_id")) {
-                (Some(sid), _) => sid.to_string(),
-                (None, Some(to)) => match s.latest_session(from, to) {
-                    Some(sid) => sid,
-                    None => return err(409, "NO_AUTH_SESSION"),
-                },
-                _ => return err(400, "missing session_id (or to_id)"),
-            };
-            match s.send_secure_message(&sid, from, text) {
-                Ok(decrypted) => ok(json!({ "status": "delivered", "decrypted_by_receiver": decrypted })),
-                Err(e) => err(400, e),
-            }
+            crate::api::stego_routes::legacy_secure_message(state, &body)
         }
 
         (Method::Get, ["api", "events"]) => {

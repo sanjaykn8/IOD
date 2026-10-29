@@ -23,3 +23,6 @@ Scope: this review covers the v2 changes; the v1 review is superseded (see git h
 
 ## Open items (not fixed)
 GCS-known group key; linkable sessions; ZK adds little to authenticity in the moderate model (see `zk-security-analysis.md`); no statistical privacy experiment; RC-version Plonky3; Round-3 PQ libraries; `iod_simulation.db` stores private keys; no constant-time claims; JSON wire format; trace flagging is unauthenticated (anyone can flag).
+
+## Steganography integration review (2026-10-29)
+Checks done: MAC verified before AppWire parse and before AEAD open; constant-time compare; `recv_seen` committed only after successful open; bootstrap validated (CRC, length bounds vs capacity) before extraction; artifact ids whitelisted; atomic exclusive writes; state mutex not held across Python calls; secrets/witness never logged. Open: no TLS on the loopback hop (deliberate, ECC avoidance); no steganalysis resistance; camera path untested on hardware.

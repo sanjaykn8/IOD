@@ -96,3 +96,6 @@ scripts/         cross-platform launch/build/test scripts
 6. In parallel, the Rust core has already pushed every step into its
    event log and persisted it to SQLite; the browser's Protocol Logs
    page shows the same events live via the Node SSE relay.
+
+## Steganography transport layer
+Rust (`rust-core/src/transport/`, `api/stego_routes.rs`) is authoritative for AEAD, AppWire, Frame, MAC, replay and events. Python (`python-service/src/stego/`) hosts cover capture, the five embedding algorithms, selector trial-encodes, artifacts and RAG explanation. Node is a thin relay. React adds the Steganography Lab. Diagrams: `stego-transport.md`.

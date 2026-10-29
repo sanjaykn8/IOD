@@ -64,3 +64,6 @@ In-memory only, process-lifetime scoped — a documented simplification.
 The Rust core's SQLite database already has an (unused, forward-looking)
 `rag_contributions` table scaffolded in `storage::db` if durable RAG
 history is wanted later.
+
+## Steganography explanation role (SIMULATED)
+`python-service/src/rag/explain.py` retrieves from a curated KB (`stego-kb-1`, word-overlap, no LLM) and renders a template narrative with a claim check. It is **explanation-only**: it cannot select, rank or veto an algorithm. Rust accepts the response only if `selected_unchanged` is true and the echoed algorithm matches; otherwise (or on outage) it uses a rule-based `fallback_deterministic` explanation, and delivery is never blocked.

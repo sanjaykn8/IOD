@@ -21,3 +21,5 @@ export const api={
  flagSession:(session_id:string,flagged_by:string,reason:string)=>req<TraceFlag>("POST","/trace/flag",{session_id,flagged_by,reason}), requestTrace:(requested_by:string,reason:string,target_pid_hex:string,adminToken:string)=>req<TraceRecord>("POST","/trace/request",{requested_by,reason,target_pid_hex},adminToken?{"X-Admin-Token":adminToken}:undefined), getTrace:()=>req<{flags:TraceFlag[];trace_records:TraceRecord[]}>("GET","/trace")
 };
 export function streamEvents(onEvent:(ev:ProtocolEvent)=>void,onState?:(connected:boolean)=>void){const source=new EventSource(`${BASE}/events/stream`);source.onopen=()=>onState?.(true);source.onerror=()=>onState?.(false);source.onmessage=(msg)=>{try{onEvent(JSON.parse(msg.data) as ProtocolEvent)}catch{}};return()=>source.close()}
+
+export { stegoApi,stegoUrl,downloadStegoReport } from "./stego-api";

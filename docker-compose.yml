@@ -9,13 +9,27 @@ services:
     build: ./rust-core
     ports:
       - "8787:8787"
+    environment:
+      # Plain HTTP to the Python image service on the private compose network.
+      IOD_PYTHON_URL: http://python-rag:5001
+      IOD_STEGO_ALLOW_NONLOOPBACK: "1"
+      IOD_STEGO_ARTIFACT_DIR: /artifacts
     volumes:
       - iod-data:/data
+      - iod-artifacts:/artifacts
+    depends_on:
+      - python-rag
 
   python-rag:
     build: ./python-service
     ports:
       - "5001:5001"
+    environment:
+      IOD_STEGO_ARTIFACT_DIR: /artifacts
+      # No webcam inside the container by default: procedural fallback is used.
+      IOD_STEGO_CAMERA: auto
+    volumes:
+      - iod-artifacts:/artifacts
 
   node-gateway:
     build: ./node-server
@@ -45,3 +59,4 @@ services:
 
 volumes:
   iod-data:
+  iod-artifacts:

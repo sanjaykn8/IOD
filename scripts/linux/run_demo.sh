@@ -13,6 +13,11 @@ IOD_DB_PATH="${IOD_DB_PATH:-$ROOT_DIR/iod_simulation.db}"
 IOD_BIND_ADDR="${IOD_BIND_ADDR:-127.0.0.1:8787}"
 IOD_PYTHON_PORT="${IOD_PYTHON_PORT:-5001}"
 IOD_NODE_PORT="${IOD_NODE_PORT:-4000}"
+# Shared directory for the saved steganographic PNGs: the Rust core reads what
+# the Python image service writes. Both processes MUST use the same path.
+export IOD_STEGO_ARTIFACT_DIR="${IOD_STEGO_ARTIFACT_DIR:-$ROOT_DIR/data/stego-artifacts}"
+export IOD_PYTHON_URL="${IOD_PYTHON_URL:-http://127.0.0.1:$IOD_PYTHON_PORT}"
+mkdir -p "$IOD_STEGO_ARTIFACT_DIR"
 
 echo "== Starting Rust core (iod-server) on $IOD_BIND_ADDR, db=$IOD_DB_PATH =="
 cd "$ROOT_DIR/rust-core"

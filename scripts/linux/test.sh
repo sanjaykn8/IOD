@@ -7,8 +7,12 @@ echo "== Rust: unit + integration + security-negative tests =="
 cd "$ROOT_DIR/rust-core" && cargo test
 
 echo ""
-echo "== Python: RAG pipeline unit tests =="
+echo "== Python: RAG + steganography unit/integration tests =="
 cd "$ROOT_DIR/python-service" && ./venv/bin/python -m pytest tests/ -v
+
+echo ""
+echo "== Standalone steganography project tests (compat wrappers) =="
+cd "$ROOT_DIR/tools/stego-standalone" && "$ROOT_DIR/python-service/venv/bin/python" -m unittest test_latent_image -v
 
 echo ""
 echo "== React: type-check + production build =="

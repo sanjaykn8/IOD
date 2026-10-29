@@ -16,14 +16,10 @@ pub enum SecureMessagingError {
     WrongChannel,
 }
 
-pub fn send_message(
-    key: &AeadKey,
-    transport: &dyn TransportProvider,
-    channel_tag: [u8; 16],
-    direction: u8,
-    seq: u32,
-    plaintext: &[u8],
-) -> Result<(SecureAppMessage, Vec<u8>), SecureMessagingError> {
+/// Seal an application message (AEAD) with its authenticated header. This is
+/// the transport-independent half of sending; the caller decides how the
+/// message travels (image transport in the live pipeline).
+pub fn seal_message(key: &AeadKey, channel_tag: [u8; 16], direction: u8, seq: u32, plaintext: &[u8]) -> SecureAppMessage {
     let mut msg = SecureAppMessage {
         channel_tag,
         direction,
@@ -32,6 +28,21 @@ pub fn send_message(
         sealed: aead::SealedMessage { seq, nonce: [0; aead::NONCE_LEN], ciphertext: vec![] },
     };
     msg.sealed = aead::seal(key, seq, &msg.associated_data(), plaintext);
+    msg
+}
+
+/// Legacy helper kept for the passthrough-transport unit tests: seals and
+/// also serialises `sealed` through a `TransportProvider`. The live
+/// pipeline does NOT use this (see `transport::pipeline`).
+pub fn send_message(
+    key: &AeadKey,
+    transport: &dyn TransportProvider,
+    channel_tag: [u8; 16],
+    direction: u8,
+    seq: u32,
+    plaintext: &[u8],
+) -> Result<(SecureAppMessage, Vec<u8>), SecureMessagingError> {
+    let msg = seal_message(key, channel_tag, direction, seq, plaintext);
     let bytes = serde_json::to_vec(&msg.sealed).map_err(anyhow::Error::from)?;
     let wire = transport.encode(&bytes)?;
     Ok((msg, wire))

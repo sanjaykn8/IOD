@@ -19,6 +19,11 @@ $DbPath = if ($env:IOD_DB_PATH) { $env:IOD_DB_PATH } else { "$RootDir\iod_simula
 $BindAddr = if ($env:IOD_BIND_ADDR) { $env:IOD_BIND_ADDR } else { "127.0.0.1:8787" }
 $PyPort = if ($env:IOD_PYTHON_PORT) { $env:IOD_PYTHON_PORT } else { "5001" }
 $NodePort = if ($env:IOD_NODE_PORT) { $env:IOD_NODE_PORT } else { "4000" }
+# Shared directory for the saved steganographic PNGs: the Rust core reads what
+# the Python image service writes. Both processes MUST use the same path.
+if (-not $env:IOD_STEGO_ARTIFACT_DIR) { $env:IOD_STEGO_ARTIFACT_DIR = "$RootDir\data\stego-artifacts" }
+if (-not $env:IOD_PYTHON_URL) { $env:IOD_PYTHON_URL = "http://127.0.0.1:$PyPort" }
+New-Item -ItemType Directory -Force -Path $env:IOD_STEGO_ARTIFACT_DIR | Out-Null
 
 Write-Host "== Starting Rust core (iod-server) on $BindAddr, db=$DbPath =="
 $env:IOD_DB_PATH = $DbPath

@@ -8,6 +8,17 @@ use crate::protocol::events::ProtocolEvent;
 use crate::trace::{SuspicionFlag, TraceRecord};
 use rusqlite::{params, Connection};
 
+#[derive(Default, Clone, Debug)]
+pub struct StegoEventFilter {
+    pub session_id: Option<String>,
+    pub direction: Option<i64>,
+    pub algorithm: Option<String>,
+    pub outcome: Option<String>,
+    pub since_ms: Option<i64>,
+    pub until_ms: Option<i64>,
+    pub limit: Option<i64>,
+}
+
 pub struct Database {
     conn: Connection,
 }
@@ -55,6 +66,16 @@ impl Database {
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 data TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS stego_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ts_ms INTEGER NOT NULL,
+                session_id TEXT NOT NULL,
+                direction INTEGER,
+                algorithm TEXT,
+                outcome TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_stego_events_ts ON stego_events(ts_ms);
             "#,
         )?;
         Ok(())
@@ -163,6 +184,73 @@ impl Database {
         Ok(out)
     }
 
+    // ------------------------------------------------- stego events ---
+
+    /// Append one image-transport event (metadata only: never plaintext,
+    /// ciphertext or key material). Returns the new event id.
+    pub fn append_stego_event(
+        &self,
+        ts_ms: i64,
+        session_id: &str,
+        direction: Option<i64>,
+        algorithm: Option<&str>,
+        outcome: &str,
+        data: &serde_json::Value,
+    ) -> anyhow::Result<i64> {
+        self.conn.execute(
+            "INSERT INTO stego_events (ts_ms, session_id, direction, algorithm, outcome, data) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![ts_ms, session_id, direction, algorithm, outcome, serde_json::to_string(data)?],
+        )?;
+        Ok(self.conn.last_insert_rowid())
+    }
+
+    /// Filtered history, newest first. All filters are bound parameters.
+    pub fn query_stego_events(&self, f: &StegoEventFilter) -> anyhow::Result<Vec<serde_json::Value>> {
+        let limit = f.limit.unwrap_or(200).clamp(1, 100_000);
+        let mut stmt = self.conn.prepare(
+            "SELECT id, data, outcome FROM stego_events
+             WHERE (?1 IS NULL OR session_id = ?1)
+               AND (?2 IS NULL OR direction = ?2)
+               AND (?3 IS NULL OR algorithm = ?3)
+               AND (?4 IS NULL OR outcome = ?4)
+               AND (?5 IS NULL OR ts_ms >= ?5)
+               AND (?6 IS NULL OR ts_ms <= ?6)
+             ORDER BY id DESC LIMIT ?7",
+        )?;
+        let rows = stmt.query_map(
+            params![f.session_id, f.direction, f.algorithm, f.outcome, f.since_ms, f.until_ms, limit],
+            |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+        )?;
+        let mut out = Vec::new();
+        for r in rows {
+            let (id, data, outcome) = r?;
+            let mut v: serde_json::Value = serde_json::from_str(&data)?;
+            v["event_id"] = serde_json::json!(id);
+            v["outcome"] = serde_json::json!(outcome);
+            out.push(v);
+        }
+        Ok(out)
+    }
+
+    pub fn count_stego_events(&self) -> anyhow::Result<(i64, i64)> {
+        let ok: i64 = self.conn.query_row("SELECT COUNT(*) FROM stego_events WHERE outcome = 'ok'", [], |r| r.get(0))?;
+        let failed: i64 = self.conn.query_row("SELECT COUNT(*) FROM stego_events WHERE outcome <> 'ok'", [], |r| r.get(0))?;
+        Ok((ok, failed))
+    }
+
+    pub fn get_stego_event(&self, id: i64) -> anyhow::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM stego_events WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+        if let Some(row) = rows.next()? {
+            let data: String = row.get(0)?;
+            let mut v: serde_json::Value = serde_json::from_str(&data)?;
+            v["event_id"] = serde_json::json!(id);
+            Ok(Some(v))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub fn reset_all(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             r#"
@@ -172,6 +260,7 @@ impl Database {
             DELETE FROM trace_records;
             DELETE FROM suspicion_flags;
             DELETE FROM rag_contributions;
+            DELETE FROM stego_events;
             "#,
         )?;
         Ok(())

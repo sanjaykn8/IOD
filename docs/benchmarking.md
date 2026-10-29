@@ -74,3 +74,6 @@ TOTAL K1-K3 (sequential, no network)                 avg=    2.2090 ms  p50=    
 
 Reminder: host-simulation measurements only; no network, no embedded hardware.
 ```
+
+## Steganography transport benchmark (host simulation, 2026-10-29)
+Files: `benchmark-results-stego-host-simulation.txt`, `benchmark-results-stego-natural-cover.json`. 200 transactions: 180 delivered, 20 DCT refusals on the B/W cover. End-to-end p50 ≈ 348–364 ms, p95 ≈ 377–404 ms (measured, this host, includes PNG write/read and Python calls). PSNR ≈ 69 dB (LSB family), 49 dB (PVD), 53.6 dB (DCT). Reports give percentiles only when n ≥ 20; estimated costs in the selector are a static model and are labelled estimated, never mixed with measured timings.

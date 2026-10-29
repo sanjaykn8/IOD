@@ -1,170 +1,148 @@
-"""Round-trip, boundary, and corruption tests for all 5 steganography
-algorithms. Run against REAL generated test images (no mocking of the
-image/crypto layer) -- see `fixtures.py` for how the images are built.
-"""
-
-import sys
-import os
-
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
-
 import numpy as np
 import pytest
 
-from stego.registry import ALGORITHMS, all_algorithm_ids
-from stego.base import StegoCapacityError, StegoExtractError
+from stego import images
+from stego.algorithms import _ALL, get_by_name
+from stego.config import Limits
+from stego.errors import StegoError
+from stego_helpers import natural_cover, payload
+
+ALGS = [a.name for a in _ALL]
+COVERS = {"rgb": natural_cover(96, 128, 3), "gray": natural_cover(96, 128, 1, seed=11)}
+CODES = ("CAPACITY_INSUFFICIENT", "EDGE_CAPACITY_INSUFFICIENT")
 
 
-def make_test_image(h=96, w=96, seed=0, kind="natural"):
-    rng = np.random.default_rng(seed)
-    if kind == "natural":
-        # Smooth gradient plus moderate noise plus a moderately dark and
-        # moderately bright patch -- realistic photographic dynamic
-        # range, exercising both the smooth and high-detail branches of
-        # adaptive_lsb, without the fully-saturated 0/255 extremes that
-        # are a documented, separately-tested boundary case (see
-        # `test_saturated_regions_fail_closed_not_corrupt` below).
-        yy, xx = np.meshgrid(np.linspace(0, 255, h), np.linspace(0, 255, w), indexing="ij")
-        base = (0.5 * yy + 0.5 * xx)
-        noise = rng.normal(0, 8, size=(h, w))
-        img = np.clip(base + noise, 0, 255)
-        img[: h // 4, : w // 4] = 20  # a dark-but-not-saturated block
-        img[h // 2 :, w // 2 :] = 235  # a bright-but-not-saturated block
-        rgb = np.stack([img, np.roll(img, 5, axis=0), np.roll(img, 5, axis=1)], axis=2)
-        return np.clip(rgb, 0, 255).astype(np.uint8)
-    elif kind == "flat":
-        return np.full((h, w, 3), 128, dtype=np.uint8)
-    elif kind == "saturated":
-        # Deliberately adversarial: large fully-saturated 0 and 255
-        # blocks, which leave QIM-style transform embedders (DCT/DWT/SVD)
-        # no headroom to perturb a coefficient without clipping. Used
-        # only by the dedicated boundary test -- every algorithm must
-        # either round-trip correctly here or fail closed
-        # (`StegoCapacityError`), never silently corrupt.
-        img = np.zeros((h, w), dtype=np.float64)
-        img[: h // 2, :] = 0
-        img[h // 2 :, :] = 255
-        rgb = np.stack([img, img, img], axis=2)
-        return rgb.astype(np.uint8)
-    elif kind == "random":
-        return rng.integers(0, 256, size=(h, w, 3), dtype=np.uint8)
-    raise ValueError(kind)
+def png_roundtrip(arr):
+    out, tr = images.decode_png(images.encode_png(arr), Limits(), convert=False)
+    assert tr == []
+    return out
 
 
-ALL_IDS = all_algorithm_ids()
+@pytest.fixture(params=ALGS)
+def alg(request):
+    return get_by_name(request.param)
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_round_trip_small_payload(algo_id):
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(kind="natural")
-    payload = b"IOD-R1-ENROLL-TEST-PAYLOAD-0123456789"
-    cap = algo.capacity_bytes(img)
-    assert cap >= len(payload), f"{algo_id}: unexpectedly low capacity {cap} on 64x64 test image"
-    result = algo.embed(img, payload)
-    recovered = algo.extract(result.stego_pixels, len(payload), result.algorithm_params)
-    assert recovered == payload, f"{algo_id}: round trip corrupted payload"
+@pytest.fixture(params=sorted(COVERS))
+def cover(request):
+    return COVERS[request.param]
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_round_trip_empty_payload(algo_id):
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(kind="natural")
-    result = algo.embed(img, b"")
-    recovered = algo.extract(result.stego_pixels, 0, result.algorithm_params)
-    assert recovered == b""
+def test_ids_and_names():
+    assert [(a.id, a.name) for a in _ALL] == [(1, "lsb_replacement"), (2, "lsb_matching"), (3, "pvd"),
+                                              (4, "edge_adaptive_lsb"), (5, "dct")]
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_round_trip_random_image(algo_id):
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(kind="random", seed=42)
-    payload = bytes(range(64)) * 2
-    cap = algo.capacity_bytes(img)
-    if len(payload) > cap:
-        payload = payload[:cap]
-    if len(payload) == 0:
-        pytest.skip(f"{algo_id}: zero capacity on this random image size")
-    result = algo.embed(img, payload)
-    recovered = algo.extract(result.stego_pixels, len(payload), result.algorithm_params)
-    assert recovered == payload
+@pytest.mark.parametrize("data", [b"", b"\x00", b"\xff", b"hello world", bytes(range(120)),
+                                  b"\xff\xfe\x80\xc3\x28\xa0\xa1\xf8\x88\x88\x88", payload(40)])
+def test_round_trip(alg, cover, data):
+    out = alg.embed(cover, data)
+    assert out.stego.shape == cover.shape and out.stego.dtype == np.uint8
+    assert alg.extract(out.stego, len(data)) == data
+    assert alg.extract(png_roundtrip(out.stego), len(data)) == data  # exact through PNG
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_capacity_exceeded_raises(algo_id):
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(h=16, w=16, kind="flat")
-    cap = algo.capacity_bytes(img)
-    too_big = bytes(cap + 1024)
-    with pytest.raises(StegoCapacityError):
-        algo.embed(img, too_big)
+def test_does_not_mutate_input(alg, cover):
+    before = cover.copy()
+    alg.embed(cover, payload(20))
+    assert np.array_equal(before, cover)
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_corrupted_stego_image_detected_or_wrong_output(algo_id):
-    """A corrupted/undersized stego image must not silently succeed with
-    wrong-length output: either it raises, or the recovered bytes differ
-    from the original payload (never a silent false-positive match)."""
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(kind="natural")
-    payload = b"some registration payload bytes 1234"
-    result = algo.embed(img, payload)
-    corrupted = result.stego_pixels.copy().astype(np.int32)
-    # Random, non-symmetric per-pixel noise. (A clean global inversion
-    # like `pixels ^ 0xFF` turns out to be a SYMMETRY of every parity-
-    # based scheme here -- e.g. DCT/SVD coefficients negate exactly and
-    # PVD pair differences negate exactly, both of which preserve the
-    # embedded bit's parity -- so it is not actually destructive and
-    # would be the wrong corruption to test with.)
-    rng = np.random.default_rng(123)
-    noise = rng.integers(-40, 41, size=corrupted.shape)
-    corrupted = np.clip(corrupted + noise, 0, 255).astype(np.uint8)
-    try:
-        recovered = algo.extract(corrupted, len(payload), result.algorithm_params)
-        assert recovered != payload
-    except StegoExtractError:
-        pass  # also an acceptable, honest failure mode
+def test_at_capacity_and_over(alg, cover):
+    cap = alg.capacity_bits(cover)
+    n = cap // 8
+    assert n > 0
+    data = payload(n, seed=5)
+    out = alg.embed(cover, data)
+    assert out.capacity_bits == cap
+    assert alg.extract(png_roundtrip(out.stego), n) == data
+    with pytest.raises(StegoError) as ei:
+        alg.embed(cover, payload(n + 1))
+    assert ei.value.code in CODES
+    with pytest.raises(StegoError) as ei2:
+        alg.extract(out.stego, n + 1)
+    assert ei2.value.code == "EXTRACT_FAILED"
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_grayscale_like_image_rgb_with_equal_channels(algo_id):
-    """RGB image where R==G==B (a grayscale image stored as RGB) --
-    exercises channel-independence of the per-channel algorithms."""
-    algo = ALGORITHMS[algo_id]
-    base = make_test_image(kind="natural")[:, :, 0]
-    img = np.stack([base, base, base], axis=2)
-    payload = b"gray-equivalent-payload"
-    cap = algo.capacity_bytes(img)
-    assert cap >= len(payload)
-    result = algo.embed(img, payload)
-    recovered = algo.extract(result.stego_pixels, len(payload), result.algorithm_params)
-    assert recovered == payload
+def test_capacity_estimate_matches_embedding(alg, cover):
+    cap = alg.capacity_bits(cover)
+    alg.embed(cover, payload(cap // 8))  # accepted
+    with pytest.raises(StegoError):
+        alg.embed(cover, payload(cap // 8 + 1))
+    # capacity is a property of the cover that the stego image shares (extractor relies on it)
+    assert alg.capacity_bits(alg.embed(cover, payload(cap // 8)).stego) == cap
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_saturated_regions_fail_closed_not_corrupt(algo_id):
-    """Adversarial fully-saturated (0/255) image: every algorithm must
-    either embed+extract correctly, or raise StegoCapacityError -- a
-    silent round-trip mismatch is the one outcome never acceptable."""
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(kind="saturated")
-    payload = b"saturated-boundary-case-payload"
-    cap = algo.capacity_bytes(img)
-    if len(payload) > cap:
-        pytest.skip(f"{algo_id}: payload exceeds capacity on this adversarial image, not the case under test")
-    try:
-        result = algo.embed(img, payload)
-    except StegoCapacityError:
-        return  # honest, documented failure mode -- acceptable
-    recovered = algo.extract(result.stego_pixels, len(payload), result.algorithm_params)
-    assert recovered == payload, f"{algo_id}: silently corrupted payload on a saturated image instead of failing closed"
+def test_determinism(alg, cover):
+    d = payload(33)
+    a, b = alg.embed(cover, d).stego, alg.embed(cover.copy(), d).stego
+    assert a.tobytes() == b.tobytes()
 
 
-@pytest.mark.parametrize("algo_id", ALL_IDS)
-def test_deterministic_given_same_inputs(algo_id):
-    algo = ALGORITHMS[algo_id]
-    img = make_test_image(kind="natural")
-    payload = b"determinism-check-payload"
-    r1 = algo.embed(img, payload)
-    r2 = algo.embed(img, payload)
-    assert np.array_equal(r1.stego_pixels, r2.stego_pixels), f"{algo_id}: embed is not deterministic"
+def test_reserved_samples_untouched(alg, cover):
+    cap = alg.capacity_bits(cover)
+    for n in (1, 17, cap // 8):
+        out = alg.embed(cover, payload(n)).stego
+        assert np.array_equal(out.reshape(-1)[:128], cover.reshape(-1)[:128])
+
+
+def test_empty_payload_changes_nothing(alg, cover):
+    assert np.array_equal(alg.embed(cover, b"").stego, cover)
+
+
+def test_input_validation(alg, cover):
+    with pytest.raises(StegoError):
+        alg.embed(cover.astype(np.int16), b"x")
+    with pytest.raises(StegoError):
+        alg.embed(cover, "text")
+    with pytest.raises(StegoError):
+        alg.extract(cover, -1)
+    with pytest.raises(StegoError):
+        alg.extract(cover, True)
+    with pytest.raises(StegoError):
+        alg.embed(cover, b"x", param=1000)
+
+
+def test_lsb_matching_moves_by_one_and_only_on_mismatch():
+    alg = get_by_name("lsb_matching")
+    cov = COVERS["rgb"]
+    out = alg.embed(cov, payload(200)).stego
+    diff = np.abs(out.astype(int) - cov.astype(int))
+    assert diff.max() == 1
+    assert 0 < (diff > 0).sum() <= 1600
+
+
+def test_lsb_replacement_changes_only_lsb():
+    alg = get_by_name("lsb_replacement")
+    cov = COVERS["rgb"]
+    out = alg.embed(cov, payload(200)).stego
+    assert np.array_equal(out >> 1, cov >> 1)
+
+
+def test_param_resolution():
+    assert get_by_name("dct").resolve_param(0) == 12
+    assert get_by_name("edge_adaptive_lsb").resolve_param(0) == 6
+    assert get_by_name("dct").resolve_param(20) == 20
+    for bad in (3, 65):
+        with pytest.raises(StegoError):
+            get_by_name("dct").resolve_param(bad)
+    with pytest.raises(StegoError):
+        get_by_name("pvd").resolve_param(1)
+
+
+@pytest.mark.parametrize("p", [4, 12, 32, 64])
+def test_dct_steps_round_trip(p):
+    alg = get_by_name("dct")
+    cov = COVERS["rgb"]
+    d = payload(60)
+    out = alg.embed(cov, d, p).stego
+    assert alg.extract(png_roundtrip(out), 60, p) == d
+
+
+@pytest.mark.parametrize("t", [1, 6, 20])
+def test_edge_thresholds_round_trip(t):
+    alg = get_by_name("edge_adaptive_lsb")
+    cov = COVERS["rgb"]
+    n = min(40, alg.capacity_bits(cov, t) // 8)
+    d = payload(n)
+    assert alg.extract(alg.embed(cov, d, t).stego, n, t) == d

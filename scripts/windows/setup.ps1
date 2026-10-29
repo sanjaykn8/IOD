@@ -20,7 +20,7 @@ npm run build
 
 Write-Host "== Setting up Python RAG service =="
 Set-Location "$RootDir\python-service"
-py -3.11 -m venv venv
+python -m venv venv
 & ".\venv\Scripts\pip.exe" install --upgrade pip
 & ".\venv\Scripts\pip.exe" install -r requirements.txt
 

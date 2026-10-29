@@ -27,6 +27,10 @@ from llm.mock_provider import MockLLMProvider
 app = Flask(__name__)
 CORS(app)
 
+from stego.api import bp as stego_bp  # noqa: E402
+
+app.register_blueprint(stego_bp)
+
 llm_provider = MockLLMProvider()
 
 

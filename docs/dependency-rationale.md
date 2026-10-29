@@ -19,3 +19,7 @@ Toolchain: the project originally targeted rustc 1.75 and pinned several crates 
 Node gateway: `express`, `cors`, `node-fetch` (no crypto). Web UI: React/Vite/Tailwind stack (no crypto). Python service: `flask`, `flask-cors`, `pytest` (RAG service unchanged in this phase).
 
 Alternatives rejected for the proof system: arkworks/Groth16/Halo2/KZG-based (elliptic curves — policy), custom homemade "commitment + Fiat–Shamir" (not zero knowledge).
+
+## Steganography integration additions
+* Rust: none. Base64 and the minimal HTTP/1.1 client are hand-written (std `TcpStream`, timeouts, size caps) to avoid new crates and any TLS stack (ECC risk).
+* Python: `numpy` (pixel arrays, DCT), `Pillow` (lossless PNG I/O). Flask bumped 3.0.3 → 3.1.3 for the per-request body limit. Optional `opencv-python-headless` (webcam), isolated in `requirements-camera.txt`.

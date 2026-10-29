@@ -1,6 +1,8 @@
-"""2D image-steganography subsystem: 5 real classical algorithms, a
-real measurement-based benchmark engine, and (in `rag.selector`) a
-deterministic, measurement-driven selector. See `base.py` for the
-shared protocol and `benchmark.py` for the "never fabricate numbers"
-design constraint this whole package is built around.
+"""Steganographic transport (Python side): bytes <-> pixels only.
+
+No keys, MACs or plaintext ever reach this package; it manipulates opaque
+frame bytes and images. See docs/stego-implementation-note.md.
 """
+
+SERVICE_VERSION = "1.0.0"
+POLICY_VERSION = "sel-policy-1"

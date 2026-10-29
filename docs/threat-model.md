@@ -18,3 +18,6 @@ Adversary: network attacker (Dolev–Yao over the simulated channel, harvest-now
 | Eavesdropping | KEM+HKDF+ChaCha20-Poly1305 envelopes; directional AEAD keys | `envelope`, `t15` |
 
 Out of scope / not mitigated: compromised GCS; physical PUF cloning/modelling attacks (the PUF is a simulator); traffic analysis and linkability; denial of service; side channels; compromise of a drone's stored private keys; real network transport security.
+
+## Steganography transport (added 2026-10-29)
+Defended: tampered or truncated stego files, wrong algorithm/metadata (keyed MAC before parse), replay, wrong channel/direction, path traversal via artifact ids, oversize payloads, formula injection in CSV. **Not** defended: steganalysis (detectability is not claimed to be low), lossy handoff (fails closed), a malicious local Python service or loopback eavesdropper (plaintext HTTP carries cover and stego images, not plaintext messages), GCS visibility of plaintext in the simulation, side channels. Artifacts on disk are unencrypted.

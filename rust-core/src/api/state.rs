@@ -11,7 +11,10 @@ use crate::protocol::messages::VerificationReport;
 use crate::protocol::simulation;
 use crate::storage::Database;
 use crate::trace::TraceManager;
+use crate::transport::backend::{HttpBackend, StegoBackend};
+use crate::transport::config::StegoConfig;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 pub struct SimulationState {
     pub gcs: GcsState,
@@ -30,6 +33,11 @@ pub struct SimulationState {
     pub merkle_depth: usize,
     /// Sequence counters per (session, direction).
     pub message_seq: HashMap<(String, u8), u32>,
+    /// Highest accepted sequence number per (session, direction) on the RECEIVER side (replay protection).
+    pub recv_seen: HashMap<(String, u8), u32>,
+    /// Image-transport configuration and the (replaceable) image-service backend.
+    pub stego_cfg: StegoConfig,
+    pub backend: Arc<dyn StegoBackend>,
 }
 
 fn pair_key(a: &str, b: &str) -> (String, String) {
@@ -42,6 +50,13 @@ fn pair_key(a: &str, b: &str) -> (String, String) {
 
 impl SimulationState {
     pub fn new(db_path: &str) -> anyhow::Result<Self> {
+        let cfg = StegoConfig::from_env().map_err(|e| anyhow::anyhow!("invalid image-transport configuration: {e}"))?;
+        let backend: Arc<dyn StegoBackend> = Arc::new(HttpBackend::new(&cfg).map_err(|e| anyhow::anyhow!("{e}"))?);
+        Self::with_backend(db_path, cfg, backend)
+    }
+
+    /// Construct with an explicit image-service backend (tests inject a fake).
+    pub fn with_backend(db_path: &str, stego_cfg: StegoConfig, backend: Arc<dyn StegoBackend>) -> anyhow::Result<Self> {
         let db = Database::open(db_path)?;
         let gcs = db.load_gcs()?.unwrap_or_else(GcsState::new);
         let mut drones = HashMap::new();
@@ -65,6 +80,9 @@ impl SimulationState {
             last_reports: HashMap::new(),
             merkle_depth: 8,
             message_seq: HashMap::new(),
+            recv_seen: HashMap::new(),
+            stego_cfg,
+            backend,
         })
     }
 
@@ -107,6 +125,7 @@ impl SimulationState {
         self.pair_session.clear();
         self.last_reports.clear();
         self.message_seq.clear();
+        self.recv_seen.clear();
         self.persist()
     }
 
@@ -235,38 +254,6 @@ impl SimulationState {
     /// clients that name the drones instead of the session).
     pub fn latest_session(&self, a: &str, b: &str) -> Option<String> {
         self.pair_session.get(&pair_key(a, b)).cloned()
-    }
-
-    /// Sends one message over the session's channel and has the receiver
-    /// decrypt it. `from_id` must be a participant of `session_id`.
-    pub fn send_secure_message(&mut self, session_id: &str, from_id: &str, plaintext: &str) -> anyhow::Result<String> {
-        let ch = self.channels.get(session_id).ok_or_else(|| anyhow::anyhow!("no group key established for this session"))?;
-        let s = self.gcs.sessions.get(session_id).ok_or_else(|| anyhow::anyhow!("unknown session"))?;
-        // direction 1 = D1 -> D2, 2 = D2 -> D1
-        let direction: u8 = if from_id == s.d1_id {
-            1
-        } else if from_id == s.d2_id {
-            2
-        } else {
-            anyhow::bail!("sender is not a participant of this session");
-        };
-        let (send_key, recv_key, tag) = if direction == 1 {
-            (&ch.d1_keys.d1_to_d2, &ch.d2_keys.d1_to_d2, ch.d1_keys.channel_tag)
-        } else {
-            (&ch.d2_keys.d2_to_d1, &ch.d1_keys.d2_to_d1, ch.d1_keys.channel_tag)
-        };
-        let seq_entry = self.message_seq.entry((session_id.to_string(), direction)).or_insert(0);
-        let last_seen = *seq_entry;
-        *seq_entry += 1;
-        let seq = *seq_entry;
-        let transport = crate::transport::PassthroughTransport;
-        let (msg, _wire) = crate::protocol::secure_messaging::send_message(send_key, &transport, tag, direction, seq, plaintext.as_bytes())?;
-        let opened = crate::protocol::secure_messaging::receive_message(recv_key, tag, direction, &msg, last_seen)?;
-        let ct_len = msg.sealed.ciphertext.len();
-        // Event details carry only the pseudonymous channel header facts.
-        self.record(session_id, "K4", "channel", "channel", crate::protocol::events::EventStatus::Ok,
-            format!("SecureMessage dir={direction} seq={seq} ciphertext_len={ct_len}B delivered+decrypted OK"));
-        Ok(String::from_utf8_lossy(&opened).to_string())
     }
 }
 

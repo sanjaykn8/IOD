@@ -1,5 +1,5 @@
 import { Router, Request, Response } from "express";
-import { rust } from "../services/rustClient";
+import { rust, RustRawResponse } from "../services/rustClient";
 import { python } from "../services/pythonClient";
 
 export const router = Router();
@@ -56,3 +56,72 @@ router.post("/rag/contribute", async (req, res) => relay(res, await python.post(
 router.post("/rag/run", async (req, res) => relay(res, await python.post("/rag/run", req.body)));
 router.get("/rag/state", async (_req, res) => relay(res, await python.get("/rag/state")));
 router.post("/rag/reset", async (_req, res) => relay(res, await python.post("/rag/reset")));
+
+// ---------------------------------------------------------------------
+// Steganography Lab: THIN relay onto the Rust `/api/stego/*` API (see
+// docs/stego-implementation-note.md section 4.2). No security logic, no
+// policy, no keys: bodies and status codes pass through unchanged. The only
+// checks here are request-shape guards on the artifact path (so a malformed
+// id never reaches Rust) and a structured 502 when Rust is unreachable.
+// ---------------------------------------------------------------------
+
+const STEGO_UNAVAILABLE = {
+  ok: false,
+  error: { code: "STEGO_BACKEND_UNAVAILABLE", message: "Rust core is unreachable from the gateway", stage: "gateway" },
+  stages: [],
+};
+
+function guard(fn: (req: Request, res: Response) => Promise<void>) {
+  return async (req: Request, res: Response) => {
+    try {
+      await fn(req, res);
+    } catch {
+      if (!res.headersSent) res.status(502).json(STEGO_UNAVAILABLE);
+    }
+  };
+}
+
+function rawQuery(req: Request): string {
+  const i = req.originalUrl.indexOf("?");
+  return i >= 0 ? req.originalUrl.slice(i) : "";
+}
+
+function relayRaw(res: Response, r: RustRawResponse, extraHeaders?: Record<string, string>) {
+  res.status(r.status).set("Content-Type", r.contentType);
+  for (const [k, v] of Object.entries(extraHeaders ?? {})) res.set(k, v);
+  res.send(r.body);
+}
+
+const stego = (path: string) => `/api/stego${path}`;
+
+router.get("/stego/status", guard(async (_req, res) => relay(res, await rust.get(stego("/status")))));
+router.post("/stego/camera/probe", guard(async (req, res) => relay(res, await rust.post(stego("/camera/probe"), req.body ?? {}))));
+router.post("/stego/analyze", guard(async (req, res) => relay(res, await rust.post(stego("/analyze"), req.body ?? {}))));
+router.post("/stego/message", guard(async (req, res) => relay(res, await rust.post(stego("/message"), req.body ?? {}))));
+router.post("/stego/send", guard(async (req, res) => relay(res, await rust.post(stego("/send"), req.body ?? {}))));
+router.post("/stego/receive", guard(async (req, res) => relay(res, await rust.post(stego("/receive"), req.body ?? {}))));
+router.post("/stego/benchmark", guard(async (req, res) => relay(res, await rust.post(stego("/benchmark"), req.body ?? {}))));
+router.get("/stego/events", guard(async (req, res) => relay(res, await rust.get(stego(`/events${rawQuery(req)}`)))));
+router.get(
+  "/stego/report",
+  guard(async (req, res) => {
+    if (req.query.format === "csv") {
+      const r = await rust.getRaw(stego(`/report${rawQuery(req)}`));
+      relayRaw(res, r, r.status === 200 ? { "Content-Disposition": 'attachment; filename="stego-report.csv"' } : undefined);
+    } else {
+      relay(res, await rust.get(stego(`/report${rawQuery(req)}`)));
+    }
+  }),
+);
+router.get(
+  "/stego/artifacts/:id/:kind",
+  guard(async (req, res) => {
+    const { id, kind } = req.params;
+    if (!/^[0-9a-f]{32}$/.test(id) || (kind !== "stego" && kind !== "cover")) {
+      res.status(400).json({ ok: false, error: { code: "INVALID_REQUEST", message: "invalid artifact id or kind", stage: "gateway" } });
+      return;
+    }
+    const r = await rust.getRaw(stego(`/artifacts/${id}/${kind}`));
+    relayRaw(res, r, { "X-Content-Type-Options": "nosniff", ...(r.status === 200 ? { "Cache-Control": "private, max-age=3600" } : {}) });
+  }),
+);

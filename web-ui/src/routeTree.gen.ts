@@ -16,6 +16,7 @@ import { Route as GroupsRouteImport } from './routes/groups'
 import { Route as LogsRouteImport } from './routes/logs'
 import { Route as RagRouteImport } from './routes/rag'
 import { Route as SecureCommunicationRouteImport } from './routes/secure-communication'
+import { Route as SteganographyRouteImport } from './routes/steganography'
 import { Route as SystemRouteImport } from './routes/system'
 import { Route as TraceRouteImport } from './routes/trace'
 
@@ -54,6 +55,11 @@ const SecureCommunicationRoute = SecureCommunicationRouteImport.update({
   path: '/secure-communication',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SteganographyRoute = SteganographyRouteImport.update({
+  id: '/steganography',
+  path: '/steganography',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SystemRoute = SystemRouteImport.update({
   id: '/system',
   path: '/system',
@@ -73,6 +79,7 @@ export interface FileRoutesByFullPath {
   '/logs': typeof LogsRoute
   '/rag': typeof RagRoute
   '/secure-communication': typeof SecureCommunicationRoute
+  '/steganography': typeof SteganographyRoute
   '/system': typeof SystemRoute
   '/trace': typeof TraceRoute
 }
@@ -84,6 +91,7 @@ export interface FileRoutesByTo {
   '/logs': typeof LogsRoute
   '/rag': typeof RagRoute
   '/secure-communication': typeof SecureCommunicationRoute
+  '/steganography': typeof SteganographyRoute
   '/system': typeof SystemRoute
   '/trace': typeof TraceRoute
 }
@@ -96,6 +104,7 @@ export interface FileRoutesById {
   '/logs': typeof LogsRoute
   '/rag': typeof RagRoute
   '/secure-communication': typeof SecureCommunicationRoute
+  '/steganography': typeof SteganographyRoute
   '/system': typeof SystemRoute
   '/trace': typeof TraceRoute
 }
@@ -109,6 +118,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/rag'
     | '/secure-communication'
+    | '/steganography'
     | '/system'
     | '/trace'
   fileRoutesByTo: FileRoutesByTo
@@ -120,6 +130,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/rag'
     | '/secure-communication'
+    | '/steganography'
     | '/system'
     | '/trace'
   id:
@@ -131,6 +142,7 @@ export interface FileRouteTypes {
     | '/logs'
     | '/rag'
     | '/secure-communication'
+    | '/steganography'
     | '/system'
     | '/trace'
   fileRoutesById: FileRoutesById
@@ -143,6 +155,7 @@ export interface RootRouteChildren {
   LogsRoute: typeof LogsRoute
   RagRoute: typeof RagRoute
   SecureCommunicationRoute: typeof SecureCommunicationRoute
+  SteganographyRoute: typeof SteganographyRoute
   SystemRoute: typeof SystemRoute
   TraceRoute: typeof TraceRoute
 }
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SecureCommunicationRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/steganography': {
+      id: '/steganography'
+      path: '/steganography'
+      fullPath: '/steganography'
+      preLoaderRoute: typeof SteganographyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/system': {
       id: '/system'
       path: '/system'
@@ -223,6 +243,7 @@ const rootRouteChildren: RootRouteChildren = {
   LogsRoute: LogsRoute,
   RagRoute: RagRoute,
   SecureCommunicationRoute: SecureCommunicationRoute,
+  SteganographyRoute: SteganographyRoute,
   SystemRoute: SystemRoute,
   TraceRoute: TraceRoute,
 }

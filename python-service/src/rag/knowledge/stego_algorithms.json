@@ -1,0 +1,90 @@
+{
+ "kb_version": "stego-kb-1",
+ "note": "Curated, hand-written knowledge base for the SIMULATED explanation of steganography algorithm selection. Not a learned model.",
+ "entries": [
+  {
+   "id": "alg-lsb_replacement",
+   "kind": "algorithm",
+   "algorithm": "lsb_replacement",
+   "title": "LSB replacement (lsb_replacement)",
+   "mechanics": "lsb_replacement overwrites the least significant bit of each sample from sample 128 onwards with one payload bit, most significant bit first.",
+   "capacity": "Capacity is one bit per sample after the 128 bootstrap samples, the largest of the five algorithms.",
+   "distortion": "Each embedded bit changes a sample by at most 1, on average for half of the bits; this is the lowest distortion per embedded bit.",
+   "cost": "Cost is minimal: a single vectorised mask-and-or over the sample array, no image scan.",
+   "limitations": "lsb_replacement is fragile to JPEG, resizing and filtering and is statistically detectable (pairs-of-values asymmetry); it is not robust and not undetectable.",
+   "keywords": "lsb_replacement least significant bit replacement simple capacity distortion fragile detectable chi-square"
+  },
+  {
+   "id": "alg-lsb_matching",
+   "kind": "algorithm",
+   "algorithm": "lsb_matching",
+   "title": "LSB matching (lsb_matching)",
+   "mechanics": "lsb_matching changes a sample by plus or minus 1 only when its least significant bit differs from the payload bit; direction comes from a deterministic seeded generator, with forced direction at 0 and 255.",
+   "capacity": "Capacity equals lsb_replacement: one bit per sample after the 128 bootstrap samples.",
+   "distortion": "Distortion is comparable to lsb_replacement but removes the pairs-of-values asymmetry that simple chi-square tests exploit.",
+   "cost": "Cost is low: one seeded random draw per payload bit and a vectorised update.",
+   "limitations": "lsb_matching is still fragile to JPEG, resizing and filtering and remains detectable by modern statistical steganalysis; it is not claimed robust.",
+   "keywords": "lsb_matching plus minus one matching random direction distortion fragile detectable steganalysis"
+  },
+  {
+   "id": "alg-pvd",
+   "kind": "algorithm",
+   "algorithm": "pvd",
+   "title": "Pixel-value differencing (pvd)",
+   "mechanics": "pvd takes adjacent sample pairs, classifies the absolute difference into the ranges 0-7, 8-15, 16-31, 32-63, 64-127 and 128-255 carrying 3, 3, 4, 5, 6 and 7 bits, and sets the new difference to the range start plus the payload value.",
+   "capacity": "pvd capacity depends on the cover: smooth areas carry few bits per pair and edges carry up to 7 bits per pair; capacity is exact and computed from the cover.",
+   "distortion": "pvd hides more bits in high-difference areas where changes are less visible, but individual samples can change by more than 1.",
+   "cost": "Cost is moderate: vectorised range lookup and cumulative sums over the pairs.",
+   "limitations": "pvd is fragile to JPEG, resizing and filtering; histogram steps at range boundaries make it statistically detectable, and it is not claimed robust.",
+   "keywords": "pvd pixel value differencing range table pairs capacity adaptive distortion fragile detectable"
+  },
+  {
+   "id": "alg-edge_adaptive_lsb",
+   "kind": "algorithm",
+   "algorithm": "edge_adaptive_lsb",
+   "title": "Edge-adaptive LSB (edge_adaptive_lsb)",
+   "mechanics": "edge_adaptive_lsb computes a gradient mask from the 7 most significant bits and replaces least significant bits only in samples of pixels whose gradient reaches the threshold, default 6, so the receiver rebuilds the same mask.",
+   "capacity": "Capacity is the number of eligible edge samples, often a small fraction of the image; if the frame does not fit the algorithm is unavailable with EDGE_CAPACITY_INSUFFICIENT and there is no fallback to smooth pixels.",
+   "distortion": "Changes are confined to textured regions, which lowers visible distortion for a given payload.",
+   "cost": "Cost is moderate: gradient and mask computation scans the whole image.",
+   "limitations": "edge_adaptive_lsb is fragile to JPEG, resizing and filtering and is statistically detectable as an LSB-class method; low-texture covers give little capacity.",
+   "keywords": "edge_adaptive_lsb edge adaptive gradient mask texture threshold capacity eligible fragile detectable"
+  },
+  {
+   "id": "alg-dct",
+   "kind": "algorithm",
+   "algorithm": "dct",
+   "title": "Block DCT quantisation (dct)",
+   "mechanics": "dct applies an 8x8 orthonormal DCT to one colour plane, and hides 6 bits per block by quantisation-index modulation of mid-frequency coefficients with step 12 by default, verifying each block after rounding.",
+   "capacity": "dct capacity is 6 bits per block, excluding the first block row, and is the smallest of the five algorithms.",
+   "distortion": "dct has the highest distortion of the five algorithms because coefficients move by up to a quantisation step.",
+   "cost": "Cost is the highest: forward and inverse block transforms with verification.",
+   "limitations": "dct is not claimed robust to JPEG or resizing in this implementation; saturated blocks at 0 or 255 can fail verification (ENCODE_VERIFY_FAILED), for example on black and white covers.",
+   "keywords": "dct discrete cosine transform block quantisation index modulation mid frequency distortion cost saturated verify"
+  },
+  {
+   "id": "policy-sel-policy-1",
+   "kind": "policy",
+   "algorithm": null,
+   "title": "Deterministic selector policy sel-policy-1",
+   "mechanics": "sel-policy-1 filters by capacity, trial-encodes each candidate on the real cover to measure MSE, PSNR and SSIM, applies hard limits, scores the rest with weights for distortion, utilisation and cost by priority class, and breaks ties inside an epsilon by a fixed order.",
+   "capacity": "A candidate is excluded when its capacity is smaller than the frame.",
+   "distortion": "Hard limits are MSE and PSNR thresholds measured on the trial encode.",
+   "cost": "The cost term is a static model, not a measurement; wall-clock timings are reported but never ranked.",
+   "limitations": "The policy is a deterministic rule set, not a learned selector; the explanation text is generated after the decision and cannot change it.",
+   "keywords": "selector policy sel-policy-1 deterministic score weights priority tie break constraints mse psnr ssim eligible candidate reason"
+  },
+  {
+   "id": "handoff-png-lossless",
+   "kind": "handoff",
+   "algorithm": null,
+   "title": "PNG lossless handoff",
+   "mechanics": "The stego image is stored as PNG, re-opened and extracted again before the artifact id is returned; the receiver reads only the saved file.",
+   "capacity": "PNG adds no capacity limit of its own.",
+   "distortion": "PNG is lossless, so embedded bits survive exactly.",
+   "cost": "Encoding and re-reading the PNG is a small fixed cost.",
+   "limitations": "Any lossy transport such as JPEG, resizing, cropping or filtering destroys the payload; the handoff is lossless PNG only and none of the algorithms is robust.",
+   "keywords": "png lossless handoff file save reopen verify jpeg resize fragile transport artifact"
+  }
+ ]
+}
