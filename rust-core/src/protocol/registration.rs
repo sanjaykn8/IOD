@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn enrollment_nonce_is_single_use_and_pop_is_checked() {
         let mut gcs = GcsState::new();
-        let mut d = DroneState::new("drone-1", [1u8; 32]);
+        let d = DroneState::new("drone-1", [1u8; 32]);
         gcs.create_group("alpha", 4);
         // Build a request manually, then corrupt it.
         let reading = d.puf.read();
