@@ -106,7 +106,7 @@ export interface StegoStage { name: string; status: StegoStageStatus; ms?: numbe
 /** A metric that may be a number, null (undefined) or a string such as "inf". */
 export type StegoNum = number | string | null | undefined;
 export interface StegoCandidate {
-  algorithm: string; eligible: boolean; exclusion_reason?: string | null;
+  algorithm: string; variant?: string; eligible: boolean; exclusion_reason?: string | null;
   capacity_bits?: number | null; capacity_bytes?: number | null; utilization?: number | null; headroom_bits?: number | null;
   est_cost_units?: number | null; mse?: StegoNum; psnr?: StegoNum; ssim?: StegoNum; score?: number | null; trial_ms?: number | null;
 }

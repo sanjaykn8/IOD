@@ -265,7 +265,7 @@ fn capacity_and_size_rejections_are_structured_and_recorded() {
 #[test]
 fn manual_override_is_honoured_when_eligible() {
     let w = world("manual");
-    for alg in ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct"] {
+    for alg in iod_core::transport::backend::ALGS {
         let mut r = req(&w, "drone-2", "manual experiment");
         r.algorithm = Some(alg.into());
         let v = pipeline::run_message(&w.state, r).unwrap_or_else(|f| panic!("{alg}: {}", f.error));

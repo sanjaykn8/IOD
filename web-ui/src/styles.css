@@ -71,3 +71,55 @@ tr.stego-excluded{opacity:.72}
 @media(max-width:1200px){.stego-ready-grid,.stego-grid-4{grid-template-columns:repeat(2,minmax(0,1fr))}.stego-filters{grid-template-columns:repeat(3,minmax(0,1fr))}}
 @media(max-width:900px){.stego-result-grid{grid-template-columns:1fr 1fr}.stego-result-data{grid-column:1/-1}.stego-stage{grid-template-columns:24px minmax(0,1fr) 100px}.stego-stage-ms{display:none}}
 @media(max-width:600px){.stego-ready-grid,.stego-grid-4,.stego-filters,.stego-result-grid{grid-template-columns:1fr}}
+
+/* ---- Steganography Lab view tabs + Algorithm Learning workbench */
+.lab-tabs{display:flex;gap:8px;margin:0 0 12px;flex-wrap:wrap}
+.lab-tab{display:flex;align-items:center;gap:10px;padding:10px 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface-deep);color:var(--foreground);cursor:pointer;text-align:left;min-width:260px}
+.lab-tab svg{width:18px;height:18px;flex:none}
+.lab-tab span{display:flex;flex-direction:column}
+.lab-tab small{font:500 10px var(--font-mono);color:var(--muted-foreground)}
+.lab-tab-on{border-color:var(--primary);box-shadow:inset 0 -2px 0 var(--primary)}
+.learn-root{display:flex;flex-direction:column;gap:14px}
+.learn-banner p{max-width:none}
+.learn-alg-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px}
+.learn-alg{display:flex;flex-direction:column;gap:2px;padding:8px;border:1px solid var(--border);border-radius:6px;background:var(--surface-deep);color:var(--foreground);text-align:left;cursor:pointer}
+.learn-alg strong{font:600 11px var(--font-mono)}
+.learn-alg small{font-size:9px;color:var(--muted-foreground)}
+.learn-alg-on{border-color:var(--primary);background:color-mix(in oklab,var(--primary) 12%,transparent)}
+.learn-tabs{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
+.learn-tab{padding:6px 12px;border:1px solid var(--border);border-radius:999px;background:transparent;color:var(--foreground);font-size:12px;cursor:pointer}
+.learn-tab-on{background:var(--primary);color:var(--primary-foreground);border-color:var(--primary)}
+.learn-wt-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start;flex-wrap:wrap;margin-bottom:8px}
+.learn-wt-head h3{margin:0;font-size:15px}
+.learn-wt-head small{font:500 10px var(--font-mono);color:var(--muted-foreground)}
+.learn-steps{list-style:none;margin:8px 0;padding:0;display:flex;flex-direction:column;gap:8px}
+.learn-step{border:1px solid var(--border);border-radius:6px;padding:10px;background:var(--surface-deep)}
+.learn-step-head{display:flex;gap:10px;align-items:baseline;margin-bottom:6px}
+.learn-step-n{font:700 10px var(--font-mono);color:var(--primary);min-width:52px}
+.learn-step-body{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:0}
+.learn-step-body dt{font:500 8px var(--font-mono);color:var(--muted-foreground);text-transform:uppercase}
+.learn-step-body dd{margin:3px 0 0}
+.learn-step-body code{font:500 11px var(--font-mono);white-space:pre-wrap;overflow-wrap:anywhere}
+.learn-toggle,.learn-link{display:inline-flex;align-items:center;gap:4px;margin-top:6px;border:0;background:transparent;color:var(--primary);font:600 10px var(--font-mono);cursor:pointer;padding:0}
+.learn-toggle svg{width:12px;height:12px}
+.learn-detail{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.learn-matrices{display:flex;flex-wrap:wrap;gap:10px}
+.learn-matrix span{display:block;font:600 9px var(--font-mono);color:var(--technical);margin-bottom:3px}
+.learn-matrix table{border-collapse:collapse;font:500 10px var(--font-mono)}
+.learn-matrix td{border:1px solid var(--border);padding:2px 5px;text-align:right}
+.learn-images{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:8px;margin:8px 0}
+.learn-figure img{aspect-ratio:1/1;cursor:crosshair}
+.learn-zoom{overflow:auto;max-height:320px}
+.learn-results{display:flex;flex-direction:column;gap:10px;margin-top:10px}
+.learn-row-detail{border-top:1px solid var(--border);padding-top:10px}
+.learn-check{display:flex;gap:6px;align-items:center;font-size:12px}
+.learn-upload{display:flex;align-items:center;gap:6px}
+.learn-upload svg{width:14px;height:14px}
+.learn-rob{text-align:center;font:600 11px var(--font-mono)}
+.learn-rob small{display:block;font-weight:400;color:var(--muted-foreground)}
+.learn-rob-recovered{color:var(--success,#22c55e)}
+.learn-rob-failed{color:var(--danger,#ef4444)}
+.stego-variant{display:block;font:400 9px var(--font-mono);color:var(--muted-foreground);max-width:260px;white-space:normal}
+@media (max-width:900px){.learn-step-body{grid-template-columns:1fr}}
+.learn-kv{grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.learn-rob-recovered_oracle_only{color:var(--warning,#f59e0b)}

@@ -92,7 +92,7 @@ def test_invalid_version():
     assert code_of(codec.extract_frame, with_bootstrap(COVER, raw), LIM) == "UNSUPPORTED_VERSION"
 
 
-@pytest.mark.parametrize("alg_id", [0, 6, 9, 255])
+@pytest.mark.parametrize("alg_id", [0, 11, 12, 255])
 def test_invalid_algorithm_id(alg_id):
     raw = bootstrap.pack(alg_id, 0, 22)
     assert code_of(codec.extract_frame, with_bootstrap(COVER, raw), LIM) == "UNKNOWN_ALGORITHM"

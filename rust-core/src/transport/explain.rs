@@ -30,6 +30,10 @@ pub fn fallback_explanation(selection: &Value, embed: &Value, reason: &str) -> V
         cands.len()
     )];
     if let Some(c) = cands.iter().find(|c| c["algorithm"].as_str() == Some(selected)) {
+        if let Some(v) = c["variant"].as_str().filter(|v| !v.is_empty()) {
+            sentences.push(format!("Implemented variant: {v}."));
+            evidence.push(json!({"id": "cand.selected.variant", "source": "report", "text": format!("variant={v}")}));
+        }
         if let Some(sc) = f(&c["score"]) {
             sentences.push(format!("Its score was {sc:.6} (lower is better)."));
             evidence.push(json!({"id": "cand.selected.score", "source": "report", "text": format!("score={sc:.6}")}));
@@ -96,7 +100,7 @@ pub fn accept_rag_response(resp: &Value, selection: &Value) -> Result<Value, Str
 mod tests {
     use super::*;
     fn sel() -> Value {
-        json!({"selected":"pvd","policy_version":"sel-policy-1","reason_code":"BEST_SCORE","candidates":[
+        json!({"selected":"pvd","policy_version":"sel-policy-2","reason_code":"BEST_SCORE","candidates":[
             {"algorithm":"pvd","eligible":true,"score":0.12,"utilization":0.01},
             {"algorithm":"dct","eligible":false,"exclusion_reason":"CAPACITY_INSUFFICIENT"}]})
     }

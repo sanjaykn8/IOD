@@ -139,10 +139,11 @@ fn both_directions_every_algorithm_real_png_with_camera_fallback() {
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n", "saved artifact is a real PNG");
         assert!(v["stages"].as_array().unwrap().iter().all(|s| s["status"] == "ok"));
     }
-    // manual override for each of the five algorithms, on the procedural B/W cover; DCT may be
-    // legitimately refused on saturated covers (clean structured failure, never silent corruption)
+    // manual override for each of the ten algorithms, on the procedural B/W cover; DCT (and
+    // edge-adaptive LSB) may be legitimately refused on saturated covers (clean structured
+    // failure, never silent corruption)
     let mut delivered = 0;
-    for alg in ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct"] {
+    for alg in iod_core::transport::backend::ALGS {
         for (from, dir) in [("drone-1", 1), ("drone-2", 2)] {
             let text = format!("{alg} message {dir}");
             match pipeline::run_message(&st, req(&sid, from, &text, Some(alg), json!({"source": "procedural"}))) {
@@ -158,7 +159,7 @@ fn both_directions_every_algorithm_real_png_with_camera_fallback() {
             }
         }
     }
-    assert!(delivered >= 6, "at least the three always-eligible algorithms must deliver in both directions (got {delivered})");
+    assert!(delivered >= 14, "at least seven algorithms must deliver in both directions on the B/W cover (got {delivered})");
 }
 
 #[test]
@@ -171,7 +172,10 @@ fn pixel_level_tampering_of_real_pngs_fails_closed() {
         ("flip-payload", Some("200"), &["FRAME_AUTH_FAILED"]),
         ("flip-bootstrap-crc", None, &["BOOTSTRAP_CORRUPT"]),
         ("set-alg", Some("2"), &["FRAME_ALGORITHM_MISMATCH"]),
-        ("set-alg", Some("9"), &["UNKNOWN_ALGORITHM"]),
+        ("set-alg", Some("11"), &["UNKNOWN_ALGORITHM"]),
+        ("set-alg", Some("200"), &["UNKNOWN_ALGORITHM"]),
+        // a VALID but wrong id (wow) makes the extractor read garbage: must still fail closed
+        ("set-alg", Some("9"), &["FRAME_MALFORMED", "FRAME_ALGORITHM_MISMATCH", "FRAME_AUTH_FAILED", "EXTRACT_FAILED", "FRAME_LENGTH_INVALID", "FRAME_LENGTH_MISMATCH"]),
         ("set-version", Some("7"), &["UNSUPPORTED_VERSION"]),
         ("adjust-length", Some("-5"), &["FRAME_MALFORMED"]),
         ("huge-length", None, &["FRAME_LENGTH_INVALID", "FRAME_TOO_LARGE"]),
@@ -232,14 +236,14 @@ fn oversized_frames_are_rejected_without_bypassing_the_image_transport() {
 }
 
 #[test]
-fn all_five_algorithms_deliver_both_directions_on_a_natural_rgb_cover() {
+fn all_ten_algorithms_deliver_both_directions_on_a_natural_rgb_cover() {
     let Some(py) = start_python("natural") else { return };
     let (st, sid) = state(&py);
     // A webcam-like RGB frame placed in the artifact directory and referenced as a saved test cover.
     let cover_id = format!("{:032x}", rand::random::<u128>());
     tamper("make-cover", &py.dir.join("artifacts").join(format!("{cover_id}.cover.png")), None);
     let cover = json!({"source": "test_cover", "test_cover_id": cover_id});
-    for alg in ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct"] {
+    for alg in iod_core::transport::backend::ALGS {
         for (from, text) in [("drone-1", format!("{alg}: D1 to D2 \u{1F681}")), ("drone-2", format!("{alg}: D2 to D1 \u{2713}"))] {
             let v = pipeline::run_message(&st, req(&sid, from, &text, Some(alg), cover.clone())).unwrap_or_else(|f| panic!("{alg}: {}", f.error));
             assert_eq!(v["delivered_message"], text, "{alg}");

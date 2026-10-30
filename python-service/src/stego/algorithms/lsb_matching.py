@@ -11,6 +11,9 @@ def _seed(img):
 
 
 class LsbMatching(Algorithm):
+    variant = "lsb-matching-pm1-seeded-v1"
+    domain = "spatial (LSB plane, +/-1)"
+    reference = "LSB matching (+/-1 embedding); Sharp 2001, doi:10.1007/3-540-45496-9_2; Ker 2005"
     id = 2
     name = "lsb_matching"
 

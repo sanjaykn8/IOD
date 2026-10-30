@@ -21,7 +21,7 @@ def test_grounded_explanation():
     rep = report()
     out = ex.explain({"selection": rep})
     assert out["status"] == "simulated_rag" and out["generator"] == "mock-template" and out["simulated"] is True
-    assert out["selected"] == rep["selected"] and out["selected_unchanged"] is True and out["kb_version"] == "stego-kb-1"
+    assert out["selected"] == rep["selected"] and out["selected_unchanged"] is True and out["kb_version"] == "stego-kb-2"
     assert rep["selected"] in out["narrative"] and rep["policy_version"] in out["narrative"]
     assert "not a learned selector" in out["narrative"] and "SIMULATED" in out["narrative"]
     assert {e["source"] for e in out["evidence"]} == {"report", "kb"}
@@ -63,7 +63,7 @@ def test_kb_shape_and_coverage():
         for k in ("mechanics", "capacity", "distortion", "cost", "limitations"):
             assert e[k]
         assert "JPEG" in e["limitations"] or "jpeg" in e["limitations"].lower()
-    assert {"policy-sel-policy-1", "handoff-png-lossless"} <= ids
+    assert {"policy-sel-policy-2", "handoff-png-lossless"} <= ids
     assert "detectable" in next(e for e in kb["entries"] if e["id"] == "alg-lsb_replacement")["limitations"]
 
 

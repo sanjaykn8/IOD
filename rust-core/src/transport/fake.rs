@@ -81,6 +81,28 @@ impl StegoBackend for FakeStegoBackend {
         Ok(json!({"ok": true, "cover": {"artifact_id": id, "source": origin, "fallback_reason": Value::Null, "width": 64, "height": 64, "mode": "RGB",
                   "channels": 3, "transforms": [], "sha256": sha(&raw)}, "timings_ms": {"store": 1.0}}))
     }
+    fn learn_get(&self, path: &str) -> Result<Value, StegoError> {
+        if !crate::transport::backend::learn_path_allowed(path) {
+            return Err(StegoError::new("INVALID_REQUEST", "prepare", 400, "learn path not allowed"));
+        }
+        Ok(json!({"ok": true, "fake": true, "path": path}))
+    }
+    fn learn_post(&self, path: &str, body: &Value) -> Result<Value, StegoError> {
+        if !crate::transport::backend::learn_path_allowed(path) {
+            return Err(StegoError::new("INVALID_REQUEST", "prepare", 400, "learn path not allowed"));
+        }
+        // perfect-extraction fake: echoes the payload back for every requested algorithm
+        let algs: Vec<String> = match &body["algorithms"] {
+            Value::Array(a) => a.iter().filter_map(|x| x.as_str().map(String::from)).collect(),
+            _ => ALGS.iter().map(|s| s.to_string()).collect(),
+        };
+        let pb = body["payload_b64"].as_str().unwrap_or("");
+        let n = b64::decode(pb, 1 << 20).map(|v| v.len()).unwrap_or(0);
+        let results: Vec<Value> = algs.iter().map(|a| json!({"algorithm": a, "status": "ok", "payload_bytes": n, "extracted_b64": pb,
+            "mse": 0.01, "psnr_db": 60.0, "ssim": 0.999, "ber": 0.0, "bit_accuracy": 1.0, "exact_recovery": true, "images": {"stego": "data:"}})).collect();
+        Ok(json!({"ok": true, "experiment_id": format!("{:032x}", rand::random::<u128>()), "mode": "educational", "cover": {"description": "fake", "png": "data:"},
+                  "payload": {"bytes": n, "bits": n * 8, "sha256": "00"}, "results": results, "metric_definitions": {}, "interpretation": [], "attacks": []}))
+    }
     fn analyze(&self, req: &Value) -> Result<Value, StegoError> {
         if let Some(code) = self.fail_analyze.lock().unwrap().clone() {
             return Err(StegoError::new(&code, "capture_select", 422, "forced failure"));
@@ -115,7 +137,7 @@ impl StegoBackend for FakeStegoBackend {
         std::fs::write(self.dir.join(format!("{cover_id}.cover.png")), &cover_bytes).map_err(|e| StegoError::new("IMAGE_WRITE_FAILED", "capture_select", 500, e.to_string()))?;
         let fb = self.fallback_reason.lock().unwrap().clone();
         Ok(json!({"ok": true,
-            "selection": {"policy_version": "sel-policy-1", "mode": mode, "selected": selected, "selected_alg_id": Self::alg_id(&selected), "selected_param": 0,
+            "selection": {"policy_version": "sel-policy-2", "mode": mode, "selected": selected, "selected_alg_id": Self::alg_id(&selected), "selected_param": 0,
                           "reason_code": reason, "features": {"frame_bytes": frame_bytes}, "candidates": candidates},
             "cover": {"artifact_id": cover_id, "source": if fb.is_some() {"procedural_fallback"} else {"webcam"}, "fallback_reason": fb,
                       "width": 64, "height": 64, "mode": "L", "channels": 1, "transforms": ["mode:1->L"], "sha256": sha(&cover_bytes)},
@@ -146,7 +168,7 @@ impl StegoBackend for FakeStegoBackend {
             return Err(StegoError::new("IMAGE_DECODE_ERROR", "read", 422, "not a decodable image"));
         }
         let alg = data[8];
-        if !(1..=5).contains(&alg) {
+        if !(1..=ALGS.len() as u8).contains(&alg) {
             return Err(StegoError::new("UNKNOWN_ALGORITHM", "extract", 422, "unknown algorithm id"));
         }
         let frame = &data[10..];

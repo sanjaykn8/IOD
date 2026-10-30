@@ -9,7 +9,11 @@ use serde_json::Value;
 use std::time::Duration;
 
 /// Canonical algorithm names; the index + 1 is the wire `alg_id`.
-pub const ALGS: [&str; 5] = ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct"];
+/// Algorithm registry in id order (id = index + 1). Ids 1-5: transport v1; 6-10 added in v2.
+pub const ALGS: [&str; 10] = [
+    "lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct",
+    "dwt", "dct_svd", "hugo", "wow", "s_uniward",
+];
 
 pub trait StegoBackend: Send + Sync {
     fn health(&self) -> Result<Value, StegoError>;
@@ -24,6 +28,15 @@ pub trait StegoBackend: Send + Sync {
     fn extract(&self, artifact_id: &str, limits: &Value) -> Result<Value, StegoError>;
     /// Explanation only; never influences the decision.
     fn explain(&self, selection_report: &Value) -> Result<Value, StegoError>;
+    /// EDUCATIONAL workbench only (`/learn/*` namespace of the image service).
+    fn learn_get(&self, path: &str) -> Result<Value, StegoError>;
+    fn learn_post(&self, path: &str, body: &Value) -> Result<Value, StegoError>;
+}
+
+/// Paths the learning workbench may call (nothing else is reachable through learn_*).
+pub fn learn_path_allowed(path: &str) -> bool {
+    path == "/learn/registry" || path == "/learn/experiment"
+        || path.strip_prefix("/learn/walkthrough/").map(|a| ALGS.contains(&a)).unwrap_or(false)
 }
 
 pub struct HttpBackend {
@@ -67,6 +80,19 @@ impl StegoBackend for HttpBackend {
     fn explain(&self, selection_report: &Value) -> Result<Value, StegoError> {
         // Explanation must never stall delivery: short dedicated timeout.
         http::call_json(&self.base, "POST", "/stego/explain", Some(selection_report), Duration::from_millis(5000).min(self.timeout), self.max_resp)
+    }
+    fn learn_get(&self, path: &str) -> Result<Value, StegoError> {
+        if !learn_path_allowed(path) {
+            return Err(StegoError::new("INVALID_REQUEST", "prepare", 400, "learn path not allowed"));
+        }
+        http::call_json(&self.base, "GET", path, None, self.timeout, self.max_resp)
+    }
+    fn learn_post(&self, path: &str, body: &Value) -> Result<Value, StegoError> {
+        if !learn_path_allowed(path) {
+            return Err(StegoError::new("INVALID_REQUEST", "prepare", 400, "learn path not allowed"));
+        }
+        // comparisons with the robustness suite run ten algorithms x eleven attacks
+        http::call_json(&self.base, "POST", path, Some(body), Duration::from_secs(180).max(self.timeout), self.max_resp)
     }
 }
 

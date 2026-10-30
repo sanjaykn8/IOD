@@ -24,3 +24,7 @@ Defended: tampered or truncated stego files, wrong algorithm/metadata (keyed MAC
 
 ### Cover upload (browser webcam / uploaded PNG)
 A client can submit arbitrary bytes to `/api/stego/cover/upload`. Mitigations: PNG magic check, base64 validation and 8 MiB / 12 MiB-base64 caps (Rust 12 MiB request, Node 14 MB on this route only), dimension limits checked before pixel decode, full decode and **re-encode** (no metadata or trailing data stored), server-generated uuid4 ids, forbidden path/key fields. Not defended: a malicious local user filling the artifact directory (use `IOD_STEGO_RETENTION_MAX_ARTIFACTS`); the camera image is not trusted for any security property (it is only a carrier).
+
+### Learning workbench (2026-10-30)
+The workbench's "real encryption" mode uses a key derived from a **public** label: it provides no confidentiality and is never used operationally; it exists only to demonstrate a valid AEAD envelope surviving extraction. It shares no state with sessions, keys, replay windows or operational events (tested). Uploaded learning covers are limited to 512x512 PNG and are not stored.
+STC methods: the element permutation is public (no stego key), which helps a steganalyst but does not affect confidentiality or integrity (AEAD + frame MAC).

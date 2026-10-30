@@ -1,0 +1,1866 @@
+{
+  "attacks": [
+    {
+      "id": "none",
+      "label": "No attack (lossless PNG)",
+      "params": {}
+    },
+    {
+      "id": "jpeg95",
+      "label": "JPEG recompression",
+      "params": {
+        "quality": 95
+      }
+    },
+    {
+      "id": "jpeg75",
+      "label": "JPEG recompression",
+      "params": {
+        "quality": 75
+      }
+    },
+    {
+      "id": "jpeg50",
+      "label": "JPEG recompression",
+      "params": {
+        "quality": 50
+      }
+    },
+    {
+      "id": "resize50",
+      "label": "Resize down 50% and back (bilinear)",
+      "params": {
+        "factor": 0.5
+      }
+    },
+    {
+      "id": "crop4",
+      "label": "Crop 4 px from left and top (image becomes smaller)",
+      "params": {
+        "pixels": 4
+      }
+    },
+    {
+      "id": "gauss1",
+      "label": "Gaussian noise",
+      "params": {
+        "seed": 11,
+        "sigma": 1.0
+      }
+    },
+    {
+      "id": "gauss3",
+      "label": "Gaussian noise",
+      "params": {
+        "seed": 12,
+        "sigma": 3.0
+      }
+    },
+    {
+      "id": "saltpepper",
+      "label": "Salt-and-pepper noise",
+      "params": {
+        "fraction": 0.005,
+        "seed": 13
+      }
+    },
+    {
+      "id": "blur3",
+      "label": "Gaussian blur 3x3",
+      "params": {
+        "sigma": 0.8
+      }
+    },
+    {
+      "id": "bright2",
+      "label": "Brightness +2",
+      "params": {
+        "offset": 2
+      }
+    }
+  ],
+  "cover": {
+    "channels": 3,
+    "description": "256x256 RGB synthetic natural-looking scene (generated, seed 2026)",
+    "height": 256,
+    "mode": "RGB",
+    "sample": "natural_rgb_256",
+    "sha256": "d275b445a0ddde3c1ce8a715e5d4a4651aa7eeb9bfa6f1c8f5fb8d11aedd2706",
+    "source": "sample",
+    "transforms": [],
+    "width": 256
+  },
+  "created_ms": 1793341864220,
+  "duration_ms": 6203.77,
+  "experiment_id": "599a55473eb6447fa45bf4f8fc851ab9",
+  "interpretation": [
+    "High PSNR/SSIM means the stego image looks like the cover; it does not prove resistance to steganalysis.",
+    "Low MSE is not a proof of security.",
+    "Exact extraction from an unmodified PNG does not establish robustness to lossy transforms.",
+    "Robustness, imperceptibility, capacity, speed and statistical undetectability are different objectives and trade off.",
+    "HUGO/WOW/S-UNIWARD minimise a distortion model; that is not a proof that no steganalyst can detect the message."
+  ],
+  "label": "Educational experiment - not a live UAV transmission",
+  "learn_version": "learn-1",
+  "metric_definitions": {
+    "ber": "(wrong bits + missing bits) / expected payload bits; 1.0 if extraction failed entirely",
+    "bit_accuracy": "matching bits / expected payload bits",
+    "bits_per_pixel": "payload_bits / (width x height)",
+    "capacity_bits_raw": "algorithm capacity for this cover excluding the 128 bootstrap samples (estimated from the cover)",
+    "capacity_bits_verified": "largest payload actually embedded AND extracted exactly in a verification run (bytes x 8)",
+    "embed_ms": "sender-side codec.embed_frame duration (monotonic perf_counter); setup_ms = cost-map time inside it (STC methods)",
+    "extract_ms": "receiver-side PNG decode + bootstrap validation + extraction (perf_counter)",
+    "mse": "mean over all samples (pixels x channels) of (cover - stego)^2",
+    "payload_bits": "payload bytes x 8 (the complete payload: AEAD test envelope or synthetic fixture)",
+    "psnr_db": "10 log10(255^2 / MSE); null when MSE = 0 (identical images, infinite PSNR)",
+    "robustness": "per attack: 'recovered' = full pipeline (bootstrap + payload) returned the exact payload; 'recovered_oracle_only' = only a direct extraction with the known algorithm/length/parameter was exact; 'partial' = oracle BER in (0, 0.1]; 'failed' = otherwise (BER ~0.5 is chance level). oracle_ber = BER of that direct extraction",
+    "ssim": "mean SSIM, uniform 7x7 window, K1=0.01, K2=0.03, L=255, data range 0..255, averaged over all windows and channels"
+  },
+  "mode": "educational",
+  "ok": true,
+  "operational": false,
+  "payload": {
+    "bit_order": "MSB-first",
+    "bits": 896,
+    "bytes": 112,
+    "hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 00 01 00 00 00 01 D4 D0 DA 2A 45 9D 30 88 00 00 00 3E 98 95 9B 67 30 16 5F C9 AC 4D B2 CF 03 0E ...",
+    "kind": "aead_test_envelope",
+    "sha256": "0d359641bb52f82d826e7af8c3152d8f6162f643e3d4155526716fb0536ca9f7"
+  },
+  "payload_construction": {
+    "aead": "ChaCha20-Poly1305 (production seal_message code path)",
+    "aead_tag_bytes": 16,
+    "appwire_header_bytes": 50,
+    "ciphertext_bytes": 62,
+    "key": "TEST-ONLY key = HKDF-SHA256(public label) -- not secret, never used for UAV traffic, not displayed",
+    "note": "The same AppWire bytes are embedded by every algorithm in this comparison. The live transport additionally wraps them in Frame v1 (12-byte header + 32-byte HMAC) bound to the algorithm id.",
+    "operational_frame_overhead_bytes_not_included": 44,
+    "overhead_bytes": 66,
+    "plaintext_bytes": 46,
+    "plaintext_hex_preview": "55 41 56 5F 49 44 3D 44 31 0A 54 41 52 47 45 54 3D 44 32 0A 4C 41 54 3D 39 2E 34 35 0A 4C 4F 4E 3D 37 37 2E 38 30 0A 41 4C 54 3D 31 32 30",
+    "serialisation": "UTF-8 message bytes -> ChaCha20-Poly1305 AEAD (header bound as associated data) -> AppWire v1",
+    "wire_binary_preview": "00000001 01010100 01010000 01000101 01011100 11000000 00100101 10110000 ...",
+    "wire_bits": 896,
+    "wire_bytes": 112,
+    "wire_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 00 01 00 00 00 01 D4 D0 DA 2A 45 9D 30 88 00 00 00 3E 98 95 9B 67 30 16 5F C9 AC 4D B2 CF 03 0E ..."
+  },
+  "payload_mode": "aead_fixture",
+  "results": [
+    {
+      "alg_id": 1,
+      "algorithm": "lsb_replacement",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 196480,
+      "capacity_bits_verified": 196480,
+      "capacity_bytes_raw": 24560,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 24560
+      },
+      "changed_samples": 522,
+      "coding": "direct (no coding)",
+      "detail": {},
+      "domain": "spatial (LSB plane)",
+      "embed_ms": 0.155,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.521,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 1,
+      "mse": 0.002655,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 73.8901,
+      "psnr_defined": true,
+      "reference": "Classic LSB replacement; e.g. Fridrich, Steganography in Digital Media, CUP 2009, ch. 5",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.498884,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.510045,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.518973,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.511161,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.489955,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.50558,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.006696,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.518973,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9999961202,
+      "status": "ok",
+      "stego_png_bytes": 123017,
+      "stego_sha256": "8cfdbe4c5778029b58cd4d8fedc8f25174fe0a014b3f1c836529d50a54bd7f0c",
+      "utilisation": 0.00456,
+      "variant": "lsb-replacement-msb-first-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 2,
+      "algorithm": "lsb_matching",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 196480,
+      "capacity_bits_verified": 196480,
+      "capacity_bytes_raw": 24560,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 24560
+      },
+      "changed_samples": 522,
+      "coding": "direct (no coding)",
+      "detail": {},
+      "domain": "spatial (LSB plane, +/-1)",
+      "embed_ms": 0.635,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.385,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 1,
+      "mse": 0.002655,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 73.8901,
+      "psnr_defined": true,
+      "reference": "LSB matching (+/-1 embedding); Sharp 2001, doi:10.1007/3-540-45496-9_2; Ker 2005",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.485491,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.5,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.510045,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.498884,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.489955,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.50558,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.006696,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.501116,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9999961062,
+      "status": "ok",
+      "stego_png_bytes": 123015,
+      "stego_sha256": "a77a8563b985ff832d390a36b4f41ff321646ef76b374ffa430e6b3ded1fca8e",
+      "utilisation": 0.00456,
+      "variant": "lsb-matching-pm1-seeded-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 3,
+      "algorithm": "pvd",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 441465,
+      "capacity_bits_verified": 441464,
+      "capacity_bytes_raw": 55183,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 55183
+      },
+      "changed_samples": 421,
+      "coding": "direct (no coding)",
+      "detail": {
+        "pairs_used": 195
+      },
+      "domain": "spatial (pixel-pair differences)",
+      "embed_ms": 5.137,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 8.418,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 77,
+      "mse": 0.194758,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 55.2358,
+      "psnr_defined": true,
+      "reference": "Wu & Tsai, Pattern Recognit. Lett. 24 (2003) 1613-1626, doi:10.1016/S0167-8655(02)00402-6",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.516741,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.493304,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.50558,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.492188,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.440848,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.502232,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.36942,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.479911,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "wrong_payload",
+          "label": "Brightness +2",
+          "oracle_ber": 0.00558,
+          "outcome": "partial",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9998484238,
+      "status": "ok",
+      "stego_png_bytes": 123203,
+      "stego_sha256": "2c3c86f3e22f9e84c0cd3c0eb6ae3e2e333c0201e240b3b0f10a702d2d53549d",
+      "utilisation": 0.00203,
+      "variant": "wu-tsai-pvd-6range-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 4,
+      "algorithm": "edge_adaptive_lsb",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 44497,
+      "capacity_bits_verified": 44496,
+      "capacity_bytes_raw": 5562,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 5562
+      },
+      "changed_samples": 508,
+      "coding": "direct (no coding)",
+      "detail": {},
+      "domain": "spatial (edge/texture mask + LSB)",
+      "embed_ms": 1.58,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 4.514,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 1,
+      "mse": 0.002584,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 74.0082,
+      "psnr_defined": true,
+      "reference": "Edge-adaptive LSB family, cf. Luo, Huang & Huang, IEEE TIFS 2010, doi:10.1109/TIFS.2009.2035372 (simplified mask, not identical)",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.479911,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.495536,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.514509,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 1.0,
+          "oracle_error": "EXTRACT_FAILED",
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.478795,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.506696,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.488839,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.514509,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9999831153,
+      "status": "ok",
+      "stego_png_bytes": 123021,
+      "stego_sha256": "b47834663f62ec91d795d64f6a6d4778eaf3d049638ba87838babfc2033c7c5a",
+      "utilisation": 0.020136,
+      "variant": "edge-mask-7msb-grad-threshold-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 5,
+      "algorithm": "dct",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 5952,
+      "capacity_bits_verified": 5952,
+      "capacity_bytes_raw": 744,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 744
+      },
+      "changed_samples": 7512,
+      "coding": "direct (no coding)",
+      "detail": {
+        "blocks_retried": 0,
+        "blocks_used": 150
+      },
+      "domain": "transform (8x8 block DCT)",
+      "embed_ms": 0.432,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.372,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 10,
+      "mse": 0.210007,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 54.9085,
+      "psnr_defined": true,
+      "reference": "Block-DCT quantisation-index modulation (Chen & Wornell 2001, doi:10.1109/18.923725)",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.408482,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.402902,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.416295,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.366071,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.0,
+          "outcome": "recovered_oracle_only",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.043527,
+          "outcome": "partial",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.143973,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.060268,
+          "outcome": "partial",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9983282783,
+      "status": "ok",
+      "stego_png_bytes": 123222,
+      "stego_sha256": "1d58bd956d058ee36bd99c91cea468a128b7add9a950769fe664dc4b76868518",
+      "utilisation": 0.150538,
+      "variant": "dct8-midband-6coef-qim-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 6,
+      "algorithm": "dwt",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 16256,
+      "capacity_bits_verified": 16256,
+      "capacity_bytes_raw": 2032,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 2032
+      },
+      "changed_samples": 2753,
+      "coding": "direct (no coding)",
+      "detail": {
+        "blocks_retried": 0,
+        "blocks_used": 896,
+        "subband": "HH"
+      },
+      "domain": "transform (Haar DWT)",
+      "embed_ms": 0.823,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.396,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 2,
+      "mse": 0.027033,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 63.8118,
+      "psnr_defined": true,
+      "reference": "Blockwise 1-level Haar DWT with QIM (Chen & Wornell 2001, doi:10.1109/18.923725); one documented variant of the DWT family, e.g. doi:10.1080/09720529.2019.1698801",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.422991,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.417411,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.417411,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.417411,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.078125,
+          "outcome": "partial",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.483259,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.016741,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.417411,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9998136791,
+      "status": "ok",
+      "stego_png_bytes": 123087,
+      "stego_sha256": "04afa417febbd18abbc501e392ea3d46ea9737993d9bd30f630446b46b389e28",
+      "utilisation": 0.055118,
+      "variant": "haar-l1-hh-qim-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 7,
+      "algorithm": "dct_svd",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 992,
+      "capacity_bits_verified": 992,
+      "capacity_bytes_raw": 124,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 124
+      },
+      "changed_samples": 26709,
+      "coding": "direct (no coding)",
+      "detail": {
+        "blocks_retried": 8,
+        "blocks_used": 896,
+        "region": "DCT[1:5,1:5]",
+        "singular_value": "s1"
+      },
+      "domain": "transform (block DCT + SVD)",
+      "embed_ms": 8.396,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 4.977,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 12,
+      "mse": 0.365392,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 52.5032,
+      "psnr_defined": true,
+      "reference": "One concrete DCT-SVD variant (QIM on the largest singular value of a mid-band 4x4 DCT sub-matrix); family reference doi:10.1145/2345396.2345490 -- not identical to it",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.409598,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.405134,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.424107,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.33817,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.037946,
+          "outcome": "partial",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.44308,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.128348,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.229911,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9976857705,
+      "status": "ok",
+      "stego_png_bytes": 123185,
+      "stego_sha256": "40f7745bda0b7401d091c863f95cfa579d72cd4488789386aacb90ca4de56424",
+      "utilisation": 0.903226,
+      "variant": "dct8-svd-s1-qim-v1",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 8,
+      "algorithm": "hugo",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 65536,
+      "capacity_bits_verified": 65536,
+      "capacity_bytes_raw": 8192,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 8192
+      },
+      "changed_samples": 301,
+      "coding": "stc-binary-h7-v1",
+      "detail": {
+        "changes": 236,
+        "coding": "stc-binary-h7-v1",
+        "cost_ms": 146.726,
+        "h": 7,
+        "n": 8960,
+        "rate": 0.1,
+        "stc_cost": 396.93237,
+        "stc_ms": 38.05,
+        "w": 10
+      },
+      "domain": "spatial, content-adaptive (SPAM co-occurrence model)",
+      "embed_ms": 187.847,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.585,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 1,
+      "mse": 0.001531,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 76.2812,
+      "psnr_defined": true,
+      "reference": "Pevny, Filler & Bas, Information Hiding 2010, doi:10.1007/978-3-642-16435-4_13",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.487723,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.520089,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.501116,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.475446,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.512277,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.5,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.103795,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.513393,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": 146.726,
+      "ssim": 0.9999981324,
+      "status": "ok",
+      "stego_png_bytes": 123011,
+      "stego_sha256": "41415ad1f3be2abaae23a1932148c615dd0db00f1746b7f5ec0aa6745a97edc7",
+      "utilisation": 0.013672,
+      "variant": "HUGO, exact single-change costs (T=90, sigma=1, gamma=1), additive approximation + binary STC h=7, no model correction",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 9,
+      "algorithm": "wow",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 65536,
+      "capacity_bits_verified": 65536,
+      "capacity_bytes_raw": 8192,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 8192
+      },
+      "changed_samples": 282,
+      "coding": "stc-binary-h7-v1",
+      "detail": {
+        "changes": 217,
+        "coding": "stc-binary-h7-v1",
+        "cost_ms": 46.717,
+        "h": 7,
+        "n": 8960,
+        "rate": 0.1,
+        "stc_cost": 10.321421,
+        "stc_ms": 43.882,
+        "w": 10
+      },
+      "domain": "spatial, content-adaptive (wavelet directional filters)",
+      "embed_ms": 94.553,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.451,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 1,
+      "mse": 0.001434,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 76.5643,
+      "psnr_defined": true,
+      "reference": "Holub & Fridrich, IEEE WIFS 2012, doi:10.1109/WIFS.2012.6412655",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.485491,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.533482,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.476562,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.503348,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.485491,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.508929,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.089286,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.510045,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": 46.717,
+      "ssim": 0.9999980905,
+      "status": "ok",
+      "stego_png_bytes": 123008,
+      "stego_sha256": "9a26086646e3e6eaaaaf1337f57efb33a75b44552a933aa41eb70b518aa0b20f",
+      "utilisation": 0.013672,
+      "variant": "WOW (p=-1, db8 filter bank) + binary STC h=7",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 10,
+      "algorithm": "s_uniward",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_pixel": 0.01367188,
+      "bootstrap_bits": 128,
+      "byte_accuracy": 1.0,
+      "capacity_bits_raw": 65536,
+      "capacity_bits_verified": 65536,
+      "capacity_bytes_raw": 8192,
+      "capacity_verification": {
+        "passed": true,
+        "tested_bytes": 8192
+      },
+      "changed_samples": 292,
+      "coding": "stc-binary-h7-v1",
+      "detail": {
+        "changes": 225,
+        "coding": "stc-binary-h7-v1",
+        "cost_ms": 46.673,
+        "h": 7,
+        "n": 8960,
+        "rate": 0.1,
+        "stc_cost": 403.32585,
+        "stc_ms": 35.051,
+        "w": 10
+      },
+      "domain": "spatial, content-adaptive (wavelet relative change)",
+      "embed_ms": 85.224,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.56,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 8B 81 20 B7 00 00 ...",
+      "max_abs_diff": 1,
+      "mse": 0.001485,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 76.413,
+      "psnr_defined": true,
+      "reference": "Holub, Fridrich & Denemark, EURASIP J. Inf. Secur. 2014:1, doi:10.1186/1687-417X-2014-1",
+      "robustness": [
+        {
+          "attack": "none",
+          "full_pipeline": "recovered",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.511161,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.546875,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.513393,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.508929,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.495536,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.504464,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "full_error": "UNSUPPORTED_VERSION",
+          "full_pipeline": "failed",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.035714,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "full_error": "BOOTSTRAP_MISSING",
+          "full_pipeline": "failed",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.476562,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "full_pipeline": "recovered",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": 46.673,
+      "ssim": 0.9999980026,
+      "status": "ok",
+      "stego_png_bytes": 123011,
+      "stego_sha256": "e0257a51aea23515af140485e7b506b7c34d81b04b74fcea2ce382f892d5e8e1",
+      "utilisation": 0.013672,
+      "variant": "S-UNIWARD (spatial, sigma=1, db8 filter bank) + binary STC h=7",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    }
+  ],
+  "same_inputs_for_all_algorithms": true
+}

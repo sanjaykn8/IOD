@@ -90,7 +90,7 @@ def analyze(req, store=None):
     cov = cover_mod.acquire(req.get("cover"), limits, store)
     t_cap = _ms(t0)
     t1 = time.perf_counter()
-    selection = selector.select(cov.array, fb, req.get("priority"), req.get("policy"), forced=algorithm,
+    selection = selector.select(cov.array, fb, req.get("priority"), req.get("policy"), forced=algorithm, cover_source=cov.source,
                                 forced_param=param, max_frame_bytes=limits.max_frame_bytes)
     t_sel = _ms(t1)
     t2 = time.perf_counter()
@@ -129,8 +129,12 @@ def encode(req, store=None):
     timings["capture"] = _ms(t)
 
     t = time.perf_counter()
-    selection = selector.select(cov.array, len(frame), req.get("priority"), req.get("policy"), forced=algorithm,
-                                forced_param=param, max_frame_bytes=limits.max_frame_bytes)
+    # With an explicit algorithm (the core always sends the one chosen at analyze time) only that
+    # candidate is re-validated (capacity, trial encode, hard limits); the full ten-candidate
+    # report was already produced by /analyze.
+    selection = selector.select(cov.array, len(frame), req.get("priority"), req.get("policy"), forced=algorithm, cover_source=cov.source,
+                                forced_param=param, max_frame_bytes=limits.max_frame_bytes,
+                                candidates=None if algorithm is None else [algorithm])
     timings["select"] = _ms(t)
     alg = BY_NAME[selection["selected"]]
     eff_param = selection["selected_param"]
@@ -217,7 +221,7 @@ def health(store=None):
     lim = config.Limits()
     return {
         "ok": True, "service": "python-stego", "version": SERVICE_VERSION,
-        "algorithms": [{"id": a.id, "name": a.name} for a in BY_NAME.values()],
+        "algorithms": [a.describe() for a in sorted(BY_NAME.values(), key=lambda a: a.id)],
         "limits": {"max_width": lim.max_width, "max_height": lim.max_height,
                    "max_frame_bytes": lim.max_frame_bytes, "min_dim": lim.min_dim},
         "artifact_dir_writable": store.writable(),

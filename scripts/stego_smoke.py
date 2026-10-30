@@ -87,7 +87,18 @@ st, r, _ = call("POST", "/stego/message", {"session_id": sid, "from_id": "smoke-
 check("oversize rejected (413) and recorded", st == 413)
 
 st, a, _ = call("POST", "/stego/analyze", {"frame_bytes": 300, "cover": {"source": "procedural"}})
-check("analyze returns candidate table", st == 200 and len(a["selection"]["candidates"]) == 5, str(a)[:200])
+check("analyze returns the ten-candidate table", st == 200 and len(a["selection"]["candidates"]) == 10, str(a)[:200])
+
+# Algorithm Learning workbench (educational, separate namespace) -- must not touch operational counters
+st, before, _ = call("GET", "/stego/status")
+st, reg, _ = call("GET", "/learn/registry")
+check("learning registry lists ten algorithms", st == 200 and len(reg["algorithms"]) == 10)
+st, wt, _ = call("GET", "/learn/walkthrough/s_uniward")
+check("worked calculation recovers its bits", st == 200 and wt["exact_match"] and wt["all_checks_passed"])
+st, ex, _ = call("POST", "/learn/experiment", {"payload_mode": "aead_fixture", "algorithms": ["dwt", "hugo"], "include_images": False, "verify_capacity": False})
+check("educational experiment verifies the test-only AEAD envelope", st == 200 and all(r["verification"]["status"] == "aead_verified" for r in ex["results"]))
+st, after, _ = call("GET", "/stego/status")
+check("educational experiment left the operational event count unchanged", before["counts"]["events"] == after["counts"]["events"])
 
 st, legacy, _ = call("POST", "/secure-message", {"session_id": sid, "from_id": "smoke-2", "plaintext": "legacy endpoint"})
 check("legacy /secure-message now image-based", st == 200 and legacy.get("decrypted_by_receiver") == "legacy endpoint" and "png" in legacy.get("transport", ""), str(legacy)[:200])

@@ -29,3 +29,6 @@ Checks done: MAC verified before AppWire parse and before AEAD open; constant-ti
 
 ## Webcam / cover upload review (2026-10-30)
 Upload route validated by tests (non-PNG, JPEG, garbage PNG, bad base64, size limits, id traversal) and a real-browser run. Body limits are raised only for `/api/stego/cover/upload`. The captured frame is re-encoded server-side, so the saved cover contains only decoded pixels. Open: no camera hardware test; frames are not liveness-checked (the simulator does not claim that the cover proves anything).
+
+## Ten algorithms + workbench review (2026-10-30)
+Checked: new algorithm ids flow through the unchanged bootstrap/frame (alg id authenticated in Frame v1; a wrong but valid id fails closed - e2e test `set-alg 9`); receiver id range derived from the registry; STC extraction needs only public parameters; learn routes whitelisted, separate table, no secrets returned (extracted payload replaced by a hex preview; no keys in responses); CSV export neutralised. Open: no stego key; HUGO without model correction; non-optimised STC submatrices.

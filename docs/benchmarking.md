@@ -77,3 +77,6 @@ Reminder: host-simulation measurements only; no network, no embedded hardware.
 
 ## Steganography transport benchmark (host simulation, 2026-10-29)
 Files: `benchmark-results-stego-host-simulation.txt`, `benchmark-results-stego-natural-cover.json`. 200 transactions: 180 delivered, 20 DCT refusals on the B/W cover. End-to-end p50 ≈ 348–364 ms, p95 ≈ 377–404 ms (measured, this host, includes PNG write/read and Python calls). PSNR ≈ 69 dB (LSB family), 49 dB (PVD), 53.6 dB (DCT). Reports give percentiles only when n ≥ 20; estimated costs in the selector are a static model and are labelled estimated, never mixed with measured timings.
+
+## Ten-algorithm measurements (host simulation, 2026-10-30)
+From `docs/samples/learning-comparison-all-ten.md` (256x256 RGB, 112-byte payload, one run, measured with perf_counter): embedding 0.15 ms (LSB replacement) to 188 ms (HUGO; WOW 95 ms, S-UNIWARD 85 ms incl. cost maps), extraction 2.4-8.4 ms; PSNR 52.5 dB (DCT-SVD) to 76.6 dB (WOW). Single runs, no percentiles (n < 20). Operational selection on a 640x480 RGB cover with ten trial encodes (single runs): 2.2 s (150-byte frame), 2.9 s (400 B), 4.4 s (1 KiB) on this host.

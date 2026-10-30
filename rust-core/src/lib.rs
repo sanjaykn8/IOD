@@ -1,6 +1,7 @@
 pub mod api;
 pub mod crypto;
 pub mod identity;
+pub mod learn;
 pub mod merkle;
 pub mod protocol;
 pub mod puf;

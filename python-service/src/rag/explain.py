@@ -215,7 +215,7 @@ def explain(body):
     alg_entry = by_id[f"alg-{rep['selected']}"]
     pol_entry = by_id["handoff-png-lossless"]
     evidence = _report_evidence(rep)
-    for e in (alg_entry, pol_entry, by_id["policy-sel-policy-1"]):
+    for e in (alg_entry, pol_entry, by_id["policy-sel-policy-2"]):
         evidence.append({"id": f"kb:{e['id']}", "source": "kb", "text": f"{e['title']}. {_kb_text(e)}"})
     narrative = _generate_narrative(rep, alg_entry, pol_entry)
     check = claim_check(narrative, evidence)

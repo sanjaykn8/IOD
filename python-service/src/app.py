@@ -28,8 +28,10 @@ app = Flask(__name__)
 CORS(app)
 
 from stego.api import bp as stego_bp  # noqa: E402
+from learn.api import bp as learn_bp  # noqa: E402  (educational workbench, separate namespace)
 
 app.register_blueprint(stego_bp)
+app.register_blueprint(learn_bp)
 
 llm_provider = MockLLMProvider()
 

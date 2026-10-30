@@ -76,6 +76,14 @@ impl Database {
                 data TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_stego_events_ts ON stego_events(ts_ms);
+            -- EDUCATIONAL workbench records (never mixed with operational stego_events)
+            CREATE TABLE IF NOT EXISTS learn_experiments (
+                id TEXT PRIMARY KEY,
+                ts_ms INTEGER NOT NULL,
+                payload_mode TEXT NOT NULL,
+                algorithms TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
             "#,
         )?;
         Ok(())
@@ -230,6 +238,33 @@ impl Database {
             out.push(v);
         }
         Ok(out)
+    }
+
+    pub fn insert_learn_experiment(&self, id: &str, ts_ms: i64, payload_mode: &str, algorithms: &str, data: &serde_json::Value) -> anyhow::Result<()> {
+        self.conn.execute(
+            "INSERT INTO learn_experiments (id, ts_ms, payload_mode, algorithms, data) VALUES (?1, ?2, ?3, ?4, ?5)",
+            params![id, ts_ms, payload_mode, algorithms, serde_json::to_string(data)?],
+        )?;
+        Ok(())
+    }
+
+    /// Newest first; summaries only (id, time, mode, algorithms).
+    pub fn list_learn_experiments(&self, limit: i64) -> anyhow::Result<Vec<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT id, ts_ms, payload_mode, algorithms FROM learn_experiments ORDER BY ts_ms DESC, id LIMIT ?1")?;
+        let rows = stmt.query_map(params![limit.clamp(1, 1000)], |r| {
+            Ok(serde_json::json!({"experiment_id": r.get::<_, String>(0)?, "created_ms": r.get::<_, i64>(1)?,
+                                  "payload_mode": r.get::<_, String>(2)?, "algorithms": r.get::<_, String>(3)?}))
+        })?;
+        Ok(rows.collect::<Result<Vec<_>, _>>()?)
+    }
+
+    pub fn get_learn_experiment(&self, id: &str) -> anyhow::Result<Option<serde_json::Value>> {
+        let mut stmt = self.conn.prepare("SELECT data FROM learn_experiments WHERE id = ?1")?;
+        let mut rows = stmt.query(params![id])?;
+        match rows.next()? {
+            Some(r) => Ok(Some(serde_json::from_str(&r.get::<_, String>(0)?)?)),
+            None => Ok(None),
+        }
     }
 
     pub fn count_stego_events(&self) -> anyhow::Result<(i64, i64)> {

@@ -67,3 +67,5 @@ history is wanted later.
 
 ## Steganography explanation role (SIMULATED)
 `python-service/src/rag/explain.py` retrieves from a curated KB (`stego-kb-1`, word-overlap, no LLM) and renders a template narrative with a claim check. It is **explanation-only**: it cannot select, rank or veto an algorithm. Rust accepts the response only if `selected_unchanged` is true and the echoed algorithm matches; otherwise (or on outage) it uses a rule-based `fallback_deterministic` explanation, and delivery is never blocked.
+
+KB update (2026-10-30): `stego-kb-2` adds entries for dwt, dct_svd, hugo, wow, s_uniward and syndrome-trellis codes, and renames the policy entry to `policy-sel-policy-2`. The explanation still cannot select, rank or veto, and it is never used by the learning workbench.

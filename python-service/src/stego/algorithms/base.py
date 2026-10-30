@@ -49,6 +49,15 @@ class Algorithm:
     default_param = 0
     param_range = (0, 0)  # inclusive, excluding 0 meaning default
     capacity_code = "CAPACITY_INSUFFICIENT"
+    variant = ""
+    domain = ""
+    reference = ""
+    coding = "direct (no coding)"
+
+    def describe(self):
+        return {"id": self.id, "name": self.name, "variant": self.variant, "domain": self.domain,
+                "reference": self.reference, "coding": self.coding, "default_param": self.default_param,
+                "param_range": list(self.param_range)}
 
     def resolve_param(self, param):
         if isinstance(param, bool) or not isinstance(param, int) or not 0 <= param <= 255:

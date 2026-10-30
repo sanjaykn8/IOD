@@ -1,5 +1,5 @@
 {
- "kb_version": "stego-kb-1",
+ "kb_version": "stego-kb-2",
  "note": "Curated, hand-written knowledge base for the SIMULATED explanation of steganography algorithm selection. Not a learned model.",
  "entries": [
   {
@@ -63,16 +63,16 @@
    "keywords": "dct discrete cosine transform block quantisation index modulation mid frequency distortion cost saturated verify"
   },
   {
-   "id": "policy-sel-policy-1",
+   "id": "policy-sel-policy-2",
    "kind": "policy",
    "algorithm": null,
-   "title": "Deterministic selector policy sel-policy-1",
-   "mechanics": "sel-policy-1 filters by capacity, trial-encodes each candidate on the real cover to measure MSE, PSNR and SSIM, applies hard limits, scores the rest with weights for distortion, utilisation and cost by priority class, and breaks ties inside an epsilon by a fixed order.",
+   "title": "Deterministic selector policy sel-policy-2",
+   "mechanics": "sel-policy-2 filters by capacity, trial-encodes each candidate on the real cover to measure MSE, PSNR and SSIM, applies hard limits, scores the rest with weights for distortion, utilisation and cost by priority class, and breaks ties inside an epsilon by a fixed order. sel-policy-2 applies the same rules to all ten algorithms.",
    "capacity": "A candidate is excluded when its capacity is smaller than the frame.",
    "distortion": "Hard limits are MSE and PSNR thresholds measured on the trial encode.",
    "cost": "The cost term is a static model, not a measurement; wall-clock timings are reported but never ranked.",
    "limitations": "The policy is a deterministic rule set, not a learned selector; the explanation text is generated after the decision and cannot change it.",
-   "keywords": "selector policy sel-policy-1 deterministic score weights priority tie break constraints mse psnr ssim eligible candidate reason"
+   "keywords": "selector policy sel-policy-2 deterministic score weights priority tie break constraints mse psnr ssim eligible candidate reason"
   },
   {
    "id": "handoff-png-lossless",
@@ -119,7 +119,7 @@
    "capacity": "Utilisation enters the score as frame bits divided by capacity bits.",
    "distortion": "Background messages weight distortion most heavily, so they favour the least visible embedding.",
    "cost": "Urgent messages weight the static cost model most heavily, so they favour cheaper algorithms; the cost term is a model, not a timing.",
-   "limitations": "The weights are fixed by sel-policy-1 and are not learned or adjusted from past results.",
+   "limitations": "The weights are fixed by sel-policy-2 and are not learned or adjusted from past results.",
    "keywords": "priority urgent normal background weights score w_d w_u w_t distortion utilisation cost class lowest score"
   },
   {
@@ -127,7 +127,7 @@
    "kind": "concept",
    "algorithm": null,
    "title": "Tie-break order",
-   "mechanics": "When the best scores of several eligible candidates differ by no more than the tie epsilon, 0.01 by default, the selector picks the first of them in a fixed order: lsb_matching, pvd, edge_adaptive_lsb, lsb_replacement, dct.",
+   "mechanics": "When the best scores of several eligible candidates differ by no more than the tie epsilon, 0.01 by default, the selector picks the first of them in a fixed order: s_uniward, wow, hugo, lsb_matching, pvd, edge_adaptive_lsb, dwt, dct_svd, lsb_replacement, dct.",
    "capacity": "The tie-break does not depend on capacity beyond eligibility.",
    "distortion": "Because scores inside the epsilon are treated as equal, the tie-break can pick an algorithm with slightly higher distortion than the numerically best one.",
    "cost": "No extra computation is needed; the order is a constant list.",
@@ -199,7 +199,7 @@
    "kind": "limitation",
    "algorithm": null,
    "title": "Detectability and robustness limits",
-   "mechanics": "All five algorithms hide data in pixel values or block coefficients of a lossless PNG and none adds error correction.",
+   "mechanics": "All ten algorithms hide data in pixel values or transform coefficients of a lossless PNG and none adds error correction.",
    "capacity": "Embedding more bits makes statistical detection easier for every method.",
    "distortion": "Low PSNR change does not imply that statistical steganalysis fails.",
    "cost": "No algorithm here spends effort on resisting steganalysis.",
@@ -229,6 +229,78 @@
    "cost": "It is optional: if it fails or is unavailable, the message is still delivered with a rule-based fallback explanation.",
    "limitations": "The explanation is simulated, not a language model; it must not select, rank or veto an algorithm, and Rust accepts it only if the selected algorithm is echoed unchanged.",
    "keywords": "rag explanation role simulated retrieval template claim check selected unchanged fallback optional outage not decision"
+  },
+  {
+   "id": "alg-dwt",
+   "kind": "algorithm",
+   "algorithm": "dwt",
+   "title": "One-level Haar DWT QIM (dwt)",
+   "mechanics": "dwt splits one plane into 2x2 blocks, computes the orthonormal Haar coefficient HH = (a-b-c+d)/2 and moves it to the nearest multiple of the step delta, 4 by default, whose index parity equals the payload bit; after rounding each block is re-checked and alternative pixel patterns are tried near 0 and 255.",
+   "capacity": "dwt carries one bit per 2x2 block of the embedding plane, excluding the block rows that hold the bootstrap.",
+   "distortion": "Each block changes HH by at most two quantisation steps, spread over four pixels; distortion is moderate and higher than the LSB family.",
+   "cost": "Cost is low: a vectorised Haar step and verification per block.",
+   "limitations": "dwt is a transform-domain method but is not claimed robust to JPEG or resizing in this implementation; the lossless PNG hand-off is still required.",
+   "keywords": "dwt haar wavelet hh subband qim quantisation index modulation block 2x2 transform"
+  },
+  {
+   "id": "alg-dct_svd",
+   "kind": "algorithm",
+   "algorithm": "dct_svd",
+   "title": "DCT-SVD singular-value QIM (dct_svd)",
+   "mechanics": "dct_svd applies an 8x8 orthonormal DCT, takes the 4x4 coefficient sub-matrix without the DC row and column, computes its SVD and quantises the largest singular value with step 16 by default so that the index parity equals the payload bit, then reconstructs and verifies each block.",
+   "capacity": "dct_svd carries one bit per 8x8 block, the lowest capacity of the ten algorithms, so small covers often cannot hold a frame.",
+   "distortion": "Changing the largest singular value moves the block by up to one quantisation step in the Frobenius norm, spread over 64 pixels.",
+   "cost": "Cost is moderate: one DCT, one 4x4 SVD and a verification per block.",
+   "limitations": "dct_svd is one concrete variant of the DCT-SVD family, not a universal DCT-SVD algorithm, and it is not claimed robust to JPEG or resizing here.",
+   "keywords": "dct svd singular value decomposition block 8x8 sigma quantisation transform variant"
+  },
+  {
+   "id": "alg-hugo",
+   "kind": "algorithm",
+   "algorithm": "hugo",
+   "title": "HUGO with syndrome-trellis coding (hugo)",
+   "mechanics": "hugo computes, for every used sample, the exact change of the HUGO distortion, a weighted difference of co-occurrences of three consecutive pixel differences in eight directions with T 90, when the sample changes by plus or minus 1, and embeds with binary syndrome-trellis codes so that the total cost is minimal.",
+   "capacity": "hugo uses at most 131072 samples per image with a code rate of at least 1 bit per 2 samples; the automatic rate uses up to 10 samples per bit.",
+   "distortion": "Changes are plus or minus 1 and are concentrated where the co-occurrence model changes least, giving very low distortion for small frames.",
+   "cost": "Cost is the highest of the ten: per-sample HUGO cost evaluation plus a Viterbi search over 128 trellis states.",
+   "limitations": "This hugo uses the additive single-change approximation without model correction, so it is a named variant of HUGO, and low distortion does not mean undetectable.",
+   "keywords": "hugo high dimensional model spam co-occurrence distortion stc syndrome trellis adaptive cost"
+  },
+  {
+   "id": "alg-wow",
+   "kind": "algorithm",
+   "algorithm": "wow",
+   "title": "WOW with syndrome-trellis coding (wow)",
+   "mechanics": "wow filters the cover with three directional Daubechies-8 wavelet filters, measures embedding suitability as the filtered residual magnitude, combines the three directions with a reciprocal sum so that smooth directions dominate the cost, and embeds with binary syndrome-trellis codes.",
+   "capacity": "wow uses at most 131072 samples per image with a code rate of at least 1 bit per 2 samples.",
+   "distortion": "Changes are plus or minus 1 and avoid smooth regions and clean edges, which keeps distortion very low for small frames.",
+   "cost": "Cost is high: three filter passes per channel plus a Viterbi search.",
+   "limitations": "wow is fragile to JPEG, resizing and filtering, and distortion minimisation is not proof of undetectability.",
+   "keywords": "wow wavelet obtained weights directional filter db8 suitability cost map stc adaptive"
+  },
+  {
+   "id": "alg-s_uniward",
+   "kind": "algorithm",
+   "algorithm": "s_uniward",
+   "title": "S-UNIWARD with syndrome-trellis coding (s_uniward)",
+   "mechanics": "s_uniward computes the spatial UNIWARD cost, the sum over three directional Daubechies-8 wavelet filters of the reciprocal of 1 plus the residual magnitude convolved with the absolute filter, and embeds with binary syndrome-trellis codes.",
+   "capacity": "s_uniward uses at most 131072 samples per image with a code rate of at least 1 bit per 2 samples.",
+   "distortion": "Changes are plus or minus 1 and are placed where wavelet coefficients change least in relative terms, giving very low distortion for small frames.",
+   "cost": "Cost is high: three filter passes per channel plus a Viterbi search.",
+   "limitations": "This is the spatial variant S-UNIWARD, not J-UNIWARD; it is fragile to lossy processing and distortion minimisation is not proof of undetectability.",
+   "keywords": "s_uniward uniward universal wavelet relative distortion sigma spatial db8 stc adaptive"
+  },
+  {
+   "id": "coding-stc",
+   "kind": "concept",
+   "algorithm": null,
+   "title": "Syndrome-trellis codes",
+   "mechanics": "Syndrome-trellis codes embed a message as the syndrome of a sparse parity-check matrix and use a Viterbi search to find the stego bits with minimal total cost; this project uses binary codes with constraint height 7.",
+   "capacity": "The code rate is message bits divided by used samples; the receiver needs only the stego bits, the rate and the matrix seed.",
+   "distortion": "STC minimises the sum of per-sample costs, so its benefit depends entirely on the cost map.",
+   "cost": "The Viterbi search costs about 128 operations per used sample.",
+   "limitations": "STC is used only for the additive cost formulations of hugo, wow and s_uniward; the submatrices are generated deterministically and are not the published optimised ones, so some coding loss is expected.",
+   "keywords": "stc syndrome trellis code viterbi parity check rate constraint height coding loss"
   }
  ]
 }

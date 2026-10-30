@@ -33,7 +33,7 @@ const fmtMs = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? `${
 const fmtTime = (ms?: number) => (typeof ms === "number" ? new Date(ms).toLocaleString() : "n/a");
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const short = (s?: string | null, n = 8) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "—");
-const ALGORITHMS = ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct"] as const;
+const ALGORITHMS = ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct", "dwt", "dct_svd", "hugo", "wow", "s_uniward"] as const;
 
 function Bar({ value, max, tone = "info" }: { value: number | null; max: number; tone?: Tone }) {
   const pct = value === null || max <= 0 ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
@@ -143,7 +143,7 @@ function Candidates({ selection }: { selection: StegoSelection }) {
             const isWin = winner === c.algorithm;
             return (
               <tr key={c.algorithm} className={isWin ? "stego-winner" : c.eligible ? "" : "stego-excluded"} data-testid={`cand-${c.algorithm}`}>
-                <td><strong>{c.algorithm}{isWin ? <span className="stego-winner-mark"> ★ WINNER</span> : null}</strong>{isWin && selection.reason_code ? <small>{selection.reason_code}</small> : null}</td>
+                <td><strong>{c.algorithm}{isWin ? <span className="stego-winner-mark"> ★ WINNER</span> : null}</strong>{isWin && selection.reason_code ? <small>{selection.reason_code}</small> : null}{c.variant ? <small className="stego-variant">{c.variant}</small> : null}</td>
                 <td>{c.eligible ? <Status tone="success">ELIGIBLE</Status> : <><Status tone="danger">EXCLUDED</Status><small>{c.exclusion_reason ?? "reason n/a"}</small></>}</td>
                 <td>{isNil(c.capacity_bytes) ? "n/a" : `${c.capacity_bytes} B`}</td>
                 <td><div className="stego-cellbar">{fmtPct(c.utilization)}<Bar value={num(c.utilization)} max={1} /></div></td>
@@ -339,7 +339,7 @@ export function SteganographyLabPage() {
   const capBytes = e?.capacity_bytes ?? null, frameLen = e?.frame_len ?? null;
 
   return <>
-    <PageHeader eyebrow="STEGANOGRAPHY LAB / K4 TRANSPORT" title="Steganography Lab" description="Application messages travel as lossless PNG images after M1–M8 and K1–K3. The core seals, embeds, saves, re-reads and verifies every message; this page only renders the result." actions={<Button variant="outline" size="sm" onClick={() => { void refreshStatus(); void refreshHist(); }}><RefreshCw />Refresh status</Button>} />
+    <PageHeader eyebrow="STEGANOGRAPHY LAB / K4 TRANSPORT" title="UAV Simulation — Live/Operational Flow" description="Ten algorithms available. Application messages travel as lossless PNG images after M1–M8 and K1–K3. The core seals, embeds, saves, re-reads and verifies every message; this page only renders the result." actions={<Button variant="outline" size="sm" onClick={() => { void refreshStatus(); void refreshHist(); }}><RefreshCw />Refresh status</Button>} />
 
     {/* 1 readiness */}
     <Panel title="1 / Readiness" meta={<Status tone={backendUp && dronesOk && effective?.authOk && effective?.keyOk ? "success" : "warning"}>{backendUp && dronesOk && effective?.authOk && effective?.keyOk ? "READY" : "CHECK PREREQUISITES"}</Status>}>

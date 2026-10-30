@@ -21,6 +21,9 @@ def range_index(d):
 
 
 class Pvd(Algorithm):
+    variant = "wu-tsai-pvd-6range-v1"
+    domain = "spatial (pixel-pair differences)"
+    reference = "Wu & Tsai, Pattern Recognit. Lett. 24 (2003) 1613-1626, doi:10.1016/S0167-8655(02)00402-6"
     id = 3
     name = "pvd"
 

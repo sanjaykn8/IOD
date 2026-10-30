@@ -23,3 +23,6 @@ Plonky3's only field arithmetic used here is BabyBear and its degree-5 extension
 * **No new Rust dependencies**: `Cargo.toml` and `Cargo.lock` are byte-identical to the pre-integration tree (HKDF/HMAC/SHA-256 were already direct dependencies; base64 and the HTTP client are hand-written on std).
 * **No TLS added** on the Rust→Python hop on purpose: rustls/ring would introduce ECC code. The hop is loopback HTTP unless `IOD_STEGO_ALLOW_NONLOOPBACK=1`.
 * **Python** (`python-service/requirements.txt`): `flask 3.1.3`, `flask-cors`, `numpy`, `Pillow` (+ `pytest`). Optional `requirements-camera.txt`: `opencv-python-headless` (camera only). The stego code uses no asymmetric crypto; the optional OpenCV wheel bundles third-party libraries that were **not audited** for EC content. Pillow/numpy likewise were not inspected at binary level; the claim is about our code and declared dependencies.
+
+## Addendum: ten algorithms + learning workbench (2026-10-30)
+`Cargo.toml`/`Cargo.lock` are byte-identical to the uploaded tree (no new Rust crates). Python: no new runtime dependencies (STC, Haar, DCT-SVD, WOW/S-UNIWARD/HUGO costs are numpy-only). PyWavelets is used only, if installed, by one test to cross-check the db8 coefficients; it is not a requirement. No asymmetric cryptography was added anywhere.

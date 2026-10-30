@@ -28,7 +28,7 @@ Responsibilities (unchanged architecture):
 | Component | Does | Never does |
 |---|---|---|
 | Rust core | AEAD seal/open, directional keys, metadata-MAC key (HKDF), frame build/verify, strict parsing, channel/direction/replay checks, persistence, event/report, final say on every error | send keys or plaintext to any other process |
-| Python service | webcam capture, procedural cover, five embedding algorithms, deterministic selector, metrics, PNG save/read, RAG explanation text | accept keys; hold secrets; decide protocol outcomes |
+| Python service | webcam capture, procedural cover, ten embedding algorithms, deterministic selector, metrics, PNG save/read, RAG explanation text | accept keys; hold secrets; decide protocol outcomes |
 | Node gateway | relay `/api/stego/*` 1:1 (incl. PNG/CSV pass-through) | crypto, policy, algorithm choice |
 | React | render, controls, downloads | receive keys; show anything not returned by the backend |
 
@@ -121,26 +121,31 @@ using the repository's existing `crypto::kdf::hkdf_expand`. Properties:
   can only cause rejection, never acceptance of a different message.
 * An ordinary checksum (the bootstrap CRC) is **not** treated as authentication.
 
-## 4. Embedding algorithms
+## 4. Embedding algorithms (ten; full reference: `docs/stego-algorithms.md`)
 
 All operate on arbitrary bytes, are deterministic, never touch samples `[0,128)` (bootstrap), verify
 capacity before and during embedding, and round-trip exactly through lossless PNG. **None is claimed
-robust** to JPEG recompression, resizing, filtering or cropping; the LSB-family methods are the most fragile.
-(Details and rationale: `docs/stego-implementation-note.md` §1.4.)
+robust** to JPEG recompression, resizing, filtering or cropping (measured: all ten fail JPEG q95–q50,
+resize and crop in the workbench robustness suite).
 
-| id | name | rule (summary) | capacity | notes |
+| id | name | variant | capacity | notes |
 |---|---|---|---|---|
 | 1 | `lsb_replacement` | bit *i* → LSB of sample 128+*i* | `N−128` bits | statistically detectable (pairs-of-values) |
-| 2 | `lsb_matching` | change LSB by ±1 only when needed; 0→+1, 255→−1; PRNG seeded from cover hash | `N−128` bits | avoids the replacement asymmetry; still detectable |
-| 3 | `pvd` | adjacent sample pairs; difference range table 3/3/4/5/6/7 bits | image dependent (exact) | pair stays in range; boundary-safe |
-| 4 | `edge_adaptive_lsb` | LSB replacement only on pixels whose 7-MSB gradient ≥ T (param, default 6) | eligible pixels × channels | mask uses only MSBs, so cover/stego masks are identical; no fallback to flat areas |
-| 5 | `dct` | 8×8 block DCT, 6 mid-frequency coefficients, parity quantisation (Δ = param, default 12); block row 0 skipped | `6 × blocks` | each block re-verified after rounding/clipping; saturated blocks can fail (`ENCODE_VERIFY_FAILED`) |
+| 2 | `lsb_matching` | ±1 only when needed, PRNG seeded from cover hash | `N−128` bits | still detectable |
+| 3 | `pvd` | Wu–Tsai ranges 3/3/4/5/6/7 bits | exact, cover dependent | boundary-safe |
+| 4 | `edge_adaptive_lsb` | LSB on 7-MSB gradient ≥ T (6) | eligible samples | no fallback to flat areas |
+| 5 | `dct` | 8×8 DCT, 6 mid-band coefficients, QIM Δ=12 | `6 × blocks` | refuses saturated blocks |
+| 6 | `dwt` | 1-level Haar, QIM on HH, Δ=4 | 1 bit / 2×2 block | works on the B/W fallback (alternative pixel patterns near 0/255) |
+| 7 | `dct_svd` | 8×8 DCT, SVD of X[1:5,1:5], QIM on σ₁, Δ=16 | 1 bit / 8×8 block | lowest capacity |
+| 8 | `hugo` | exact single-change HUGO costs (T=90) + binary STC h=7, no model correction | `min(N−128,131072)/w` | named HUGO variant |
+| 9 | `wow` | WOW (p=−1, db8) + binary STC h=7 | same | content-adaptive |
+| 10 | `s_uniward` | S-UNIWARD (σ=1, db8) + binary STC h=7 | same | spatial UNIWARD |
 
 Image handling: RGB and L only; no resize or lossy step is ever applied; modes other than RGB/L are
 converted and the transform recorded; images beyond configured size limits are rejected. The procedural
 fallback (black/white, mode `1`) becomes mode `L` with the recorded transform `mode:1->L`.
 
-## 5. Deterministic selector (policy `sel-policy-1`)
+## 5. Deterministic selector (policy `sel-policy-2`)
 
 Pure function of features + policy. Steps: validate → capacity filter → trial-encode each candidate on
 the real cover (measured MSE/PSNR/SSIM) → hard limits (`max_mse`, `min_psnr_db`, `max_cost_units`) →
@@ -152,7 +157,8 @@ score → tie-break → report.
 unless an operator experiments with another class in the Lab. `est_cost_units` is a **static model**, not a
 measurement; measured wall-clock times are reported but never ranked, so the choice is reproducible.
 Candidates within `tie_epsilon` (0.01) of the best score are tied; the first in
-`[lsb_matching, pvd, edge_adaptive_lsb, lsb_replacement, dct]` wins (a documented policy preference).
+`[s_uniward, wow, hugo, lsb_matching, pvd, edge_adaptive_lsb, dwt, dct_svd, lsb_replacement, dct]` wins (a documented policy preference).
+`sel-policy-2` = the `sel-policy-1` rules over all ten algorithms, with static cost entries for the new five (see `docs/stego-algorithms.md` §5); the version was bumped because the same inputs can now give a different decision. With an explicit algorithm (always the case at encode time) only that candidate is re-validated.
 Output: selected algorithm, `reason_code` (`BEST_SCORE | TIE_BREAK_ORDER | ONLY_ELIGIBLE | MANUAL_OVERRIDE`),
 policy version, features, and every candidate with capacity, utilisation, cost, metrics, score and exclusion reason.
 Manual override (Lab only) still has to pass capacity and hard limits (`ALGORITHM_NOT_ELIGIBLE` otherwise).
@@ -268,6 +274,10 @@ across a Python call.
 `GET /api/stego/artifacts/{id}/stego|cover`. The legacy `POST /api/secure-message` now goes through the same
 pipeline and returns its old keys plus a `stego` object. Request/response examples: `docs/api.md`.
 
+## 13. Educational workbench (separate)
+
+The Lab's **Algorithm Learning** tab uses `/api/learn/*` and never touches this transport: see `docs/learning-workbench.md`.
+
 ## Honest limitations
 
 * Lossless PNG hand-off between local components only. No claim of resilience to JPEG/resize/filter/crop.
@@ -277,5 +287,6 @@ pipeline and returns its old keys plus a `stego` object. Request/response exampl
   integrity and replay protection come from the ML-KEM-derived AEAD keys and the HMAC-protected frame.
 * Webcam capture was not tested on physical hardware; the browser path was verified with Chromium's synthetic camera, the OpenCV path with a fake `cv2` module. A browser-captured frame is trusted only as pixels: it is re-validated and re-encoded by the service.
 * RAG is simulated and explanation-only.
+* STC methods use a public element permutation (no stego key), non-optimised STC submatrices, and HUGO without model correction (`docs/stego-algorithms.md` §6).
 * Round-3 PQ crates (Kyber768/Dilithium2), unaudited Plonky3 RC: see `docs/IMPLEMENTATION_STATUS.md`.
 * Timings are host-simulation measurements, not drone hardware.

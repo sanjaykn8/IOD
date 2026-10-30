@@ -63,7 +63,7 @@ def test_health(client):
 
 @pytest.mark.parametrize("alg", NAMES)
 def test_encode_extract_roundtrip_each_algorithm(client, cover_id, adir, alg):
-    frame = payload(60, seed=len(alg))
+    frame = payload(30, seed=len(alg))  # fits dct_svd (1 bit per 8x8 block) in the 120x160 cover
     code, j = post(client, "/stego/encode", {"frame_b64": b64(frame), "cover": tc(cover_id), "algorithm": alg})
     assert code == 200 and j["ok"] and j["embed"]["algorithm"] == alg
     assert j["selection"]["reason_code"] == "MANUAL_OVERRIDE" and j["stego"]["format"] == "PNG"
@@ -72,7 +72,7 @@ def test_encode_extract_roundtrip_each_algorithm(client, cover_id, adir, alg):
     assert j["cover"]["artifact_id"] == cover_id and j["cover"]["source"] == "test_cover"
     code, e = post(client, "/stego/extract", {"artifact_id": aid})
     assert code == 200 and base64.b64decode(e["frame_b64"]) == frame
-    assert e["bootstrap"] == {"version": 1, "alg_id": NAMES.index(alg) + 1, "algorithm": alg, "param": 0, "frame_len": 60}
+    assert e["bootstrap"] == {"version": 1, "alg_id": NAMES.index(alg) + 1, "algorithm": alg, "param": 0, "frame_len": 30}
     assert e["image"]["sha256"] == j["stego"]["sha256"] and e["image"]["size"] == j["stego"]["size"]
 
 
@@ -112,7 +112,10 @@ def test_two_step_analyze_then_encode_same_cover_and_algorithm(client, adir):
     assert e["cover"]["sha256"] == cov["sha256"]  # same cover pixels/file
     # eligibility re-validation is deterministic: candidate rows agree with analyze
     strip = lambda rows: [{k: v for k, v in r.items() if k != "trial_ms"} for r in rows]
-    assert [r["eligible"] for r in strip(e["selection"]["candidates"])] == [r["eligible"] for r in strip(sel["candidates"])]
+    # encode re-validates only the algorithm chosen by analyze; that row must equal analyze's row
+    (row,) = strip(e["selection"]["candidates"])
+    ref = next(r for r in strip(sel["candidates"]) if r["algorithm"] == sel["selected"])
+    assert row == ref and row["eligible"]
     assert (adir / f"{e['artifact_id']}.png").is_file()
     assert not (adir / f"{e['artifact_id']}.cover.png").exists()  # exact saved cover reused, no copy
     _, x = post(client, "/stego/extract", {"artifact_id": e["artifact_id"]})
@@ -136,7 +139,7 @@ def test_analyze_manual_override_and_errors(client, cover_id):
     code, a = post(client, "/stego/analyze", {"frame_bytes": 50, "cover": tc(cover_id), "algorithm": "pvd"})
     assert code == 200 and a["selection"]["selected"] == "pvd" and a["selection"]["reason_code"] == "MANUAL_OVERRIDE"
     code, a = post(client, "/stego/analyze", {"frame_bytes": 100000, "cover": tc(cover_id), "algorithm": "dct"})
-    assert code == 422 and a["error"]["code"] == "ALGORITHM_NOT_ELIGIBLE" and len(a["error"]["details"]["candidates"]) == 5
+    assert code == 422 and a["error"]["code"] == "ALGORITHM_NOT_ELIGIBLE" and len(a["error"]["details"]["candidates"]) == 10
     code, a = post(client, "/stego/analyze", {"frame_bytes": 100000, "cover": tc(cover_id)})
     assert code == 422 and a["error"]["code"] == "NO_ELIGIBLE_ALGORITHM" and a["ok"] is False
     code, a = post(client, "/stego/analyze", {"frame_bytes": "x", "cover": tc(cover_id)})

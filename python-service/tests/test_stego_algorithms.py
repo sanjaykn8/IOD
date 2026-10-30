@@ -8,7 +8,8 @@ from stego.errors import StegoError
 from stego_helpers import natural_cover, payload
 
 ALGS = [a.name for a in _ALL]
-COVERS = {"rgb": natural_cover(96, 128, 3), "gray": natural_cover(96, 128, 1, seed=11)}
+# 256x256 so that every algorithm (including 1-bit-per-8x8-block dct_svd) holds the 120-byte vectors
+COVERS = {"rgb": natural_cover(256, 256, 3), "gray": natural_cover(256, 256, 1, seed=11)}
 CODES = ("CAPACITY_INSUFFICIENT", "EDGE_CAPACITY_INSUFFICIENT")
 
 
@@ -30,7 +31,10 @@ def cover(request):
 
 def test_ids_and_names():
     assert [(a.id, a.name) for a in _ALL] == [(1, "lsb_replacement"), (2, "lsb_matching"), (3, "pvd"),
-                                              (4, "edge_adaptive_lsb"), (5, "dct")]
+                                              (4, "edge_adaptive_lsb"), (5, "dct"), (6, "dwt"), (7, "dct_svd"),
+                                              (8, "hugo"), (9, "wow"), (10, "s_uniward")]
+    for a in _ALL:
+        assert a.variant and a.domain and a.reference
 
 
 @pytest.mark.parametrize("data", [b"", b"\x00", b"\xff", b"hello world", bytes(range(120)),

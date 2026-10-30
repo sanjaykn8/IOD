@@ -14,18 +14,18 @@ use tiny_http::{Header, Method, Response};
 
 pub type Resp = Response<std::io::Cursor<Vec<u8>>>;
 
-fn hdr(k: &str, v: &str) -> Header {
+pub(crate) fn hdr(k: &str, v: &str) -> Header {
     Header::from_bytes(k.as_bytes(), v.as_bytes()).unwrap()
 }
 
-fn json_resp(status: u16, body: Value) -> Resp {
+pub(crate) fn json_resp(status: u16, body: Value) -> Resp {
     Response::from_string(body.to_string())
         .with_status_code(status)
         .with_header(hdr("Content-Type", "application/json"))
         .with_header(hdr("Access-Control-Allow-Origin", "*"))
 }
 
-fn err_resp(e: &StegoError) -> Resp {
+pub(crate) fn err_resp(e: &StegoError) -> Resp {
     json_resp(e.http_status, json!({"ok": false, "error": e.to_json()}))
 }
 
@@ -65,11 +65,11 @@ fn pct_decode(s: &str) -> String {
     String::from_utf8_lossy(&out).to_string()
 }
 
-fn qparam(query: &str, key: &str) -> Option<String> {
+pub(crate) fn qparam(query: &str, key: &str) -> Option<String> {
     query.split('&').find_map(|p| p.split_once('=').filter(|(k, _)| *k == key).map(|(_, v)| pct_decode(v))).filter(|v| !v.is_empty())
 }
 
-fn read_body_strict(request: &mut tiny_http::Request, max: usize) -> Result<Value, StegoError> {
+pub(crate) fn read_body_strict(request: &mut tiny_http::Request, max: usize) -> Result<Value, StegoError> {
     let mut buf = Vec::new();
     let reader = request.as_reader();
     std::io::Read::take(reader, max as u64 + 1).read_to_end(&mut buf).map_err(|_| bad("could not read request body"))?;
@@ -132,7 +132,7 @@ fn algorithm_from(body: &Value) -> Result<Option<String>, StegoError> {
         None | Some(Value::Null) => Ok(None),
         Some(Value::String(a)) if a.is_empty() || a == "auto" => Ok(None),
         Some(Value::String(a)) if ALGS.contains(&a.as_str()) => Ok(Some(a.clone())),
-        _ => Err(bad("algorithm must be one of lsb_replacement, lsb_matching, pvd, edge_adaptive_lsb, dct (or omitted for automatic)")),
+        _ => Err(bad("algorithm must be one of lsb_replacement, lsb_matching, pvd, edge_adaptive_lsb, dct, dwt, dct_svd, hugo, wow, s_uniward (or omitted for automatic)")),
     }
 }
 

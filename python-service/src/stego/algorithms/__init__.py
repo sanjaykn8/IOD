@@ -1,11 +1,15 @@
 from ..errors import StegoError
+from .adaptive import Hugo, SUniward, Wow
 from .dct import Dct
+from .dct_svd import DctSvd
+from .dwt import Dwt
 from .edge_adaptive import EdgeAdaptiveLsb
 from .lsb_matching import LsbMatching
 from .lsb_replacement import LsbReplacement
 from .pvd import Pvd
 
-_ALL = [LsbReplacement(), LsbMatching(), Pvd(), EdgeAdaptiveLsb(), Dct()]
+_ALL = [LsbReplacement(), LsbMatching(), Pvd(), EdgeAdaptiveLsb(), Dct(),
+        Dwt(), DctSvd(), Hugo(), Wow(), SUniward()]
 BY_NAME = {a.name: a for a in _ALL}
 BY_ID = {a.id: a for a in _ALL}
 NAMES = [a.name for a in _ALL]  # canonical (id) order

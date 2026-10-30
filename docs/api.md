@@ -25,3 +25,10 @@ Session objects needed for K1 live in process memory; after a server restart a n
 
 ### `POST /api/stego/cover/upload`
 Body `{"image_b64": "<base64 PNG, <= 8 MiB>", "origin": "browser_webcam" | "uploaded"}`. Python accepts PNG only, enforces the size limits, re-encodes the image and stores it as a cover. Returns `{"ok": true, "cover": {"artifact_id", "source": origin, "width", "height", "mode", "sha256", "transforms"}}`. Use it afterwards as `"cover": {"source": "browser_webcam" | "uploaded", "cover_id": "<artifact_id>"}` in `analyze`, `message`, `send` and `benchmark`. Errors: `IMAGE_DECODE_ERROR` (not PNG/corrupt), `IMAGE_TOO_SMALL`/`IMAGE_TOO_LARGE`, `INVALID_REQUEST`, `FRAME_TOO_LARGE`. Node accepts up to 14 MB on this route only; everything else keeps the small default.
+
+## Algorithm Learning workbench (EDUCATIONAL; `/api/learn/*`, never reaches the UAV transport)
+* `GET /api/learn/registry` - ten algorithms with variant/domain/reference/coding, sample covers, attacks, metric definitions.
+* `GET /api/learn/walkthrough/{alg}` - deterministic worked calculation: `steps[{n,title,formula,substitution,result,table?,matrices?}]`, `checks`, `embedded_bits`, `recovered_bits`, `exact_match`, `teaching_model`, `simplification`.
+* `POST /api/learn/experiment` - body `{"payload_mode": "aead_fixture"|"synthetic", "message"?: str (<=2048 B), "algorithms": "all"|[names], "cover": {"sample": "natural_rgb_256"|"natural_gray_256"|"gray_64"|"bw_procedural_256"} | {"upload_b64": PNG <= 512x512}, "robustness": bool, "verify_capacity": bool, "include_images": bool}`. Returns `experiment_id`, `label`, `operational: false`, `payload_construction`, per-algorithm metrics, `verification` (`aead_verified` | `aead_failed` | `not_applicable_synthetic`), robustness, images as data URIs.
+* `GET /api/learn/experiments[?limit=]`, `GET /api/learn/experiments/{id}/export?format=json|csv|md`.
+The operational endpoints now accept the ten algorithm names (`dwt`, `dct_svd`, `hugo`, `wow`, `s_uniward` added) and report `policy_version: sel-policy-2` and each candidate's `variant`.

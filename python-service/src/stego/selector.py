@@ -1,4 +1,10 @@
-"""Deterministic selector sel-policy-1. Pure function of (cover, frame length, policy)."""
+"""Deterministic selector sel-policy-2. Pure function of (cover, frame length, policy).
+
+sel-policy-2 = sel-policy-1's rule set (capacity filter -> trial encode -> hard limits ->
+weighted score -> tie-break) applied to the ten-algorithm registry, with static cost-model
+entries for the five new algorithms and a tie-break order that prefers the content-adaptive
+methods on ties.
+"""
 
 import hashlib
 import math
@@ -14,9 +20,14 @@ from .config import Limits
 from .errors import StegoError
 
 WEIGHTS = {"urgent": (0.2, 0.1, 0.7), "normal": (0.5, 0.2, 0.3), "background": (0.8, 0.15, 0.05)}
-WORK = {"lsb_replacement": 0.5, "lsb_matching": 0.7, "pvd": 1.2, "edge_adaptive_lsb": 0.9, "dct": 2.0}
-SCAN = {"lsb_replacement": 0.0, "lsb_matching": 0.1, "pvd": 0.2, "edge_adaptive_lsb": 0.6, "dct": 1.0}
-DEFAULT_TIE_ORDER = ["lsb_matching", "pvd", "edge_adaptive_lsb", "lsb_replacement", "dct"]
+# Static cost model (estimated units, NOT measurements): WORK per 64 frame bytes, SCAN per 1e5 pixels.
+# STC methods pay for cost-map computation (SCAN) and the Viterbi search (WORK, ~w*2^h per bit).
+WORK = {"lsb_replacement": 0.5, "lsb_matching": 0.7, "pvd": 1.2, "edge_adaptive_lsb": 0.9, "dct": 2.0,
+        "dwt": 1.0, "dct_svd": 2.5, "hugo": 8.0, "wow": 6.0, "s_uniward": 6.0}
+SCAN = {"lsb_replacement": 0.0, "lsb_matching": 0.1, "pvd": 0.2, "edge_adaptive_lsb": 0.6, "dct": 1.0,
+        "dwt": 0.4, "dct_svd": 1.2, "hugo": 3.0, "wow": 1.5, "s_uniward": 1.5}
+DEFAULT_TIE_ORDER = ["s_uniward", "wow", "hugo", "lsb_matching", "pvd", "edge_adaptive_lsb", "dwt", "dct_svd",
+                     "lsb_replacement", "dct"]
 
 
 def _num(raw, key, default, lo, hi):
@@ -77,9 +88,19 @@ def trial_payload(n):
     return np.random.Generator(np.random.PCG64(seed)).integers(0, 256, size=n, dtype=np.uint8).tobytes()
 
 
-def features(arr, frame_bytes, priority):
+def texture(arr):
+    """Mean absolute horizontal+vertical neighbour difference (luma for RGB): a cheap complexity statistic."""
+    g = arr.astype(np.float64)
+    if g.ndim == 3:
+        g = 0.299 * g[..., 0] + 0.587 * g[..., 1] + 0.114 * g[..., 2]
+    return float((np.abs(np.diff(g, axis=1)).mean() + np.abs(np.diff(g, axis=0)).mean()) / 2.0)
+
+
+def features(arr, frame_bytes, priority, cover_source=None):
     h, w = arr.shape[:2]
     return {
+        "cover_source": cover_source, "bits_per_pixel": round(frame_bytes * 8 / (h * w), 8),
+        "texture_mean_abs_diff": round(texture(arr), 6), "bit_depth": 8, "format": "PNG (lossless)",
         "width": w, "height": h, "channels": 1 if arr.ndim == 2 else 3,
         "mode": "L" if arr.ndim == 2 else "RGB", "samples": int(arr.size),
         "frame_bytes": frame_bytes, "frame_bits": frame_bytes * 8, "priority": priority,
@@ -88,7 +109,7 @@ def features(arr, frame_bytes, priority):
 
 
 def _row(name):
-    return {"algorithm": name, "alg_id": BY_NAME[name].id, "eligible": False, "exclusion_reason": None,
+    return {"algorithm": name, "alg_id": BY_NAME[name].id, "variant": BY_NAME[name].variant, "eligible": False, "exclusion_reason": None,
             "exclusion_reasons": [], "capacity_bits": 0, "capacity_bytes": 0, "utilization": None,
             "headroom_bits": None, "est_cost_units": None, "mse": None, "psnr": None,
             "psnr_defined": None, "ssim": None, "changed_samples": None, "score": None, "trial_ms": None,
@@ -96,7 +117,7 @@ def _row(name):
 
 
 def select(arr, frame_bytes, priority=None, policy=None, forced=None, forced_param=None,
-           candidates=None, max_frame_bytes=1024 * 1024):
+           candidates=None, max_frame_bytes=1024 * 1024, cover_source=None):
     """Returns the selection report. Raises NO_ELIGIBLE_ALGORITHM / ALGORITHM_NOT_ELIGIBLE."""
     priority = parse_priority(priority)
     pol = parse_policy(policy)
@@ -159,7 +180,7 @@ def select(arr, frame_bytes, priority=None, policy=None, forced=None, forced_par
 
     base = {
         "policy_version": POLICY_VERSION, "priority": priority, "weights": {"w_d": wd, "w_u": wu, "w_t": wt},
-        "features": features(arr, frame_bytes, priority), "candidates": rows,
+        "features": features(arr, frame_bytes, priority, cover_source), "candidates": rows,
         "policy": {k: v for k, v in pol.items() if k != "name"},
     }
     eligible = [r for r in rows if r["eligible"]]

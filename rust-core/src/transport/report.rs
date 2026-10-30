@@ -109,7 +109,7 @@ pub fn build_report(events: &[Value], environment: Value, now_ms: i64) -> Value 
     })
 }
 
-fn csv_cell(v: &Value) -> String {
+pub fn csv_cell(v: &Value) -> String {
     let s = match v {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),

@@ -102,6 +102,9 @@ fn route(
     if segs.len() >= 3 && segs[0] == "api" && segs[1] == "stego" {
         return crate::api::stego_routes::handle(request, method, &segs, query, state);
     }
+    if segs.len() >= 3 && segs[0] == "api" && segs[1] == "learn" {
+        return crate::api::learn_routes::handle(request, method, &segs, query, state);
+    }
 
     match (method, segs.as_slice()) {
         (Method::Post, ["api", "reset"]) => {

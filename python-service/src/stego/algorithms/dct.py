@@ -45,6 +45,9 @@ def _read_bits(blocks, delta):
 
 
 class Dct(Algorithm):
+    variant = "dct8-midband-6coef-qim-v1"
+    domain = "transform (8x8 block DCT)"
+    reference = "Block-DCT quantisation-index modulation (Chen & Wornell 2001, doi:10.1109/18.923725)"
     id = 5
     name = "dct"
     default_param = 12

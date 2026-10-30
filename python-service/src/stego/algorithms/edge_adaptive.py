@@ -24,6 +24,9 @@ def eligible_samples(img, threshold):
 
 
 class EdgeAdaptiveLsb(Algorithm):
+    variant = "edge-mask-7msb-grad-threshold-v1"
+    domain = "spatial (edge/texture mask + LSB)"
+    reference = "Edge-adaptive LSB family, cf. Luo, Huang & Huang, IEEE TIFS 2010, doi:10.1109/TIFS.2009.2035372 (simplified mask, not identical)"
     id = 4
     name = "edge_adaptive_lsb"
     default_param = 6

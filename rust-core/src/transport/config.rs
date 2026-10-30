@@ -32,7 +32,7 @@ impl Default for StegoConfig {
             max_frame_bytes: 65_536,
             http_timeout_ms: 20_000,
             max_response_bytes: 32 * 1024 * 1024,
-            policy: json!({"version": "sel-policy-1", "max_mse": 4.0, "min_psnr_db": 40.0, "max_cost_units": 1000.0, "tie_epsilon": 0.01}),
+            policy: json!({"version": "sel-policy-2", "max_mse": 4.0, "min_psnr_db": 40.0, "max_cost_units": 1000.0, "tie_epsilon": 0.01}),
         }
     }
 }

@@ -9,7 +9,11 @@ app.use(cors());
 // Only the cover-upload route (browser webcam frame / uploaded PNG) may carry a large body; everything else keeps the small default.
 const smallJson = express.json();
 const coverJson = express.json({ limit: "14mb" });
-app.use((req, res, next) => (req.path === "/api/stego/cover/upload" ? coverJson(req, res, next) : smallJson(req, res, next)));
+const learnJson = express.json({ limit: "4mb" }); // educational experiment with an optional uploaded <=512x512 PNG
+app.use((req, res, next) =>
+  req.path === "/api/stego/cover/upload" ? coverJson(req, res, next)
+    : req.path === "/api/learn/experiment" ? learnJson(req, res, next)
+    : smallJson(req, res, next));
 
 app.use("/api", router);
 

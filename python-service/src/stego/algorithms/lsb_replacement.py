@@ -4,6 +4,9 @@ from .base import RESERVED, Algorithm, EmbedOutcome, from_bits
 
 
 class LsbReplacement(Algorithm):
+    variant = "lsb-replacement-msb-first-v1"
+    domain = "spatial (LSB plane)"
+    reference = "Classic LSB replacement; e.g. Fridrich, Steganography in Digital Media, CUP 2009, ch. 5"
     id = 1
     name = "lsb_replacement"
 

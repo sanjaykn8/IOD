@@ -458,7 +458,7 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
         if bootstrap["frame_len"].as_u64() != Some(frame_bytes.len() as u64) {
             return Err(StegoError::new("FRAME_LENGTH_MISMATCH", stage::VERIFY, 422, "bootstrap frame length differs from the recovered frame"));
         }
-        let alg = bootstrap["alg_id"].as_u64().filter(|a| (1..=5).contains(a)).ok_or_else(|| StegoError::new("UNKNOWN_ALGORITHM", stage::VERIFY, 422, "bootstrap algorithm id invalid"))? as u8;
+        let alg = bootstrap["alg_id"].as_u64().filter(|a| (1..=ALGS.len() as u64).contains(a)).ok_or_else(|| StegoError::new("UNKNOWN_ALGORITHM", stage::VERIFY, 422, "bootstrap algorithm id invalid"))? as u8;
         let param = bootstrap["param"].as_u64().filter(|p| *p <= 255).ok_or_else(|| StegoError::new("BOOTSTRAP_CORRUPT", stage::VERIFY, 422, "bootstrap parameter invalid"))? as u8;
         let payload = frame::parse_and_verify(&meta, &frame_bytes, alg, param, h.cfg.max_frame_bytes)?;
         let msg = wire::decode_app_wire(payload, h.cfg.max_frame_bytes)?;

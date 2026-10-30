@@ -126,3 +126,37 @@ router.get(
     relayRaw(res, r, { "X-Content-Type-Options": "nosniff", ...(r.status === 200 ? { "Cache-Control": "private, max-age=3600" } : {}) });
   }),
 );
+
+// ---------------------------------------------------------------------
+// Algorithm Learning workbench (EDUCATIONAL): thin relay onto Rust `/api/learn/*`.
+// Separate namespace from `/api/stego/*`; nothing here reaches the UAV transport.
+// ---------------------------------------------------------------------
+const learn = (path: string) => `/api/learn${path}`;
+const LEARN_ALGS = new Set(["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct", "dwt", "dct_svd", "hugo", "wow", "s_uniward"]);
+router.get("/learn/registry", guard(async (_req, res) => relay(res, await rust.get(learn("/registry")))));
+router.get(
+  "/learn/walkthrough/:alg",
+  guard(async (req, res) => {
+    const alg = String(req.params.alg);
+    if (!LEARN_ALGS.has(alg)) {
+      res.status(400).json({ ok: false, error: { code: "INVALID_REQUEST", message: "unknown algorithm", stage: "gateway" } });
+      return;
+    }
+    relay(res, await rust.get(learn(`/walkthrough/${alg}`)));
+  }),
+);
+router.post("/learn/experiment", guard(async (req, res) => relay(res, await rust.post(learn("/experiment"), req.body ?? {}))));
+router.get("/learn/experiments", guard(async (req, res) => relay(res, await rust.get(learn(`/experiments${rawQuery(req)}`)))));
+router.get(
+  "/learn/experiments/:id/export",
+  guard(async (req, res) => {
+    const id = String(req.params.id);
+    const fmt = String(req.query.format ?? "json");
+    if (!/^[0-9a-f]{32}$/.test(id) || !["json", "csv", "md"].includes(fmt)) {
+      res.status(400).json({ ok: false, error: { code: "INVALID_REQUEST", message: "invalid id or format", stage: "gateway" } });
+      return;
+    }
+    const r = await rust.getRaw(learn(`/experiments/${id}/export?format=${fmt}`));
+    relayRaw(res, r, r.status === 200 ? { "Content-Disposition": `attachment; filename="learn-${id.slice(0, 12)}.${fmt}"` } : undefined);
+  }),
+);
