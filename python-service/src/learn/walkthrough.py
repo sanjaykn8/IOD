@@ -5,7 +5,7 @@ arithmetic reuses the operational low-level helpers (no second implementation of
 Each walkthrough ends with an extraction from the modified values and an exact-match check.
 
 Differences between a walkthrough and the runtime transport are stated in `runtime_link`
-(the runtime skips the 128 bootstrap samples / block rows, works on whole images, and uses
+(the runtime works on the samples or complete blocks of one irregular patch at a time and uses
 STC h = 7, which is too large to show by hand).
 """
 
@@ -101,7 +101,7 @@ def lsb_replacement():
     rec = [n & 1 for n in new]
     w.step("Extraction", "b_i = p'_i mod 2", " ".join(f"{n} mod 2 = {n & 1}" for n in new),
            f"bits {_bits_str(rec)} -> byte 0x{_byte_of(rec):02X}")
-    return w.done(bits, rec, "Runtime: same rule on every sample after the 128 bootstrap samples, MSB-first.")
+    return w.done(bits, rec, "Runtime: same rule on the samples of one patch (raster order inside its mask), MSB-first.")
 
 
 # ------------------------------------------------------------------ 2 LSB matching
@@ -133,7 +133,7 @@ def lsb_matching_wt():
     rec = [n & 1 for n in new]
     w.step("Extraction", "b_i = p'_i mod 2", " ".join(str(n & 1) for n in new), f"bits {_bits_str(rec)} -> 0x{_byte_of(rec):02X}")
     w.check("every change is +/-1", all(abs(a - int(b)) <= 1 for a, b in zip(new, px)))
-    return w.done(bits, rec, "Runtime: seed from the whole cover image, applied after the bootstrap samples.")
+    return w.done(bits, rec, "Runtime: +-1 choices seeded from the cover digest and the patch id, applied to the samples of one patch.")
 
 
 # ------------------------------------------------------------------ 3 PVD
@@ -177,7 +177,7 @@ def pvd_wt():
            ", ".join(f"|{an}-{bn}|={abs(an - bn)}" for an, bn, _, _ in pairs_new), f"bits {_bits_str(rec[:16])}")
     w.check("range of every new difference equals the original range",
             all(int(PVD.range_index(np.array([abs(an - bn)]))[0]) == ri for an, bn, ri, _ in pairs_new))
-    return w.done(bits, rec[:16], "Runtime: identical arithmetic on consecutive sample pairs after the bootstrap samples.")
+    return w.done(bits, rec[:16], "Runtime: identical arithmetic on consecutive pairs of one patch's samples (raster order inside its mask).")
 
 
 # ------------------------------------------------------------------ 4 edge-adaptive LSB
@@ -211,7 +211,7 @@ def edge_wt():
     rec = [int(v) & 1 for v in st.reshape(-1)[np.flatnonzero(edge_mask(st, 6).reshape(-1))[:8]]]
     w.step("Extraction", "rebuild mask from g' = floor(p'/2) (unchanged), read LSBs at the first 8 eligible positions",
            f"mask identical: {same}", f"bits {_bits_str(rec)} -> 0x{_byte_of(rec):02X}")
-    return w.done(bits, rec, "Runtime: RGB uses a luma of the 7-MSB planes; positions before sample 128 are skipped.")
+    return w.done(bits, rec, "Runtime: RGB uses a luma of the 7-MSB planes; the gradient only uses neighbours inside the same patch.")
 
 
 # ------------------------------------------------------------------ 5 DCT
@@ -245,7 +245,7 @@ def dct_wt():
     w.step("Extraction", "re-run the DCT on B', bit = round(X''[u,v]/delta) mod 2",
            ", ".join(f"{p}: {_r((DCT._C @ Bn @ DCT._CT)[p[0], p[1]] / delta, 3)}" for p in DCT.COEFFS),
            f"bits {_bits_str(got)}")
-    return w.done(bits, got, "Runtime: blue plane (RGB) or gray, skips block row 0 (bootstrap), retries the other direction on failure.")
+    return w.done(bits, got, "Runtime: blue plane (RGB) or gray, only 8x8 blocks lying completely inside the patch mask, candidates verified after rounding.")
 
 
 # ------------------------------------------------------------------ 6 DWT
@@ -287,7 +287,7 @@ def dwt_wt():
     w.step("Extraction", "bit = round(HH'/delta) mod 2", ", ".join(f"round({r[8]}/4) mod 2 = {b}" for r, b in zip(rows, rec)),
            f"bits {_bits_str(rec)}")
     w.check("rounding moved HH by at most 1", all(abs(r[8] - r[4]) <= 1.0 + 1e-9 for r in rows))
-    return w.done(bits, rec, "Runtime: whole plane in 2x2 blocks, skipping block rows that contain bootstrap samples; up to 8 indices x 11 patterns near 0/255.")
+    return w.done(bits, rec, "Runtime: 2x2 blocks lying completely inside the patch mask; up to 8 indices x 11 patterns near 0/255.")
 
 
 # ------------------------------------------------------------------ 7 DCT-SVD
@@ -324,7 +324,7 @@ def dct_svd_wt():
         w.step(f"Block {k}: extraction", "bit = round(s1(B')/delta) mod 2", f"round({_r(s1b, 4)}/16) = {int(np.rint(s1b / delta))}",
                f"bit = {got}")
         rec.append(got)
-    return w.done(bits, rec, "Runtime: one bit per 8x8 block over the plane, skipping bootstrap rows, verified with up to 8 candidates.")
+    return w.done(bits, rec, "Runtime: one bit per 8x8 block lying completely inside the patch mask, verified with up to 8 candidates.")
 
 
 # ------------------------------------------------------------------ mini STC (shared by HUGO/WOW/S-UNIWARD)
@@ -404,7 +404,7 @@ def hugo_wt():
     w.step("Apply the changes", "changed element i: p' = p + s, s = +1 if rho+ <= rho- else -1",
            ", ".join(f"col {i}: {int(P[r0, i])} -> {int(P[r0, i]) + (1 if a[r0 * 8 + i] <= b[r0 * 8 + i] else -1)}" for i in changed) or "no change needed",
            "LSBs now equal y")
-    return w.done(msg, rec, "Runtime: exact costs for every used sample (whole image, 8 directions), binary STC h = 7, rate 1/w with w <= 10 automatically.")
+    return w.done(msg, rec, "Runtime: exact costs for the samples of one patch (8 directions), binary STC h = 7, rate 1/w recorded per patch in the manifest.")
 
 
 # ------------------------------------------------------------------ 9 WOW
@@ -434,7 +434,7 @@ def wow_wt():
     _, rec, changed = _mini_stc(w, xs, rho[r0].tolist(), msg)
     w.step("Apply the changes", "changed element: +/-1 (sign from the seeded stream; 0 -> +1, 255 -> -1)",
            f"changed columns {changed}", "LSBs now equal y")
-    return w.done(msg, rec, "Runtime: cost map over the whole image (per channel), binary STC h = 7, public element permutation.")
+    return w.done(msg, rec, "Runtime: cost map computed once per cover (per channel), only the samples of one patch are used, binary STC h = 7, public element permutation.")
 
 
 # ------------------------------------------------------------------ 10 S-UNIWARD
@@ -471,7 +471,7 @@ def uniward_wt():
     msg = F.bits_of(SYN)[:2]
     _, rec, changed = _mini_stc(w, xs, rho[r0].tolist(), msg)
     w.step("Apply the changes", "changed element: +/-1 (seeded sign; 0 -> +1, 255 -> -1)", f"changed columns {changed}", "LSBs now equal y")
-    return w.done(msg, rec, "Runtime: S-UNIWARD costs over the whole image (per channel), binary STC h = 7.")
+    return w.done(msg, rec, "Runtime: S-UNIWARD costs computed once per cover (per channel), only the samples of one patch are used, binary STC h = 7.")
 
 
 WALKTHROUGHS = {

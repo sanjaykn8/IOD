@@ -1,4 +1,4 @@
-# One-command demo launch: starts the Rust core, Python RAG service, and
+# One-command demo launch: starts the Rust core, Python image service, and
 # Node gateway (in that dependency order, with short delays). Run
 # scripts\windows\setup.ps1 first if you haven't already. Leaves all
 # three services running as background processes; use stop_demo.ps1 to
@@ -34,7 +34,7 @@ $rustProc = Start-Process -FilePath "$RootDir\rust-core\target\release\iod-serve
 $rustProc.Id | Out-File "$PidDir\rust.pid"
 Start-Sleep -Seconds 1
 
-Write-Host "== Starting Python RAG service on 127.0.0.1:$PyPort =="
+Write-Host "== Starting Python image service on 127.0.0.1:$PyPort =="
 $env:IOD_PYTHON_PORT = $PyPort
 $pyProc = Start-Process -FilePath "$RootDir\python-service\venv\Scripts\python.exe" -ArgumentList "src\app.py" `
     -WorkingDirectory "$RootDir\python-service" -PassThru -WindowStyle Hidden `
@@ -45,7 +45,6 @@ Start-Sleep -Seconds 1
 Write-Host "== Starting Node gateway on 127.0.0.1:$NodePort =="
 $env:IOD_NODE_PORT = $NodePort
 $env:IOD_RUST_BASE_URL = "http://$BindAddr"
-$env:IOD_PYTHON_BASE_URL = "http://127.0.0.1:$PyPort"
 $nodeProc = Start-Process -FilePath "node" -ArgumentList "dist\index.js" `
     -WorkingDirectory "$RootDir\node-server" -PassThru -WindowStyle Hidden `
     -RedirectStandardOutput "$RootDir\.demo-node.log" -RedirectStandardError "$RootDir\.demo-node.err.log"

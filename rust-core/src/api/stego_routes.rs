@@ -1,9 +1,9 @@
-//! HTTP routes for the image transport (`/api/stego/*`) plus the legacy
+//! HTTP routes for the patch-wise image transport (`/api/stego/*`) plus the legacy
 //! `/api/secure-message` shim, which now travels through the same pipeline.
 //! Validation happens here; security decisions live in `transport::pipeline`.
 
 use crate::api::state::SimulationState;
-use crate::transport::backend::{is_artifact_id, ALGS};
+use crate::transport::backend::is_artifact_id;
 use crate::transport::error::{stage, StegoError};
 use crate::transport::pipeline::{self, MessageRequest, TxFailure};
 use crate::transport::report;
@@ -119,21 +119,15 @@ fn cover_from(body: &Value) -> Result<Value, StegoError> {
     Ok(out)
 }
 
-fn priority_from(body: &Value) -> Result<String, StegoError> {
-    match body.get("priority").and_then(|p| p.as_str()) {
-        None => Ok("normal".into()),
-        Some(p @ ("urgent" | "normal" | "background")) => Ok(p.into()),
-        Some(_) => Err(bad("priority must be urgent, normal or background")),
+/// Fields of the removed whole-image selector. Rejected loudly instead of being silently ignored,
+/// so an old client cannot believe it is forcing an algorithm or a priority class.
+fn reject_removed_fields(body: &Value) -> Result<(), StegoError> {
+    for k in ["priority", "algorithm", "param", "policy"] {
+        if body.get(k).map(|v| !v.is_null()).unwrap_or(false) {
+            return Err(bad(&format!("'{k}' is not accepted: algorithms are selected per patch from the knowledge base and there are no message priority classes")));
+        }
     }
-}
-
-fn algorithm_from(body: &Value) -> Result<Option<String>, StegoError> {
-    match body.get("algorithm") {
-        None | Some(Value::Null) => Ok(None),
-        Some(Value::String(a)) if a.is_empty() || a == "auto" => Ok(None),
-        Some(Value::String(a)) if ALGS.contains(&a.as_str()) => Ok(Some(a.clone())),
-        _ => Err(bad("algorithm must be one of lsb_replacement, lsb_matching, pvd, edge_adaptive_lsb, dct, dwt, dct_svd, hugo, wow, s_uniward (or omitted for automatic)")),
-    }
+    Ok(())
 }
 
 fn resolve_session(state: &Mutex<SimulationState>, body: &Value, from: &str) -> Result<String, StegoError> {
@@ -154,6 +148,7 @@ fn resolve_session(state: &Mutex<SimulationState>, body: &Value, from: &str) -> 
 fn message_request(state: &Mutex<SimulationState>, body: &Value, origin: &'static str) -> Result<MessageRequest, StegoError> {
     let from = body.get("from_id").and_then(|s| s.as_str()).ok_or_else(|| bad("missing from_id"))?;
     let text = body.get("plaintext").and_then(|s| s.as_str()).ok_or_else(|| bad("missing plaintext"))?;
+    reject_removed_fields(body)?;
     let max = state.lock().unwrap().stego_cfg.max_frame_bytes;
     if text.len() > max {
         return Err(StegoError::new("FRAME_TOO_LARGE", stage::PREPARE, 413, format!("plaintext of {} bytes cannot fit the {max}-byte frame limit", text.len())));
@@ -162,9 +157,7 @@ fn message_request(state: &Mutex<SimulationState>, body: &Value, origin: &'stati
         session_id: resolve_session(state, body, from)?,
         from_id: from.to_string(),
         plaintext: text.as_bytes().to_vec(),
-        algorithm: algorithm_from(body)?,
         cover: cover_from(body)?,
-        priority: priority_from(body)?,
         origin,
     })
 }
@@ -246,14 +239,26 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
                 Err(e) => err_resp(&e),
             }
         }
-        (Method::Post, ["analyze"]) => {
+        (Method::Get, ["kb"]) => {
+            let backend = state.lock().unwrap().backend.clone();
+            match backend.kb() {
+                Ok(v) => json_resp(200, v),
+                Err(e) => err_resp(&e),
+            }
+        }
+        (Method::Post, ["plan"]) => {
             let body = match read_body_strict(request, 16 * 1024) { Ok(b) => b, Err(e) => return err_resp(&e) };
-            let n = body.get("frame_bytes").and_then(|v| v.as_u64()).unwrap_or(256) as usize;
             let run = (|| -> Result<Value, StegoError> {
-                let cover = cover_from(&body)?;
-                let pr = priority_from(&body)?;
-                let alg = algorithm_from(&body)?;
-                pipeline::run_analyze(state, n, &cover, &pr, alg.as_deref())
+                reject_removed_fields(&body)?;
+                let n = match body.get("payload_bytes") {
+                    None | Some(Value::Null) => 256,
+                    Some(v) => v.as_u64().ok_or_else(|| bad("payload_bytes must be a positive integer"))? as usize,
+                };
+                let lvl = match body.get("min_level") {
+                    None | Some(Value::Null) => 0,
+                    Some(v) => v.as_u64().filter(|l| *l <= 6).ok_or_else(|| bad("min_level must be an integer within 0..=6"))? as u32,
+                };
+                pipeline::run_plan_preview(state, n, &cover_from(&body)?, lvl)
             })();
             match run {
                 Ok(v) => json_resp(200, v),
@@ -314,6 +319,14 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
             };
             let py = backend.health().ok().map(|h| json!({"version": h["version"], "numpy": h["numpy"], "pillow": h["pillow"], "camera_mode": h["camera"]["mode"]}));
             let env = json!({"os": std::env::consts::OS, "arch": std::env::consts::ARCH, "rust_core_version": env!("CARGO_PKG_VERSION"), "python_service": py});
+            if qparam(query, "format").as_deref() == Some("patches_csv") {
+                let mut chrono = events.clone();
+                chrono.reverse();
+                return Response::from_string(report::patches_to_csv(&chrono))
+                    .with_header(hdr("Content-Type", "text/csv; charset=utf-8"))
+                    .with_header(hdr("Content-Disposition", "attachment; filename=\"stego-patches.csv\""))
+                    .with_header(hdr("Access-Control-Allow-Origin", "*"));
+            }
             if qparam(query, "format").as_deref() == Some("csv") {
                 let mut chrono = events.clone();
                 chrono.reverse();
@@ -331,11 +344,11 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
                 let sid = body.get("session_id").and_then(|s| s.as_str()).ok_or_else(|| bad("missing session_id"))?;
                 let iterations = body.get("iterations").and_then(|v| v.as_u64()).unwrap_or(5) as usize;
                 let sizes: Vec<usize> = body.get("frame_sizes").and_then(|v| v.as_array()).map(|a| a.iter().filter_map(|x| x.as_u64().map(|n| n as usize)).collect()).unwrap_or_else(|| vec![64, 512]);
-                let algs: Vec<String> = match body.get("algorithms").and_then(|v| v.as_array()) {
-                    Some(a) => a.iter().filter_map(|x| x.as_str().map(|s| s.to_string())).collect(),
-                    None => ALGS.iter().map(|s| s.to_string()).collect(),
-                };
-                pipeline::run_benchmark(state, sid, iterations, &sizes, &algs, &cover_from(&body)?)
+                reject_removed_fields(&body)?;
+                if body.get("algorithms").map(|v| !v.is_null()).unwrap_or(false) {
+                    return Err(bad("'algorithms' is not accepted: the benchmark measures the patch-wise transport as it runs"));
+                }
+                pipeline::run_benchmark(state, sid, iterations, &sizes, &cover_from(&body)?)
             })();
             match run {
                 Ok(v) => json_resp(200, v),

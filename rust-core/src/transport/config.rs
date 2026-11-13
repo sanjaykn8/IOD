@@ -1,5 +1,5 @@
 //! Validated configuration for the image transport (environment-driven,
-//! conservative defaults). See docs/stego-transport.md.
+//! conservative defaults). See docs/patchwise-transport.md and docs/development.md.
 
 use serde_json::{json, Value};
 
@@ -15,8 +15,12 @@ pub struct StegoConfig {
     pub max_frame_bytes: usize,
     pub http_timeout_ms: u64,
     pub max_response_bytes: usize,
-    /// Selector policy handed to the Python selector on every call.
-    pub policy: Value,
+    /// Segmentation overrides handed to the image service (empty object = its documented defaults).
+    pub segmentation: Value,
+    /// Preferred payload bytes per patch (drives how many patches a frame is spread over).
+    pub target_chunk_bytes: usize,
+    /// How many times the sender may re-plan with a coarser segmentation after a patch failed to embed.
+    pub max_replans: u32,
 }
 
 impl Default for StegoConfig {
@@ -32,10 +36,32 @@ impl Default for StegoConfig {
             max_frame_bytes: 65_536,
             http_timeout_ms: 20_000,
             max_response_bytes: 32 * 1024 * 1024,
-            policy: json!({"version": "sel-policy-2", "max_mse": 4.0, "min_psnr_db": 40.0, "max_cost_units": 1000.0, "tie_epsilon": 0.01}),
+            segmentation: json!({}),
+            target_chunk_bytes: 48,
+            max_replans: 2,
         }
     }
 }
+
+/// (environment variable, segmentation setting, integer?) -- bounds are enforced in `validate`
+/// and again by the image service.
+const SEG_ENV: &[(&str, &str, bool)] = &[
+    ("IOD_STEGO_SEG_CELL_SIZE", "cell_size", true),
+    ("IOD_STEGO_SEG_MIN_REGION_PX", "min_region_px", true),
+    ("IOD_STEGO_SEG_MAX_REGION_FRAC", "max_region_frac", false),
+    ("IOD_STEGO_SEG_MAX_REGIONS", "max_regions", true),
+    ("IOD_STEGO_SEG_W_INTENSITY", "w_intensity", false),
+    ("IOD_STEGO_SEG_W_TEXTURE", "w_texture", false),
+    ("IOD_STEGO_SEG_W_GRADIENT", "w_gradient", false),
+    ("IOD_STEGO_SEG_W_COLOR", "w_color", false),
+    ("IOD_STEGO_SEG_TAU_ITERATIONS", "tau_iterations", true),
+    ("IOD_STEGO_SEG_MAX_REFINE_LEVELS", "max_refine_levels", true),
+];
+const SEG_BOUNDS: &[(&str, f64, f64)] = &[
+    ("cell_size", 0.0, 16.0), ("min_region_px", 16.0, 1_048_576.0), ("max_region_frac", 0.05, 1.0), ("max_regions", 2.0, 255.0),
+    ("w_intensity", 0.0, 10.0), ("w_texture", 0.0, 10.0), ("w_gradient", 0.0, 10.0), ("w_color", 0.0, 10.0),
+    ("tau_iterations", 1.0, 12.0), ("max_refine_levels", 0.0, 6.0),
+];
 
 fn env_parse<T: std::str::FromStr>(name: &str, default: T) -> Result<T, String> {
     match std::env::var(name) {
@@ -58,15 +84,22 @@ impl StegoConfig {
             max_frame_bytes: env_parse("IOD_STEGO_MAX_FRAME_BYTES", d.max_frame_bytes)?,
             http_timeout_ms: env_parse("IOD_STEGO_HTTP_TIMEOUT_MS", d.http_timeout_ms)?,
             max_response_bytes: d.max_response_bytes,
-            policy: {
-                let mut p = d.policy.clone();
-                for (env, key) in [("IOD_STEGO_MAX_MSE", "max_mse"), ("IOD_STEGO_MIN_PSNR_DB", "min_psnr_db"), ("IOD_STEGO_MAX_COST_UNITS", "max_cost_units")] {
+            segmentation: {
+                let mut seg = serde_json::Map::new();
+                for (env, key, int) in SEG_ENV {
                     if let Ok(v) = std::env::var(env) {
-                        p[key] = json!(v.trim().parse::<f64>().map_err(|_| format!("{env} must be a number"))?);
+                        let v = v.trim();
+                        if v.is_empty() {
+                            continue;
+                        }
+                        let n = v.parse::<f64>().map_err(|_| format!("{env} must be a number"))?;
+                        seg.insert(key.to_string(), if *int { json!(n as i64) } else { json!(n) });
                     }
                 }
-                p
+                Value::Object(seg)
             },
+            target_chunk_bytes: env_parse("IOD_STEGO_TARGET_CHUNK_BYTES", d.target_chunk_bytes)?,
+            max_replans: env_parse("IOD_STEGO_MAX_REPLANS", d.max_replans)?,
         };
         c.validate()?;
         Ok(c)
@@ -85,6 +118,20 @@ impl StegoConfig {
         if !(0..=16).contains(&self.camera_index) {
             return Err("IOD_STEGO_CAMERA_INDEX must be within 0..=16".into());
         }
+        if !(8..=65_536).contains(&self.target_chunk_bytes) {
+            return Err("IOD_STEGO_TARGET_CHUNK_BYTES must be within 8..=65536".into());
+        }
+        if self.max_replans > 6 {
+            return Err("IOD_STEGO_MAX_REPLANS must be within 0..=6".into());
+        }
+        let seg = self.segmentation.as_object().ok_or("segmentation settings must be an object")?;
+        for (k, v) in seg {
+            let (_, lo, hi) = SEG_BOUNDS.iter().find(|(n, _, _)| n == k).ok_or_else(|| format!("unknown segmentation setting '{k}'"))?;
+            let x = v.as_f64().ok_or_else(|| format!("segmentation.{k} must be a number"))?;
+            if !(*lo..=*hi).contains(&x) || (k == "cell_size" && ![0.0, 4.0, 8.0, 16.0].contains(&x)) {
+                return Err(format!("segmentation.{k} out of range"));
+            }
+        }
         if self.artifact_dir.contains('\0') || self.artifact_dir.trim().is_empty() {
             return Err("invalid artifact directory".into());
         }
@@ -102,7 +149,8 @@ impl StegoConfig {
     /// Public (non-sensitive) view; only the artifact directory *name* is exposed.
     pub fn public_view(&self) -> Value {
         let name = std::path::Path::new(&self.artifact_dir).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
-        json!({"limits": self.limits(), "policy": self.policy, "artifact_dir_name": name, "http_timeout_ms": self.http_timeout_ms})
+        json!({"limits": self.limits(), "segmentation_overrides": self.segmentation, "target_chunk_bytes": self.target_chunk_bytes,
+               "max_replans": self.max_replans, "artifact_dir_name": name, "http_timeout_ms": self.http_timeout_ms})
     }
 }
 
@@ -123,6 +171,23 @@ mod tests {
         assert!(c.validate().is_err(), "non-loopback needs explicit opt-in");
         c.allow_nonloopback = true;
         assert!(c.validate().is_ok());
+    }
+    #[test]
+    fn segmentation_overrides_are_bounded() {
+        let mut c = StegoConfig::default();
+        c.segmentation = json!({"min_region_px": 512, "max_regions": 40, "w_color": 0.25});
+        assert!(c.validate().is_ok());
+        for bad in [json!({"max_regions": 999}), json!({"cell_size": 5}), json!({"nope": 1}), json!({"w_color": "x"}), json!([1])] {
+            c.segmentation = bad;
+            assert!(c.validate().is_err());
+        }
+        let mut c = StegoConfig::default();
+        c.target_chunk_bytes = 1;
+        assert!(c.validate().is_err());
+        let mut c = StegoConfig::default();
+        c.max_replans = 99;
+        assert!(c.validate().is_err());
+        assert!(!StegoConfig::default().public_view().to_string().contains("policy"));
     }
     #[test]
     fn public_view_hides_full_path() {

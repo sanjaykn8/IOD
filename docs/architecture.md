@@ -6,13 +6,14 @@
 ┌─────────────┐      HTTP/JSON       ┌──────────────────┐     HTTP/JSON    ┌──────────────────┐
 │  React UI   │ ───────────────────► │  Node.js Gateway  │ ───────────────► │  Rust Core (HTTP) │
 │  (web-ui)   │ ◄─────────────────── │  (node-server)    │ ◄─────────────── │  (iod-server)     │
-└─────────────┘   SSE (live events)  └────────┬──────────┘                 └─────────┬─────────┘
-                                               │ HTTP/JSON                            │
-                                               ▼                                      ▼
-                                     ┌──────────────────┐                   ┌──────────────────┐
-                                     │ Python RAG service │                 │  SQLite (bundled) │
-                                     │ (python-service)   │                 │  iod_simulation.db│
-                                     └──────────────────┘                   └──────────────────┘
+└─────────────┘   SSE (live events)  └──────────────────┘                  └───┬──────────┬───┘
+                                                          HTTP/JSON (loopback) │          │
+                                                                               ▼          ▼
+                                               ┌───────────────────────┐  ┌──────────────────┐
+                                               │ Python image service  │  │  SQLite (bundled) │
+                                               │ (python-service)      │  │  iod_simulation.db│
+                                               └───────────┬───────────┘  └──────────────────┘
+                                                           └── shared artifact directory (PNG files) ──► read by the Rust core
 ```
 
 - **`rust-core/`** — all security-critical logic: PUF simulation, fuzzy
@@ -24,14 +25,17 @@
   `iod-bench` (benchmarks), and `iod-vectors` (test-vector generator).
 - **`node-server/`** — a thin TypeScript/Express gateway. Holds no
   cryptographic or protocol logic; every `/api/*` route is a direct
-  proxy to either the Rust core or the Python RAG service. Adds a
+  proxy to the Rust core (the gateway never talks to Python). Adds a
   Server-Sent-Events endpoint (`/api/events/stream`) that polls the Rust
   core's event log internally so the browser gets genuine incremental
   push updates even though the Rust↔Node leg is polling-based (see
   "Why tiny_http, not axum" below).
-- **`python-service/`** — the collaborative RAG / mock-LLM simulation
-  (contribution → retrieval → validation → fusion → generation). No
-  cryptography, no external network calls, no paid API.
+- **`python-service/`** — image processing for the steganography
+  transport: cover acquisition, adaptive region-growing segmentation,
+  patch features, static knowledge base + BM25 selection, the ten
+  mask-safe algorithms, PNG save/re-read, extraction; plus the isolated
+  educational workbench. No keys, no MAC, no cryptography, no external
+  network calls, no LLM.
 - **`web-ui/`** — a React + TypeScript (Vite) dashboard with 9 pages
   covering every control the project brief's "Web Dashboard" section
   requires. Talks only to the Node gateway.
@@ -39,9 +43,9 @@
 ## Why this split, and why Node is thin rather than absent
 
 The project brief requires Rust as the primary/security-critical
-implementation, Python for RAG, and a Node.js/TypeScript layer as part
+implementation, Python for the image/knowledge-base side, and a Node.js/TypeScript layer as part
 of the architecture (a thin gateway is explicitly acceptable). Given
-that, putting protocol/crypto logic in Rust and RAG logic in Python is
+that, putting protocol/crypto logic in Rust and image logic in Python is
 the natural fit; Node's role is deliberately minimized to orchestration
 and gateway concerns (CORS, a single browser-facing origin, SSE
 translation) rather than reimplementing anything Rust already does
@@ -74,7 +78,7 @@ rust-core/       crypto, protocol, PUF, Merkle, ZK, Zero Trust, Trace Manager, s
   src/bin/       server (HTTP API), bench (benchmarks), vectors (test-vector generator)
   tests/         integration tests against the public API (separate from in-module unit tests)
 node-server/     Express gateway + SSE relay
-python-service/  Flask RAG/mock-LLM service
+python-service/  Flask image service (src/stego: patch/ segmentation, features, kb, planner, manifest; algorithms/; codec; kb/algorithm_kb.json) + src/learn
 web-ui/          React + TypeScript dashboard
 docs/            this documentation set
 examples/        generated test vectors
@@ -98,4 +102,4 @@ scripts/         cross-platform launch/build/test scripts
    page shows the same events live via the Node SSE relay.
 
 ## Steganography transport layer
-Rust (`rust-core/src/transport/`, `api/stego_routes.rs`) is authoritative for AEAD, AppWire, Frame, MAC, replay and events. Python (`python-service/src/stego/`) hosts cover capture, the five embedding algorithms, selector trial-encodes, artifacts and RAG explanation. Node is a thin relay. React adds the Steganography Lab. Ten algorithms live in `python-service/src/stego/algorithms/` (single owner). A separate educational workbench (`/api/learn/*`: Rust `learn.rs` + Python `learn/`) runs the same library in isolation with a test-only AEAD key and its own `learn_experiments` table (`learning-workbench.md`). The Lab can capture a browser webcam frame (getUserMedia) and upload it as the cover through Node -> Rust -> Python (`/api/stego/cover/upload`). Diagrams: `stego-transport.md`.
+Rust (`rust-core/src/transport/`: `pipeline.rs`, `frame.rs`, `manifest.rs`, `wire.rs`, `backend.rs`, `report.rs`; `api/stego_routes.rs`) is authoritative for AEAD, AppWire, patch-manifest validation, Frame v2, the MAC over manifest + payload, replay, acceptance and events. Python (`python-service/src/stego/`) does cover capture, segmentation (`patch/segment.py`), patch features, knowledge-base retrieval (`patch/kb.py`, `kb/algorithm_kb.json`), allocation (`patch/planner.py`), the ten mask-safe algorithms (`algorithms/`, single owner), embedding/extraction (`codec.py`) and artifacts; it receives the payload *length* for planning and the already authenticated frame for embedding, never a key. Node is a thin relay. React has the Steganography Lab (patch overlay, inspector, retrieval, results), the Knowledge Base / Retrieval Monitor page and the Algorithm Learning tab. The educational workbench (`/api/learn/*`: Rust `learn.rs` + Python `learn/`) runs the same segmenter and algorithm library in isolation with a test-only AEAD key and its own `learn_experiments` table; it reads the knowledge base but never changes it or the operational store (`learning-workbench.md`). The Lab can capture a browser webcam frame (getUserMedia) and upload it as the cover through `/api/stego/cover/upload`. Sequence, binary layouts and MAC coverage: `patchwise-transport.md`.

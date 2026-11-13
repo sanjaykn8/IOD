@@ -1,15 +1,13 @@
 // Every call in this file talks only to the Node.js gateway
 // (`/api/...`), never directly to the Rust core or Python service —
 // the gateway is the single browser-facing boundary, per the intended
-// architecture (React -> Node -> Rust core / Python RAG).
+// architecture (React -> Node -> Rust core).
 import type {
   StateOverview,
   GroupView,
   DroneView,
   AuthResultView,
   ProtocolEvent,
-  RagRunResult,
-  Contribution,
   TraceFlag,
   TraceRecord,
 } from "../types/api";
@@ -55,11 +53,6 @@ export const api = {
 
   getEventsHistory: (limit = 200) => req<{ events: ProtocolEvent[] }>("GET", `/events/history?limit=${limit}`),
 
-  ragContribute: (drone_id: string, content: string, confidence: number) =>
-    req<{ status: string; contribution: Contribution }>("POST", "/rag/contribute", { drone_id, content, confidence }),
-  ragRun: (query: string, top_k = 5) => req<RagRunResult>("POST", "/rag/run", { query, top_k }),
-  ragState: () => req<{ contributions: Contribution[]; last_run_result: Partial<RagRunResult>; llm_provider: string }>("GET", "/rag/state"),
-  ragReset: () => req<{ status: string }>("POST", "/rag/reset"),
 
   flagSession: (session_id: string, flagged_by: string, reason: string) =>
     req<TraceFlag>("POST", "/trace/flag", { session_id, flagged_by, reason }),

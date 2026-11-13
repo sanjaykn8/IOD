@@ -5,10 +5,11 @@ const BASE = import.meta.env["VITE_API_BASE"] || "http://127.0.0.1:4000/api";
 export interface LearnError { code: string; message: string }
 export type LearnResult<T> = { ok: true; data: T } | { ok: false; error: LearnError };
 
-export interface LearnAlgorithm { id: number; name: string; variant: string; domain: string; reference: string; coding: string; default_param: number; param_range: number[] }
+export interface LearnAlgorithm { id: number; name: string; variant: string; domain: string; reference: string; coding: string; default_param: number; param_range: number[]; block?: number; mask_support?: string }
 export interface LearnRegistry {
   algorithms: LearnAlgorithm[]; samples: string[]; label: string; synthetic_ciphertext_hex: string; synthetic_label: string;
   sample_message: string; metric_definitions: Record<string, string>; test_only_key_notice?: string;
+  patch_choices?: string[]; segmentation_version?: string; selector_version?: string;
 }
 export interface LearnTable { columns: string[]; rows: (string | number | boolean | null)[][] }
 export interface LearnStep {
@@ -22,27 +23,40 @@ export interface LearnWalkthrough {
   fixtures: { synthetic_ciphertext_hex: string; synthetic_label: string };
 }
 export interface LearnImage { title: string; png: string }
-export interface LearnRobustness { attack: string; label: string; params: Record<string, unknown>; full_pipeline: string; oracle_ber: number; outcome: string; full_error?: string }
+export interface LearnRobustness { attack: string; label: string; params: Record<string, unknown>; oracle_ber: number; outcome: string; oracle_error?: string }
+/** One algorithm run on the chosen irregular patch. Names denote this repository's variants. */
 export interface LearnRow {
   algorithm: string; alg_id: number; variant: string; domain: string; coding: string; reference: string; status: string;
-  capacity_bits_raw: number; capacity_bits_verified?: number | null; payload_bytes: number; payload_bits: number; bits_per_pixel: number;
+  mask_support?: string; block?: number; geometry_supported?: boolean; geometry_reason?: string | null; kb_structural_filters_pass?: boolean;
+  capacity_bits: number; capacity_bytes?: number; param?: number; payload_bytes: number; payload_bits: number; bits_per_patch_sample: number;
   utilisation?: number | null; embed_ms?: number; setup_ms?: number | null; extract_ms?: number; mse?: number; psnr_db?: number | null;
+  patch_mse?: number; patch_psnr_db?: number | null; outside_patch_changes?: number;
   ssim?: number | null; bit_accuracy?: number; byte_accuracy?: number; ber?: number; exact_recovery?: boolean; changed_samples?: number;
   max_abs_diff?: number; error?: LearnError; extracted_hex_preview?: string; detail?: Record<string, unknown>;
   verification?: { status: string; aead_verified?: boolean; plaintext_matches?: boolean; bit_exact?: boolean; error?: string; note?: string };
   robustness?: LearnRobustness[];
-  images?: { stego: string; difference_x64?: LearnImage; changed_locations?: LearnImage; specific?: LearnImage };
+  images?: { stego: string; difference_x64?: LearnImage };
+}
+export interface LearnSurveyPatch {
+  patch_id: number; pixels: number; gradient_mean: number; variance: number; entropy: number; saturation: number; compactness: number;
+  blocks8: number; blocks2: number; query_terms: string[]; capacity_bits: Record<string, number>; supported: Record<string, boolean>;
+  unsupported_reasons: Record<string, string>; kb_ranking: string[]; kb_selected: string | null; bm25: Record<string, number>;
 }
 export interface LearnExperiment {
-  experiment_id: string; label: string; operational: false; payload_mode: string;
+  experiment_id: string; label: string; operational: false; payload_mode: string; production_kb_modified?: boolean; variant_notice?: string;
   cover: { description: string; width: number; height: number; mode: string; sha256: string; png?: string; source: string };
+  segmentation?: { version?: string; patch_count?: number; cell_size?: number; regions_before_merge?: number; merges?: number; overlay_png?: string; palette?: number[][] };
+  selector_version?: string; kb_version?: string;
+  patch?: { patch_id: number; chosen_by: string; features?: Record<string, unknown>; highlight_png?: string; note?: string;
+            kb_retrieval_readonly?: { query_terms: string[]; ranking: string[]; selected: string | null } };
+  survey?: LearnSurveyPatch[] | null;
   payload: { kind: string; bytes: number; bits: number; sha256: string; hex_preview: string; bit_order: string };
   payload_construction: Record<string, unknown>; results: LearnRow[]; attacks: { id: string; label: string; params: Record<string, unknown> }[];
   metric_definitions: Record<string, string>; interpretation: string[]; duration_ms: number; persist_error?: string;
 }
 export interface LearnExperimentRequest {
   algorithms: string[] | "all"; payload_mode: "aead_fixture" | "synthetic"; message?: string;
-  cover: { sample: string } | { upload_b64: string }; robustness: boolean; verify_capacity: boolean; include_images: boolean;
+  cover: { sample: string } | { upload_b64: string }; patch: string | number; robustness: boolean; include_images: boolean;
 }
 
 async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<LearnResult<T>> {

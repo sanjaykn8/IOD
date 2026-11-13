@@ -13,8 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthenticationRouteImport } from './routes/authentication'
 import { Route as DronesRouteImport } from './routes/drones'
 import { Route as GroupsRouteImport } from './routes/groups'
+import { Route as KnowledgeBaseRouteImport } from './routes/knowledge-base'
 import { Route as LogsRouteImport } from './routes/logs'
-import { Route as RagRouteImport } from './routes/rag'
 import { Route as SecureCommunicationRouteImport } from './routes/secure-communication'
 import { Route as SteganographyRouteImport } from './routes/steganography'
 import { Route as SystemRouteImport } from './routes/system'
@@ -40,14 +40,14 @@ const GroupsRoute = GroupsRouteImport.update({
   path: '/groups',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KnowledgeBaseRoute = KnowledgeBaseRouteImport.update({
+  id: '/knowledge-base',
+  path: '/knowledge-base',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LogsRoute = LogsRouteImport.update({
   id: '/logs',
   path: '/logs',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const RagRoute = RagRouteImport.update({
-  id: '/rag',
-  path: '/rag',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SecureCommunicationRoute = SecureCommunicationRouteImport.update({
@@ -76,8 +76,8 @@ export interface FileRoutesByFullPath {
   '/authentication': typeof AuthenticationRoute
   '/drones': typeof DronesRoute
   '/groups': typeof GroupsRoute
+  '/knowledge-base': typeof KnowledgeBaseRoute
   '/logs': typeof LogsRoute
-  '/rag': typeof RagRoute
   '/secure-communication': typeof SecureCommunicationRoute
   '/steganography': typeof SteganographyRoute
   '/system': typeof SystemRoute
@@ -88,8 +88,8 @@ export interface FileRoutesByTo {
   '/authentication': typeof AuthenticationRoute
   '/drones': typeof DronesRoute
   '/groups': typeof GroupsRoute
+  '/knowledge-base': typeof KnowledgeBaseRoute
   '/logs': typeof LogsRoute
-  '/rag': typeof RagRoute
   '/secure-communication': typeof SecureCommunicationRoute
   '/steganography': typeof SteganographyRoute
   '/system': typeof SystemRoute
@@ -101,8 +101,8 @@ export interface FileRoutesById {
   '/authentication': typeof AuthenticationRoute
   '/drones': typeof DronesRoute
   '/groups': typeof GroupsRoute
+  '/knowledge-base': typeof KnowledgeBaseRoute
   '/logs': typeof LogsRoute
-  '/rag': typeof RagRoute
   '/secure-communication': typeof SecureCommunicationRoute
   '/steganography': typeof SteganographyRoute
   '/system': typeof SystemRoute
@@ -115,8 +115,8 @@ export interface FileRouteTypes {
     | '/authentication'
     | '/drones'
     | '/groups'
+    | '/knowledge-base'
     | '/logs'
-    | '/rag'
     | '/secure-communication'
     | '/steganography'
     | '/system'
@@ -127,8 +127,8 @@ export interface FileRouteTypes {
     | '/authentication'
     | '/drones'
     | '/groups'
+    | '/knowledge-base'
     | '/logs'
-    | '/rag'
     | '/secure-communication'
     | '/steganography'
     | '/system'
@@ -139,8 +139,8 @@ export interface FileRouteTypes {
     | '/authentication'
     | '/drones'
     | '/groups'
+    | '/knowledge-base'
     | '/logs'
-    | '/rag'
     | '/secure-communication'
     | '/steganography'
     | '/system'
@@ -152,8 +152,8 @@ export interface RootRouteChildren {
   AuthenticationRoute: typeof AuthenticationRoute
   DronesRoute: typeof DronesRoute
   GroupsRoute: typeof GroupsRoute
+  KnowledgeBaseRoute: typeof KnowledgeBaseRoute
   LogsRoute: typeof LogsRoute
-  RagRoute: typeof RagRoute
   SecureCommunicationRoute: typeof SecureCommunicationRoute
   SteganographyRoute: typeof SteganographyRoute
   SystemRoute: typeof SystemRoute
@@ -190,18 +190,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GroupsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/knowledge-base': {
+      id: '/knowledge-base'
+      path: '/knowledge-base'
+      fullPath: '/knowledge-base'
+      preLoaderRoute: typeof KnowledgeBaseRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/logs': {
       id: '/logs'
       path: '/logs'
       fullPath: '/logs'
       preLoaderRoute: typeof LogsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/rag': {
-      id: '/rag'
-      path: '/rag'
-      fullPath: '/rag'
-      preLoaderRoute: typeof RagRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/secure-communication': {
@@ -240,8 +240,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthenticationRoute: AuthenticationRoute,
   DronesRoute: DronesRoute,
   GroupsRoute: GroupsRoute,
+  KnowledgeBaseRoute: KnowledgeBaseRoute,
   LogsRoute: LogsRoute,
-  RagRoute: RagRoute,
   SecureCommunicationRoute: SecureCommunicationRoute,
   SteganographyRoute: SteganographyRoute,
   SystemRoute: SystemRoute,

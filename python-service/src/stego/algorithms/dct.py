@@ -3,7 +3,8 @@
 import numpy as np
 
 from ..errors import StegoError
-from .base import Algorithm, EmbedOutcome, from_bits
+from . import blocks as B
+from .base import Algorithm, from_bits
 
 _k = np.arange(8)
 _C = np.cos((2 * _k[None, :] + 1) * _k[:, None] * np.pi / 16.0)
@@ -16,27 +17,6 @@ _VI = np.array([c[1] for c in COEFFS])
 PER_BLOCK = len(COEFFS)
 
 
-def _plane(img):
-    return img if img.ndim == 2 else img[:, :, 2]
-
-
-def _grid(img):
-    h, w = img.shape[:2]
-    return h // 8, w // 8
-
-
-def _block_count(img):
-    nbr, nbc = _grid(img)
-    return max(0, nbr - 1) * nbc
-
-
-def _gather(plane, nbr, nbc, count):
-    crop = plane[:nbr * 8, :nbc * 8].reshape(nbr, 8, nbc, 8)
-    b = np.arange(count)
-    br, bc = 1 + b // nbc, b % nbc
-    return crop[br, :, bc, :].astype(np.float64), br, bc
-
-
 def _read_bits(blocks, delta):
     x = _C @ blocks @ _CT
     c = x[:, _UI, _VI]
@@ -45,31 +25,32 @@ def _read_bits(blocks, delta):
 
 
 class Dct(Algorithm):
-    variant = "dct8-midband-6coef-qim-v1"
+    variant = "dct8-midband-6coef-qim-v1 (complete 8x8 blocks inside the patch)"
     domain = "transform (8x8 block DCT)"
     reference = "Block-DCT quantisation-index modulation (Chen & Wornell 2001, doi:10.1109/18.923725)"
     id = 5
     name = "dct"
     default_param = 12
     param_range = (4, 64)
+    block = 8
+    mask_support = "needs complete 8x8 blocks of the global grid inside the patch"
 
-    def capacity_bits(self, img, param=0):
+    def capacity_bits(self, img, region, param=0):
         self.resolve_param(param)
-        return PER_BLOCK * _block_count(img)
+        return PER_BLOCK * int(region.blocks(8)[0].size)
 
-    def embed(self, img, payload, param=0):
-        p, bits, cap = self._need(img, payload, param)
-        out = img.copy()
+    def embed(self, ctx, region, out, payload, param=0):
+        p, bits, cap = self._need(ctx.cover, region, payload, param, out)
         n = int(bits.size)
         if n == 0:
-            return EmbedOutcome(out, 0, cap, p, {"blocks_used": 0})
+            return {"blocks_used": 0}
         delta = float(p)
-        nbr, nbc = _grid(img)
         k = -(-n // PER_BLOCK)
         want = np.zeros(k * PER_BLOCK, dtype=np.uint8)
         want[:n] = bits
         want = want.reshape(k, PER_BLOCK)
-        blocks, br, bc = _gather(_plane(img), nbr, nbc, k)
+        br, bc = (x[:k] for x in region.blocks(8))
+        blocks = B.gather(B.plane(ctx.cover), 8, br, bc)
         x = _C @ blocks @ _CT
         c = x[:, _UI, _VI]
         qr = c / delta
@@ -92,18 +73,15 @@ class Dct(Algorithm):
             bad = np.any(_read_bits(pix, delta) != want, axis=1)
             if bad.any():
                 raise StegoError("ENCODE_VERIFY_FAILED", "dct: blocks failed round-trip verification",
-                                 {"failed_blocks": int(bad.sum()), "blocks_used": k})
-        plane_out = _plane(out)
-        crop = plane_out[:nbr * 8, :nbc * 8].reshape(nbr, 8, nbc, 8)
-        crop[br, :, bc, :] = pix.astype(np.uint8)
-        return EmbedOutcome(out, n, cap, p, {"blocks_used": k, "blocks_retried": retried})
+                                 {"failed_blocks": int(bad.sum()), "blocks_used": k, "patch": region.id})
+        B.scatter(B.plane(out), 8, br, bc, pix)
+        return {"blocks_used": k, "blocks_retried": retried, "delta": p}
 
-    def extract(self, img, nbytes, param=0):
+    def extract(self, img, region, nbytes, param=0):
         p = self.resolve_param(param)
-        self._check_extract(img, nbytes, p)
+        self._check_extract(img, region, nbytes, p)
         if nbytes == 0:
             return b""
         k = -(-nbytes * 8 // PER_BLOCK)
-        nbr, nbc = _grid(img)
-        blocks, _, _ = _gather(_plane(img), nbr, nbc, k)
-        return from_bits(_read_bits(blocks, float(p)).reshape(-1), nbytes)
+        br, bc = (x[:k] for x in region.blocks(8))
+        return from_bits(_read_bits(B.gather(B.plane(img), 8, br, bc), float(p)).reshape(-1), nbytes)

@@ -31,10 +31,8 @@ call POST /group-key '{"d1_id":"drone-1","d2_id":"drone-2","mission_id":"demo-mi
 step "j. Send a secure message"
 call POST /secure-message '{"from_id":"drone-1","to_id":"drone-2","plaintext":"Perimeter clear, proceeding to waypoint 2."}'
 
-step "k. Run the RAG simulation"
-call POST /rag/contribute '{"drone_id":"drone-1","content":"Enemy convoy spotted moving north on route 7, six vehicles","confidence":0.9}'
-call POST /rag/contribute '{"drone_id":"drone-2","content":"Convoy of 6 vehicles confirmed heading north on route 7","confidence":0.85}'
-call POST /rag/run '{"query":"What is happening on route 7?"}'
+step "k. Patch-wise plan preview (segmentation + per-patch knowledge-base selection; nothing is sent)"
+call POST /stego/plan '{"payload_bytes":300,"cover":{"source":"procedural"}}'
 
 step "l. Revoke D1"
 call POST /drones/drone-1/revoke

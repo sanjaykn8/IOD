@@ -1,0 +1,2789 @@
+{
+  "attacks": [
+    {
+      "id": "none",
+      "label": "No attack (lossless PNG)",
+      "params": {}
+    },
+    {
+      "id": "jpeg95",
+      "label": "JPEG recompression",
+      "params": {
+        "quality": 95
+      }
+    },
+    {
+      "id": "jpeg75",
+      "label": "JPEG recompression",
+      "params": {
+        "quality": 75
+      }
+    },
+    {
+      "id": "jpeg50",
+      "label": "JPEG recompression",
+      "params": {
+        "quality": 50
+      }
+    },
+    {
+      "id": "resize50",
+      "label": "Resize down 50% and back (bilinear)",
+      "params": {
+        "factor": 0.5
+      }
+    },
+    {
+      "id": "crop4",
+      "label": "Crop 4 px from left and top (image becomes smaller)",
+      "params": {
+        "pixels": 4
+      }
+    },
+    {
+      "id": "gauss1",
+      "label": "Gaussian noise",
+      "params": {
+        "seed": 11,
+        "sigma": 1.0
+      }
+    },
+    {
+      "id": "gauss3",
+      "label": "Gaussian noise",
+      "params": {
+        "seed": 12,
+        "sigma": 3.0
+      }
+    },
+    {
+      "id": "saltpepper",
+      "label": "Salt-and-pepper noise",
+      "params": {
+        "fraction": 0.005,
+        "seed": 13
+      }
+    },
+    {
+      "id": "blur3",
+      "label": "Gaussian blur 3x3",
+      "params": {
+        "sigma": 0.8
+      }
+    },
+    {
+      "id": "bright2",
+      "label": "Brightness +2",
+      "params": {
+        "offset": 2
+      }
+    }
+  ],
+  "cover": {
+    "channels": 3,
+    "description": "256x256 RGB synthetic natural-looking scene (generated, seed 2026)",
+    "height": 256,
+    "mode": "RGB",
+    "sample": "natural_rgb_256",
+    "sha256": "d275b445a0ddde3c1ce8a715e5d4a4651aa7eeb9bfa6f1c8f5fb8d11aedd2706",
+    "source": "sample",
+    "transforms": [],
+    "width": 256
+  },
+  "created_ms": 1794542475555,
+  "duration_ms": 781.972,
+  "experiment_id": "a85c5b25c82e40579c10da5f077b8367",
+  "interpretation": [
+    "High PSNR/SSIM means the stego image looks like the cover; it does not prove resistance to steganalysis.",
+    "Capacity depends on the patch: block methods need complete 8x8 / 2x2 blocks inside the mask, edge-adaptive LSB needs edges.",
+    "Exact extraction from an unmodified PNG does not establish robustness to lossy transforms.",
+    "HUGO/WOW/S-UNIWARD minimise a distortion model; that is not a proof that no steganalyst can detect the message."
+  ],
+  "kb_version": "patch-kb-1",
+  "label": "Educational experiment - not a live UAV transmission",
+  "learn_version": "learn-1",
+  "metric_definitions": {
+    "ber": "(wrong bits + missing bits) / expected payload bits; 1.0 if extraction failed entirely",
+    "bit_accuracy": "matching bits / expected payload bits",
+    "bits_per_patch_sample": "payload_bits / (patch pixels x channels)",
+    "capacity_bits": "capacity measured by the algorithm implementation on this patch mask (not a knowledge-base estimate)",
+    "embed_ms": "patch embedding duration (perf_counter); setup_ms = cost evaluation inside it (STC methods)",
+    "extract_ms": "PNG decode + patch extraction",
+    "mse": "mean over all samples of the IMAGE of (cover - stego)^2",
+    "outside_patch_changes": "samples changed outside the patch mask (must be 0)",
+    "patch_mse": "mean over the samples of the chosen PATCH only of (cover - stego)^2",
+    "patch_psnr_db": "10 log10(255^2 / patch_mse); null when the patch is unchanged",
+    "payload_bits": "payload bytes x 8",
+    "psnr_db": "10 log10(255^2 / MSE) over the image; null when MSE = 0 (identical images)",
+    "robustness": "per attack: extraction from the attacked image with the known patch mask and parameters (oracle); outcome recovered (BER 0) / partial (BER <= 0.1) / failed (BER ~0.5 is chance level)",
+    "ssim": "mean SSIM over the image, uniform 7x7 window, K1=0.01, K2=0.03, L=255"
+  },
+  "mode": "educational",
+  "ok": true,
+  "operational": false,
+  "patch": {
+    "chosen_by": "largest",
+    "features": {
+      "ac_energy_mean": 1007.675,
+      "aspect_ratio": 1.4545,
+      "bbox": [
+        0,
+        0,
+        176,
+        256
+      ],
+      "block8_fill": 1.0,
+      "blocks2": 6272,
+      "blocks8": 392,
+      "capacity_bits": {
+        "dct": 2352,
+        "dct_svd": 392,
+        "dwt": 6272,
+        "edge_adaptive_lsb": 1485,
+        "hugo": 37632,
+        "lsb_matching": 75264,
+        "lsb_replacement": 75264,
+        "pvd": 165368,
+        "s_uniward": 37632,
+        "wow": 37632
+      },
+      "carriers": {
+        "blocks2": 6272,
+        "blocks8": 392,
+        "samples": 75264
+      },
+      "centroid": [
+        71.21,
+        142.66
+      ],
+      "channels": 3,
+      "compactness": 0.187701,
+      "edge_density": 0.0,
+      "entropy": 6.0465,
+      "gradient_mean": 4.1746,
+      "gradient_std": 2.4116,
+      "height": 176,
+      "hf_energy_ratio": 0.152118,
+      "mean": 135.1434,
+      "mean_rgb": [
+        125.745,
+        138.51,
+        142.457
+      ],
+      "patch_id": 2,
+      "perimeter": 1296,
+      "pixels": 25088,
+      "saturation": 0.0,
+      "smoothness": 0.00377222,
+      "texture": 5.9909,
+      "usable_pixels": 25088,
+      "variance": 264.0958,
+      "width": 256
+    },
+    "kb_retrieval_readonly": {
+      "candidates": [
+        {
+          "advisory_bits_per_sample": 1.0,
+          "alg_id": 1,
+          "algorithm": "lsb_replacement",
+          "bm25": 0.0,
+          "capacity_bits": 75264,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 1",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "75264 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#1",
+          "matched_terms": [],
+          "rank": 7
+        },
+        {
+          "advisory_bits_per_sample": 1.0,
+          "alg_id": 2,
+          "algorithm": "lsb_matching",
+          "bm25": 0.0,
+          "capacity_bits": 75264,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 1",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "75264 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#2",
+          "matched_terms": [],
+          "rank": 8
+        },
+        {
+          "advisory_bits_per_sample": 1.6,
+          "alg_id": 3,
+          "algorithm": "pvd",
+          "bm25": 0.0,
+          "capacity_bits": 165368,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 1",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "165368 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#3",
+          "matched_terms": [],
+          "rank": 9
+        },
+        {
+          "advisory_bits_per_sample": 0.3,
+          "alg_id": 4,
+          "algorithm": "edge_adaptive_lsb",
+          "bm25": 2.640364,
+          "capacity_bits": 1485,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 1",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "1485 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#4",
+          "matched_terms": [
+            "moderate-texture",
+            "low-rate"
+          ],
+          "rank": 4
+        },
+        {
+          "advisory_bits_per_sample": 0.094,
+          "alg_id": 5,
+          "algorithm": "dct",
+          "bm25": 6.701201,
+          "capacity_bits": 2352,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 64",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "392 complete 8x8 blocks >= 1",
+              "filter": "min_blocks",
+              "passed": true
+            },
+            {
+              "detail": null,
+              "filter": "hard_avoid:saturation",
+              "passed": true
+            },
+            {
+              "detail": "2352 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#5",
+          "matched_terms": [
+            "moderate-texture",
+            "large-region",
+            "block-aligned",
+            "low-rate"
+          ],
+          "rank": 1
+        },
+        {
+          "advisory_bits_per_sample": 0.25,
+          "alg_id": 6,
+          "algorithm": "dwt",
+          "bm25": 0.68909,
+          "capacity_bits": 6272,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 4",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "6272 complete 2x2 blocks >= 8",
+              "filter": "min_blocks",
+              "passed": true
+            },
+            {
+              "detail": "6272 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#6",
+          "matched_terms": [
+            "low-rate"
+          ],
+          "rank": 6
+        },
+        {
+          "advisory_bits_per_sample": 0.0156,
+          "alg_id": 7,
+          "algorithm": "dct_svd",
+          "bm25": 4.61083,
+          "capacity_bits": 392,
+          "eligible": false,
+          "exclusion_reason": "measured_capacity",
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 64",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "392 complete 8x8 blocks >= 8",
+              "filter": "min_blocks",
+              "passed": true
+            },
+            {
+              "detail": "392 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": false
+            }
+          ],
+          "kb_entry": "patch-kb-1#7",
+          "matched_terms": [
+            "large-region",
+            "block-aligned",
+            "low-rate"
+          ]
+        },
+        {
+          "advisory_bits_per_sample": 0.5,
+          "alg_id": 8,
+          "algorithm": "hugo",
+          "bm25": 1.875975,
+          "capacity_bits": 37632,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 16",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "37632 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#8",
+          "matched_terms": [
+            "large-region",
+            "low-rate"
+          ],
+          "rank": 5
+        },
+        {
+          "advisory_bits_per_sample": 0.5,
+          "alg_id": 9,
+          "algorithm": "wow",
+          "bm25": 4.499032,
+          "capacity_bits": 37632,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 16",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "37632 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#9",
+          "matched_terms": [
+            "large-region",
+            "low-rate",
+            "color"
+          ],
+          "rank": 3
+        },
+        {
+          "advisory_bits_per_sample": 0.5,
+          "alg_id": 10,
+          "algorithm": "s_uniward",
+          "bm25": 5.966132,
+          "capacity_bits": 37632,
+          "eligible": true,
+          "exclusion_reason": null,
+          "filters": [
+            {
+              "detail": null,
+              "filter": "geometry_support",
+              "passed": true
+            },
+            {
+              "detail": "25088 >= 16",
+              "filter": "min_usable_pixels",
+              "passed": true
+            },
+            {
+              "detail": "37632 bits measured, 896 bits required",
+              "filter": "measured_capacity",
+              "passed": true
+            }
+          ],
+          "kb_entry": "patch-kb-1#10",
+          "matched_terms": [
+            "moderate-texture",
+            "large-region",
+            "low-rate",
+            "color"
+          ],
+          "rank": 2
+        }
+      ],
+      "kb_version": "patch-kb-1",
+      "query_terms": [
+        "moderate-texture",
+        "few-edges",
+        "large-region",
+        "block-aligned",
+        "low-rate",
+        "color"
+      ],
+      "ranking": [
+        "dct",
+        "s_uniward",
+        "wow",
+        "edge_adaptive_lsb",
+        "hugo",
+        "dwt",
+        "lsb_replacement",
+        "lsb_matching",
+        "pvd"
+      ],
+      "required_bits": 896,
+      "selected": "dct",
+      "selector_version": "kb-bm25-1",
+      "tie": false
+    },
+    "note": "kb_retrieval_readonly shows what the production selector would rank for this patch and payload; the experiment runs every requested algorithm regardless and changes nothing in production.",
+    "patch_id": 2
+  },
+  "payload": {
+    "bit_order": "MSB-first",
+    "bits": 896,
+    "bytes": 112,
+    "hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 00 01 00 00 00 01 53 46 9A 7B 69 FB 07 FD 00 00 00 3E 67 17 44 1B 99 9B 15 59 6D 71 66 E5 F6 E8 ...",
+    "kind": "aead_test_envelope",
+    "sha256": "b58c296f61985bbd7e7ea2f020ce9c9795a4cd1441e19753dae9356d010b664a"
+  },
+  "payload_construction": {
+    "aead": "ChaCha20-Poly1305 (production seal_message code path)",
+    "aead_tag_bytes": 16,
+    "appwire_header_bytes": 50,
+    "ciphertext_bytes": 62,
+    "key": "TEST-ONLY key = HKDF-SHA256(public label) -- not secret, never used for UAV traffic, not displayed",
+    "note": "The same AppWire bytes are embedded by every algorithm in this comparison. The live transport additionally wraps them in Frame v1 (12-byte header + 32-byte HMAC) bound to the algorithm id.",
+    "operational_frame_overhead_bytes_not_included": 44,
+    "overhead_bytes": 66,
+    "plaintext_bytes": 46,
+    "plaintext_hex_preview": "55 41 56 5F 49 44 3D 44 31 0A 54 41 52 47 45 54 3D 44 32 0A 4C 41 54 3D 39 2E 34 35 0A 4C 4F 4E 3D 37 37 2E 38 30 0A 41 4C 54 3D 31 32 30",
+    "serialisation": "UTF-8 message bytes -> ChaCha20-Poly1305 AEAD (header bound as associated data) -> AppWire v1",
+    "wire_binary_preview": "00000001 01010100 01010000 01000101 01011100 11000000 00100101 10110000 ...",
+    "wire_bits": 896,
+    "wire_bytes": 112,
+    "wire_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 00 01 00 00 00 01 53 46 9A 7B 69 FB 07 FD 00 00 00 3E 67 17 44 1B 99 9B 15 59 6D 71 66 E5 F6 E8 ..."
+  },
+  "payload_mode": "aead_fixture",
+  "production_kb_modified": false,
+  "results": [
+    {
+      "alg_id": 1,
+      "algorithm": "lsb_replacement",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 75264,
+      "capacity_bytes": 9408,
+      "changed_samples": 447,
+      "coding": "direct (no coding)",
+      "detail": {
+        "carriers_used": 896
+      },
+      "domain": "spatial (LSB plane)",
+      "embed_ms": 0.168,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 1.875,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask (sample based)",
+      "max_abs_diff": 1,
+      "mse": 0.002274,
+      "outside_patch_changes": 0,
+      "param": 0,
+      "patch_mse": 0.005939,
+      "patch_psnr_db": 70.3936,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 74.5637,
+      "reference": "Classic LSB replacement; e.g. Fridrich, Steganography in Digital Media, CUP 2009, ch. 5",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.512277,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.477679,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.510045,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.513393,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.47433,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.523438,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.004464,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.487723,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9999958905,
+      "status": "ok",
+      "stego_sha256": "91bc642f20ad69a2f3121db3f0cfd83133865e512ecd61b871610d7d438b9f90",
+      "utilisation": 0.011905,
+      "variant": "lsb-replacement-msb-first-v1 (patch samples, raster order)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 2,
+      "algorithm": "lsb_matching",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 75264,
+      "capacity_bytes": 9408,
+      "changed_samples": 447,
+      "coding": "direct (no coding)",
+      "detail": {
+        "carriers_used": 896,
+        "changes": 447
+      },
+      "domain": "spatial (LSB plane, +/-1)",
+      "embed_ms": 0.494,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 1.791,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask (sample based)",
+      "max_abs_diff": 1,
+      "mse": 0.002274,
+      "outside_patch_changes": 0,
+      "param": 0,
+      "patch_mse": 0.005939,
+      "patch_psnr_db": 70.3936,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 74.5637,
+      "reference": "LSB matching (+/-1 embedding); Sharp 2001, doi:10.1007/3-540-45496-9_2; Ker 2005",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.493304,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.482143,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.518973,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.516741,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.47433,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.523438,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.004464,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.487723,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9999958665,
+      "status": "ok",
+      "stego_sha256": "9429a6a6c64bff4e3574d61e0bfe5b8c7fbc63fa65203e16089632a785c228d9",
+      "utilisation": 0.011905,
+      "variant": "lsb-matching-pm1-seeded-v2 (patch samples; sign stream seeded per patch from the cover hash)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 3,
+      "algorithm": "pvd",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 165368,
+      "capacity_bytes": 20671,
+      "changed_samples": 337,
+      "coding": "direct (no coding)",
+      "detail": {
+        "pairs_used": 179
+      },
+      "domain": "spatial (pixel-pair differences)",
+      "embed_ms": 1.344,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.769,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask with at least 2 samples",
+      "max_abs_diff": 83,
+      "mse": 0.289968,
+      "outside_patch_changes": 0,
+      "param": 0,
+      "patch_mse": 0.757467,
+      "patch_psnr_db": 49.3372,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 53.5073,
+      "reference": "Wu & Tsai, Pattern Recognit. Lett. 24 (2003) 1613-1626, doi:10.1016/S0167-8655(02)00402-6",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.469866,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.515625,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.479911,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.457589,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.486607,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.477679,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.243304,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.477679,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.007812,
+          "outcome": "partial",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9997640736,
+      "status": "ok",
+      "stego_sha256": "cc1652669abca9fcd45c12f6f4f7e28b71171307e9137f96387cdc8de512ac82",
+      "utilisation": 0.005418,
+      "variant": "wu-tsai-pvd-6range-v1 (pairs = consecutive patch samples)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 4,
+      "algorithm": "edge_adaptive_lsb",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 1485,
+      "capacity_bytes": 185,
+      "changed_samples": 462,
+      "coding": "direct (no coding)",
+      "detail": {
+        "carriers_used": 896,
+        "edge_samples": 1485,
+        "threshold": 6
+      },
+      "domain": "spatial (edge/texture mask + LSB)",
+      "embed_ms": 1.593,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 3.555,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask; capacity = edge samples inside the patch",
+      "max_abs_diff": 1,
+      "mse": 0.00235,
+      "outside_patch_changes": 0,
+      "param": 6,
+      "patch_mse": 0.006138,
+      "patch_psnr_db": 70.2503,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 74.4204,
+      "reference": "Edge-adaptive LSB family, cf. Luo, Huang & Huang, IEEE TIFS 2010, doi:10.1109/TIFS.2009.2035372 (simplified mask, not identical)",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 1.0,
+          "oracle_error": "EXTRACT_FAILED",
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 1.0,
+          "oracle_error": "EXTRACT_FAILED",
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 1.0,
+          "oracle_error": "EXTRACT_FAILED",
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 1.0,
+          "oracle_error": "EXTRACT_FAILED",
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.46875,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.503348,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.481027,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 1.0,
+          "oracle_error": "EXTRACT_FAILED",
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.9999801233,
+      "status": "ok",
+      "stego_sha256": "f639695403cace766b7a0fda4f704de7d2f01cd402abd59253eef56a689ed75f",
+      "utilisation": 0.603367,
+      "variant": "edge-mask-7msb-grad-threshold-v2 (gradient restricted to the patch)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 5,
+      "algorithm": "dct",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 8,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 2352,
+      "capacity_bytes": 294,
+      "changed_samples": 7440,
+      "coding": "direct (no coding)",
+      "detail": {
+        "blocks_retried": 0,
+        "blocks_used": 150,
+        "delta": 12
+      },
+      "domain": "transform (8x8 block DCT)",
+      "embed_ms": 0.41,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 1.908,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "needs complete 8x8 blocks of the global grid inside the patch",
+      "max_abs_diff": 11,
+      "mse": 0.21522,
+      "outside_patch_changes": 0,
+      "param": 12,
+      "patch_mse": 0.562208,
+      "patch_psnr_db": 50.6318,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 54.802,
+      "reference": "Block-DCT quantisation-index modulation (Chen & Wornell 2001, doi:10.1109/18.923725)",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.412946,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.414062,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.429688,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.383929,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.040179,
+          "outcome": "partial",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.15067,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.073661,
+          "outcome": "partial",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.998377065,
+      "status": "ok",
+      "stego_sha256": "95a2b35053a47af404ba963a4b63775488ff8bbe1b8046c7f48c8a5da5aac8ff",
+      "utilisation": 0.380952,
+      "variant": "dct8-midband-6coef-qim-v1 (complete 8x8 blocks inside the patch)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 6,
+      "algorithm": "dwt",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 2,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 6272,
+      "capacity_bytes": 784,
+      "changed_samples": 2680,
+      "coding": "direct (no coding)",
+      "detail": {
+        "blocks_retried": 0,
+        "blocks_used": 896,
+        "delta": 4,
+        "subband": "HH"
+      },
+      "domain": "transform (Haar DWT)",
+      "embed_ms": 0.456,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 2.232,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "needs complete 2x2 blocks of the global grid inside the patch",
+      "max_abs_diff": 2,
+      "mse": 0.027578,
+      "outside_patch_changes": 0,
+      "param": 4,
+      "patch_mse": 0.07204,
+      "patch_psnr_db": 59.5551,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 63.7252,
+      "reference": "Blockwise 1-level Haar DWT with QIM (Chen & Wornell 2001, doi:10.1109/18.923725); one documented variant of the DWT family, e.g. doi:10.1080/09720529.2019.1698801",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.427455,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.422991,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.421875,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.422991,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.08817,
+          "outcome": "partial",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.481027,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.020089,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.422991,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": null,
+      "ssim": 0.99981339,
+      "status": "ok",
+      "stego_sha256": "05e5cb6691bd6292f3de3b52a881705cd5d0f867080a8d0a945d14dc457cf4d6",
+      "utilisation": 0.142857,
+      "variant": "haar-l1-hh-qim-v1 (complete 2x2 blocks inside the patch)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 7,
+      "algorithm": "dct_svd",
+      "bits_per_patch_sample": 0.01190476,
+      "block": 8,
+      "capacity_bits": 392,
+      "capacity_bytes": 49,
+      "coding": "direct (no coding)",
+      "domain": "transform (block DCT + SVD)",
+      "error": {
+        "code": "CAPACITY_INSUFFICIENT",
+        "message": "payload (896 bits) exceeds the measured patch capacity (392 bits); not shortened"
+      },
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "needs complete 8x8 blocks of the global grid inside the patch",
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "reference": "One concrete DCT-SVD variant (QIM on the largest singular value of a mid-band 4x4 DCT sub-matrix); family reference doi:10.1145/2345396.2345490 -- not identical to it",
+      "status": "rejected_capacity",
+      "utilisation": 2.285714,
+      "variant": "dct8-svd-s1-qim-v1 (complete 8x8 blocks inside the patch)",
+      "verification": {
+        "status": "not_extracted"
+      }
+    },
+    {
+      "alg_id": 8,
+      "algorithm": "hugo",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 37632,
+      "capacity_bytes": 4704,
+      "changed_samples": 164,
+      "coding": "stc-binary-h7-v1",
+      "detail": {
+        "changes": 164,
+        "coding": "stc-binary-h7-v1",
+        "cost_ms": 127.577,
+        "h": 7,
+        "n": 8960,
+        "rate": 0.1,
+        "stc_cost": 1188.343324,
+        "stc_ms": 19.434,
+        "w": 10
+      },
+      "domain": "spatial, content-adaptive (SPAM co-occurrence model)",
+      "embed_ms": 149.005,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 3.215,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask; STC domain = the patch's own samples",
+      "max_abs_diff": 1,
+      "mse": 0.000834,
+      "outside_patch_changes": 0,
+      "param": 10,
+      "patch_mse": 0.002179,
+      "patch_psnr_db": 74.7482,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 78.9184,
+      "reference": "Pevny, Filler & Bas, Information Hiding 2010, doi:10.1007/978-3-642-16435-4_13",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.502232,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.491071,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.508929,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.483259,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.527902,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.466518,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.121652,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.495536,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": 127.577,
+      "ssim": 0.9999944791,
+      "status": "ok",
+      "stego_sha256": "8d228b32d9f913f95cb5215ea03925dda2306df2cab7700333635ccb07004174",
+      "utilisation": 0.02381,
+      "variant": "HUGO additive approximation: exact single-change costs (T=90, sigma=1, gamma=1) + binary STC h=7 (custom submatrices), no model correction",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 9,
+      "algorithm": "wow",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 37632,
+      "capacity_bytes": 4704,
+      "changed_samples": 154,
+      "coding": "stc-binary-h7-v1",
+      "detail": {
+        "changes": 154,
+        "coding": "stc-binary-h7-v1",
+        "cost_ms": 39.249,
+        "h": 7,
+        "n": 8960,
+        "rate": 0.1,
+        "stc_cost": 44.928503,
+        "stc_ms": 19.532,
+        "w": 10
+      },
+      "domain": "spatial, content-adaptive (wavelet directional filters)",
+      "embed_ms": 60.55,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 3.077,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask; STC domain = the patch's own samples",
+      "max_abs_diff": 1,
+      "mse": 0.000783,
+      "outside_patch_changes": 0,
+      "param": 10,
+      "patch_mse": 0.002046,
+      "patch_psnr_db": 75.0215,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 79.1916,
+      "reference": "Holub & Fridrich, IEEE WIFS 2012, doi:10.1109/WIFS.2012.6412655",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.516741,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.53125,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.502232,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.489955,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.513393,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.5,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.116071,
+          "outcome": "failed",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.507812,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": 39.249,
+      "ssim": 0.9999935609,
+      "status": "ok",
+      "stego_sha256": "a01ba4e035cc96ac721bd7272f9cf8bf1b82ca66aada72236b7b65b55a3d3fe9",
+      "utilisation": 0.02381,
+      "variant": "WOW (p=-1, db8 filter bank) + binary STC h=7 (custom submatrices)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    },
+    {
+      "alg_id": 10,
+      "algorithm": "s_uniward",
+      "ber": 0.0,
+      "bit_accuracy": 1.0,
+      "bits_per_patch_sample": 0.01190476,
+      "block": 0,
+      "byte_accuracy": 1.0,
+      "capacity_bits": 37632,
+      "capacity_bytes": 4704,
+      "changed_samples": 151,
+      "coding": "stc-binary-h7-v1",
+      "detail": {
+        "changes": 151,
+        "coding": "stc-binary-h7-v1",
+        "cost_ms": 38.948,
+        "h": 7,
+        "n": 8960,
+        "rate": 0.1,
+        "stc_cost": 839.866333,
+        "stc_ms": 19.567,
+        "w": 10
+      },
+      "domain": "spatial, content-adaptive (wavelet relative change)",
+      "embed_ms": 60.055,
+      "exact_recovery": true,
+      "extract_error": null,
+      "extract_ms": 3.174,
+      "extracted_hex_preview": "01 54 50 45 5C C0 25 B0 F0 22 D1 FC 12 B2 6F AE 41 01 00 00 00 01 00 00 01 A1 D3 11 15 F8 00 00 ...",
+      "geometry_reason": null,
+      "geometry_supported": true,
+      "kb_structural_filters_pass": true,
+      "mask_support": "any irregular mask; STC domain = the patch's own samples",
+      "max_abs_diff": 1,
+      "mse": 0.000768,
+      "outside_patch_changes": 0,
+      "param": 10,
+      "patch_mse": 0.002006,
+      "patch_psnr_db": 75.1069,
+      "payload_bits": 896,
+      "payload_bytes": 112,
+      "psnr_db": 79.277,
+      "reference": "Holub, Fridrich & Denemark, EURASIP J. Inf. Secur. 2014:1, doi:10.1186/1687-417X-2014-1",
+      "robustness": [
+        {
+          "attack": "none",
+          "label": "No attack (lossless PNG)",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {}
+        },
+        {
+          "attack": "jpeg95",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.489955,
+          "outcome": "failed",
+          "params": {
+            "quality": 95
+          }
+        },
+        {
+          "attack": "jpeg75",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.481027,
+          "outcome": "failed",
+          "params": {
+            "quality": 75
+          }
+        },
+        {
+          "attack": "jpeg50",
+          "label": "JPEG recompression",
+          "oracle_ber": 0.47433,
+          "outcome": "failed",
+          "params": {
+            "quality": 50
+          }
+        },
+        {
+          "attack": "resize50",
+          "label": "Resize down 50% and back (bilinear)",
+          "oracle_ber": 0.491071,
+          "outcome": "failed",
+          "params": {
+            "factor": 0.5
+          }
+        },
+        {
+          "attack": "crop4",
+          "label": "Crop 4 px from left and top (image becomes smaller)",
+          "oracle_ber": 1.0,
+          "oracle_error": "DESYNCHRONISED",
+          "outcome": "failed",
+          "params": {
+            "pixels": 4
+          }
+        },
+        {
+          "attack": "gauss1",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.50558,
+          "outcome": "failed",
+          "params": {
+            "seed": 11,
+            "sigma": 1.0
+          }
+        },
+        {
+          "attack": "gauss3",
+          "label": "Gaussian noise",
+          "oracle_ber": 0.501116,
+          "outcome": "failed",
+          "params": {
+            "seed": 12,
+            "sigma": 3.0
+          }
+        },
+        {
+          "attack": "saltpepper",
+          "label": "Salt-and-pepper noise",
+          "oracle_ber": 0.073661,
+          "outcome": "partial",
+          "params": {
+            "fraction": 0.005,
+            "seed": 13
+          }
+        },
+        {
+          "attack": "blur3",
+          "label": "Gaussian blur 3x3",
+          "oracle_ber": 0.516741,
+          "outcome": "failed",
+          "params": {
+            "sigma": 0.8
+          }
+        },
+        {
+          "attack": "bright2",
+          "label": "Brightness +2",
+          "oracle_ber": 0.0,
+          "outcome": "recovered",
+          "params": {
+            "offset": 2
+          }
+        }
+      ],
+      "setup_ms": 38.948,
+      "ssim": 0.9999936335,
+      "status": "ok",
+      "stego_sha256": "695662126d3ea25e969484e8951913fe689de9065e500c1ddc7dde5aaa9684c3",
+      "utilisation": 0.02381,
+      "variant": "S-UNIWARD (spatial, sigma=1, db8 filter bank) + binary STC h=7 (custom submatrices)",
+      "verification": {
+        "aead_verified": true,
+        "plaintext_matches": true,
+        "status": "aead_verified"
+      }
+    }
+  ],
+  "same_inputs_for_all_algorithms": true,
+  "segmentation": {
+    "cell_size": 8,
+    "complexity": 0.494643,
+    "grid_cols": 32,
+    "grid_rows": 32,
+    "level": 0,
+    "max_region_px": 22976,
+    "merges": 20,
+    "method": "adaptive region growing on a cell grid",
+    "min_region_px": 1088,
+    "palette": [
+      [
+        242,
+        36,
+        36
+      ],
+      [
+        81,
+        117,
+        204
+      ],
+      [
+        131,
+        204,
+        30
+      ],
+      [
+        242,
+        96,
+        224
+      ],
+      [
+        30,
+        204,
+        175
+      ],
+      [
+        204,
+        147,
+        81
+      ],
+      [
+        87,
+        36,
+        242
+      ],
+      [
+        86,
+        204,
+        81
+      ],
+      [
+        204,
+        30,
+        88
+      ],
+      [
+        96,
+        187,
+        242
+      ]
+    ],
+    "patch_count": 10,
+    "regions": 10,
+    "regions_before_merge": 30,
+    "settings": {
+      "cell_size": 0,
+      "max_refine_levels": 3,
+      "max_region_frac": 0.35,
+      "max_regions": 96,
+      "min_region_px": 256,
+      "tau_iterations": 7,
+      "w_color": 0.5,
+      "w_gradient": 0.6,
+      "w_intensity": 1.0,
+      "w_texture": 1.0
+    },
+    "target_regions": 10,
+    "tau": 0.148119,
+    "tau_search": [
+      {
+        "grown": 158,
+        "regions": 33,
+        "tau": 0.07746
+      },
+      {
+        "grown": 17,
+        "regions": 5,
+        "tau": 0.340866
+      },
+      {
+        "grown": 25,
+        "regions": 7,
+        "tau": 0.162491
+      },
+      {
+        "grown": 55,
+        "regions": 16,
+        "tau": 0.11219
+      },
+      {
+        "grown": 33,
+        "regions": 13,
+        "tau": 0.135018
+      },
+      {
+        "grown": 30,
+        "regions": 10,
+        "tau": 0.148119
+      }
+    ],
+    "version": "arg-cells-1"
+  },
+  "selector_version": "kb-bm25-1",
+  "survey": [
+    {
+      "blocks2": 352,
+      "blocks8": 22,
+      "bm25": {
+        "dct": 9.504684,
+        "dct_svd": 7.442062,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 1.935552,
+        "lsb_matching": 5.894336,
+        "lsb_replacement": 6.197136,
+        "pvd": 1.925078,
+        "s_uniward": 6.01537,
+        "wow": 2.574302
+      },
+      "capacity_bits": {
+        "dct": 132,
+        "dct_svd": 22,
+        "dwt": 352,
+        "edge_adaptive_lsb": 270,
+        "hugo": 2112,
+        "lsb_matching": 4224,
+        "lsb_replacement": 4224,
+        "pvd": 8703,
+        "s_uniward": 2112,
+        "wow": 2112
+      },
+      "compactness": 0.571199,
+      "entropy": 6.5353,
+      "gradient_mean": 5.3962,
+      "kb_ranking": [
+        "lsb_replacement",
+        "s_uniward",
+        "lsb_matching",
+        "wow",
+        "hugo",
+        "pvd"
+      ],
+      "kb_selected": "lsb_replacement",
+      "patch_id": 0,
+      "pixels": 1408,
+      "query_terms": [
+        "moderate-texture",
+        "few-edges",
+        "high-entropy",
+        "small-region",
+        "compact",
+        "block-aligned",
+        "low-frequency",
+        "high-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 650.2365
+    },
+    {
+      "blocks2": 1056,
+      "blocks8": 66,
+      "bm25": {
+        "dct": 9.34045,
+        "dct_svd": 5.307536,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 1.935552,
+        "lsb_matching": 2.315318,
+        "lsb_replacement": 0.0,
+        "pvd": 2.49072,
+        "s_uniward": 6.01537,
+        "wow": 2.574302
+      },
+      "capacity_bits": {
+        "dct": 396,
+        "dct_svd": 66,
+        "dwt": 1056,
+        "edge_adaptive_lsb": 423,
+        "hugo": 6336,
+        "lsb_matching": 12672,
+        "lsb_replacement": 12672,
+        "pvd": 24775,
+        "s_uniward": 6336,
+        "wow": 6336
+      },
+      "compactness": 0.331752,
+      "entropy": 6.2394,
+      "gradient_mean": 4.8238,
+      "kb_ranking": [
+        "s_uniward",
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "hugo",
+        "lsb_replacement",
+        "dwt"
+      ],
+      "kb_selected": "s_uniward",
+      "patch_id": 1,
+      "pixels": 4224,
+      "query_terms": [
+        "moderate-texture",
+        "few-edges",
+        "medium-region",
+        "block-aligned",
+        "low-frequency",
+        "medium-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 381.8391
+    },
+    {
+      "blocks2": 6272,
+      "blocks8": 392,
+      "bm25": {
+        "dct": 6.701201,
+        "dct_svd": 4.61083,
+        "dwt": 0.68909,
+        "edge_adaptive_lsb": 2.640364,
+        "hugo": 1.875975,
+        "lsb_matching": 0.0,
+        "lsb_replacement": 0.0,
+        "pvd": 0.0,
+        "s_uniward": 5.966132,
+        "wow": 4.499032
+      },
+      "capacity_bits": {
+        "dct": 2352,
+        "dct_svd": 392,
+        "dwt": 6272,
+        "edge_adaptive_lsb": 1485,
+        "hugo": 37632,
+        "lsb_matching": 75264,
+        "lsb_replacement": 75264,
+        "pvd": 165368,
+        "s_uniward": 37632,
+        "wow": 37632
+      },
+      "compactness": 0.187701,
+      "entropy": 6.0465,
+      "gradient_mean": 4.1746,
+      "kb_ranking": [
+        "dct",
+        "s_uniward",
+        "wow",
+        "edge_adaptive_lsb",
+        "hugo",
+        "dwt",
+        "lsb_replacement",
+        "lsb_matching",
+        "pvd"
+      ],
+      "kb_selected": "dct",
+      "patch_id": 2,
+      "pixels": 25088,
+      "query_terms": [
+        "moderate-texture",
+        "few-edges",
+        "large-region",
+        "block-aligned",
+        "low-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 264.0958
+    },
+    {
+      "blocks2": 816,
+      "blocks8": 51,
+      "bm25": {
+        "dct": 6.766148,
+        "dct_svd": 2.761711,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 1.935552,
+        "lsb_matching": 2.315318,
+        "lsb_replacement": 0.0,
+        "pvd": 2.49072,
+        "s_uniward": 6.01537,
+        "wow": 2.574302
+      },
+      "capacity_bits": {
+        "dct": 306,
+        "dct_svd": 51,
+        "dwt": 816,
+        "edge_adaptive_lsb": 114,
+        "hugo": 4896,
+        "lsb_matching": 9792,
+        "lsb_replacement": 9792,
+        "pvd": 24494,
+        "s_uniward": 4896,
+        "wow": 4896
+      },
+      "compactness": 0.331036,
+      "entropy": 5.9319,
+      "gradient_mean": 4.1182,
+      "kb_ranking": [
+        "s_uniward",
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "hugo",
+        "lsb_replacement"
+      ],
+      "kb_selected": "s_uniward",
+      "patch_id": 3,
+      "pixels": 3264,
+      "query_terms": [
+        "moderate-texture",
+        "few-edges",
+        "medium-region",
+        "block-aligned",
+        "medium-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 313.3413
+    },
+    {
+      "blocks2": 3472,
+      "blocks8": 217,
+      "bm25": {
+        "dct": 8.92006,
+        "dct_svd": 4.896237,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 1.935552,
+        "lsb_matching": 2.315318,
+        "lsb_replacement": 0.0,
+        "pvd": 2.49072,
+        "s_uniward": 7.841624,
+        "wow": 2.574302
+      },
+      "capacity_bits": {
+        "dct": 1302,
+        "dct_svd": 217,
+        "dwt": 3472,
+        "edge_adaptive_lsb": 669,
+        "hugo": 20832,
+        "lsb_matching": 41664,
+        "lsb_replacement": 41664,
+        "pvd": 95775,
+        "s_uniward": 20832,
+        "wow": 20832
+      },
+      "compactness": 0.426079,
+      "entropy": 6.145,
+      "gradient_mean": 4.1507,
+      "kb_ranking": [
+        "dct",
+        "s_uniward",
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "hugo",
+        "lsb_replacement",
+        "dwt"
+      ],
+      "kb_selected": "dct",
+      "patch_id": 4,
+      "pixels": 13888,
+      "query_terms": [
+        "moderate-texture",
+        "few-edges",
+        "medium-region",
+        "compact",
+        "block-aligned",
+        "medium-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 324.1297
+    },
+    {
+      "blocks2": 2800,
+      "blocks8": 175,
+      "bm25": {
+        "dct": 4.77647,
+        "dct_svd": 3.665691,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 6.944773,
+        "lsb_matching": 6.98657,
+        "lsb_replacement": 4.016043,
+        "pvd": 7.962639,
+        "s_uniward": 4.899516,
+        "wow": 8.340315
+      },
+      "capacity_bits": {
+        "dct": 1050,
+        "dct_svd": 175,
+        "dwt": 2800,
+        "edge_adaptive_lsb": 27777,
+        "hugo": 16800,
+        "lsb_matching": 33600,
+        "lsb_replacement": 33600,
+        "pvd": 75618,
+        "s_uniward": 16800,
+        "wow": 16800
+      },
+      "compactness": 0.311666,
+      "entropy": 6.509,
+      "gradient_mean": 26.3171,
+      "kb_ranking": [
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "hugo",
+        "s_uniward",
+        "dct",
+        "lsb_replacement",
+        "edge_adaptive_lsb",
+        "dwt"
+      ],
+      "kb_selected": "wow",
+      "patch_id": 5,
+      "pixels": 11200,
+      "query_terms": [
+        "textured",
+        "noisy",
+        "edge-rich",
+        "high-entropy",
+        "medium-region",
+        "block-aligned",
+        "high-frequency",
+        "medium-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 506.4458
+    },
+    {
+      "blocks2": 320,
+      "blocks8": 20,
+      "bm25": {
+        "dct": 4.940704,
+        "dct_svd": 5.800218,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 3.07367,
+        "lsb_matching": 6.98657,
+        "lsb_replacement": 6.197136,
+        "pvd": 7.396996,
+        "s_uniward": 4.899516,
+        "wow": 8.340315
+      },
+      "capacity_bits": {
+        "dct": 120,
+        "dct_svd": 20,
+        "dwt": 320,
+        "edge_adaptive_lsb": 3165,
+        "hugo": 1920,
+        "lsb_matching": 3840,
+        "lsb_replacement": 3840,
+        "pvd": 8828,
+        "s_uniward": 1920,
+        "wow": 1920
+      },
+      "compactness": 0.628319,
+      "entropy": 5.8245,
+      "gradient_mean": 27.6546,
+      "kb_ranking": [
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "lsb_replacement",
+        "s_uniward",
+        "hugo",
+        "edge_adaptive_lsb"
+      ],
+      "kb_selected": "wow",
+      "patch_id": 6,
+      "pixels": 1280,
+      "query_terms": [
+        "textured",
+        "noisy",
+        "edge-rich",
+        "small-region",
+        "compact",
+        "block-aligned",
+        "high-frequency",
+        "high-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 204.6755
+    },
+    {
+      "blocks2": 288,
+      "blocks8": 18,
+      "bm25": {
+        "dct": 4.940704,
+        "dct_svd": 4.896237,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 0.0,
+        "hugo": 0.0,
+        "lsb_matching": 4.104827,
+        "lsb_replacement": 4.189115,
+        "pvd": 1.925078,
+        "s_uniward": 7.682896,
+        "wow": 2.574302
+      },
+      "capacity_bits": {
+        "dct": 108,
+        "dct_svd": 18,
+        "dwt": 288,
+        "edge_adaptive_lsb": 63,
+        "hugo": 1728,
+        "lsb_matching": 3456,
+        "lsb_replacement": 3456,
+        "pvd": 8738,
+        "s_uniward": 1728,
+        "wow": 1728
+      },
+      "compactness": 0.565487,
+      "entropy": 4.3936,
+      "gradient_mean": 3.9025,
+      "kb_ranking": [
+        "s_uniward",
+        "lsb_replacement",
+        "lsb_matching",
+        "wow",
+        "pvd",
+        "hugo"
+      ],
+      "kb_selected": "s_uniward",
+      "patch_id": 7,
+      "pixels": 1152,
+      "query_terms": [
+        "smooth",
+        "few-edges",
+        "small-region",
+        "compact",
+        "block-aligned",
+        "high-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 28.067
+    },
+    {
+      "blocks2": 560,
+      "blocks8": 35,
+      "bm25": {
+        "dct": 4.77647,
+        "dct_svd": 3.665691,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 5.009221,
+        "lsb_matching": 5.197061,
+        "lsb_replacement": 2.008021,
+        "pvd": 7.962639,
+        "s_uniward": 4.899516,
+        "wow": 8.340315
+      },
+      "capacity_bits": {
+        "dct": 210,
+        "dct_svd": 35,
+        "dwt": 560,
+        "edge_adaptive_lsb": 5625,
+        "hugo": 3360,
+        "lsb_matching": 6720,
+        "lsb_replacement": 6720,
+        "pvd": 16870,
+        "s_uniward": 3360,
+        "wow": 3360
+      },
+      "compactness": 0.33937,
+      "entropy": 6.4451,
+      "gradient_mean": 26.6198,
+      "kb_ranking": [
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "hugo",
+        "s_uniward",
+        "lsb_replacement",
+        "edge_adaptive_lsb"
+      ],
+      "kb_selected": "wow",
+      "patch_id": 8,
+      "pixels": 2240,
+      "query_terms": [
+        "textured",
+        "noisy",
+        "edge-rich",
+        "medium-region",
+        "block-aligned",
+        "high-frequency",
+        "medium-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 505.9479
+    },
+    {
+      "blocks2": 448,
+      "blocks8": 28,
+      "bm25": {
+        "dct": 4.940704,
+        "dct_svd": 5.800218,
+        "dwt": 0.0,
+        "edge_adaptive_lsb": 1.978612,
+        "hugo": 3.07367,
+        "lsb_matching": 6.98657,
+        "lsb_replacement": 6.197136,
+        "pvd": 7.396996,
+        "s_uniward": 4.899516,
+        "wow": 8.340315
+      },
+      "capacity_bits": {
+        "dct": 168,
+        "dct_svd": 28,
+        "dwt": 448,
+        "edge_adaptive_lsb": 4416,
+        "hugo": 2688,
+        "lsb_matching": 5376,
+        "lsb_replacement": 5376,
+        "pvd": 12568,
+        "s_uniward": 2688,
+        "wow": 2688
+      },
+      "compactness": 0.390954,
+      "entropy": 6.2227,
+      "gradient_mean": 25.3938,
+      "kb_ranking": [
+        "wow",
+        "pvd",
+        "lsb_matching",
+        "lsb_replacement",
+        "s_uniward",
+        "hugo",
+        "edge_adaptive_lsb"
+      ],
+      "kb_selected": "wow",
+      "patch_id": 9,
+      "pixels": 1792,
+      "query_terms": [
+        "textured",
+        "noisy",
+        "edge-rich",
+        "small-region",
+        "compact",
+        "block-aligned",
+        "high-frequency",
+        "high-rate",
+        "color"
+      ],
+      "saturation": 0.0,
+      "supported": {
+        "dct": true,
+        "dct_svd": true,
+        "dwt": true,
+        "edge_adaptive_lsb": true,
+        "hugo": true,
+        "lsb_matching": true,
+        "lsb_replacement": true,
+        "pvd": true,
+        "s_uniward": true,
+        "wow": true
+      },
+      "unsupported_reasons": {},
+      "variance": 369.1354
+    }
+  ],
+  "variant_notice": "Results describe this repository's implemented variants (see each row's 'variant'), not canonical paper implementations."
+}

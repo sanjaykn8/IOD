@@ -50,7 +50,7 @@ Runtime variant: `lsb-replacement-msb-first-v1`
 
 Embedded `10100110` -> recovered `10100110` - exact match: **True**. Checks: recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: same rule on every sample after the 128 bootstrap samples, MSB-first.
+*Runtime link:* Runtime: same rule on the samples of one patch (raster order inside its mask), MSB-first.
 
 ## LSB matching (+/-1) (`lsb_matching`)
 
@@ -94,7 +94,7 @@ Runtime variant: `lsb-matching-pm1-seeded-v1`
 
 Embedded `10100110` -> recovered `10100110` - exact match: **True**. Checks: every change is +/-1: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: seed from the whole cover image, applied after the bootstrap samples.
+*Runtime link:* Runtime: +-1 choices seeded from the cover digest and the patch id, applied to the samples of one patch.
 
 ## Pixel-value differencing (Wu-Tsai) (`pvd`)
 
@@ -135,7 +135,7 @@ Runtime variant: `wu-tsai-pvd-6range-v1`
 
 Embedded `1010011000111100` -> recovered `1010011000111100` - exact match: **True**. Checks: range of every new difference equals the original range: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: identical arithmetic on consecutive sample pairs after the bootstrap samples.
+*Runtime link:* Runtime: identical arithmetic on consecutive pairs of one patch's samples (raster order inside its mask).
 
 ## Edge-adaptive LSB (`edge_adaptive_lsb`)
 
@@ -224,7 +224,7 @@ Runtime variant: `edge-mask-7msb-grad-threshold-v1`
 
 Embedded `10100110` -> recovered `10100110` - exact match: **True**. Checks: receiver rebuilds the same mask from the stego pixels: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: RGB uses a luma of the 7-MSB planes; positions before sample 128 are skipped.
+*Runtime link:* Runtime: RGB uses a luma of the 7-MSB planes; the gradient only uses neighbours inside the same patch.
 
 ## 8x8 block DCT, QIM on 6 mid-frequency coefficients (`dct`)
 
@@ -311,7 +311,7 @@ Runtime variant: `dct8-midband-6coef-qim-v1`
 
 Embedded `101001` -> recovered `101001` - exact match: **True**. Checks: recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: blue plane (RGB) or gray, skips block row 0 (bootstrap), retries the other direction on failure.
+*Runtime link:* Runtime: blue plane (RGB) or gray, only 8x8 blocks lying completely inside the patch mask, candidates verified after rounding.
 
 ## One-level Haar DWT, QIM on HH (`dwt`)
 
@@ -358,7 +358,7 @@ Runtime variant: `haar-l1-hh-qim-v1`
 
 Embedded `1010` -> recovered `1010` - exact match: **True**. Checks: rounding moved HH by at most 1: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: whole plane in 2x2 blocks, skipping block rows that contain bootstrap samples; up to 8 indices x 11 patterns near 0/255.
+*Runtime link:* Runtime: 2x2 blocks lying completely inside the patch mask; up to 8 indices x 11 patterns near 0/255.
 
 ## Block DCT + SVD, QIM on the largest singular value (`dct_svd`)
 
@@ -531,11 +531,11 @@ Runtime variant: `dct8-svd-s1-qim-v1`
 
 Embedded `10` -> recovered `10` - exact match: **True**. Checks: recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: one bit per 8x8 block over the plane, skipping bootstrap rows, verified with up to 8 candidates.
+*Runtime link:* Runtime: one bit per 8x8 block lying completely inside the patch mask, verified with up to 8 candidates.
 
 ## HUGO (teaching model) (`hugo`)
 
-Runtime variant: `HUGO, exact single-change costs (T=90, sigma=1, gamma=1), additive approximation + binary STC h=7, no model correction`
+Runtime variant: `HUGO additive approximation: exact single-change costs (T=90, sigma=1, gamma=1) + binary STC h=7 (custom submatrices), no model correction`
 
 > **Teaching model.** Miniature illustration: the hand calculation evaluates only the horizontal triples of one pixel on an 8x8 patch; the exact cost (all 8 directions, grouped, with cancellation) is then taken from the runtime function and checked against a brute-force evaluation of the full HUGO distortion on the patch. It does not reproduce HUGO's high-dimensional model over a whole image, its model-correction sweeps or the h = 7 STC.
 
@@ -628,11 +628,11 @@ Runtime variant: `HUGO, exact single-change costs (T=90, sigma=1, gamma=1), addi
 
 Embedded `10` -> recovered `10` - exact match: **True**. Checks: runtime cost equals brute-force HUGO distortion: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: exact costs for every used sample (whole image, 8 directions), binary STC h = 7, rate 1/w with w <= 10 automatically.
+*Runtime link:* Runtime: exact costs for the samples of one patch (8 directions), binary STC h = 7, rate 1/w recorded per patch in the manifest.
 
 ## WOW (teaching model) (`wow`)
 
-Runtime variant: `WOW (p=-1, db8 filter bank) + binary STC h=7`
+Runtime variant: `WOW (p=-1, db8 filter bank) + binary STC h=7 (custom submatrices)`
 
 > **Teaching model.** Reduced illustration: the real WOW formulas and the 16-tap db8 filter bank are evaluated, but on an 8x8 patch (after symmetric padding by 16), so padding dominates the numbers; the mini STC uses h = 2 instead of 7.
 
@@ -724,11 +724,11 @@ Runtime variant: `WOW (p=-1, db8 filter bank) + binary STC h=7`
 
 Embedded `10` -> recovered `10` - exact match: **True**. Checks: aggregated cost matches the formula: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: cost map over the whole image (per channel), binary STC h = 7, public element permutation.
+*Runtime link:* Runtime: cost map computed once per cover (per channel), only the samples of one patch are used, binary STC h = 7, public element permutation.
 
 ## S-UNIWARD (teaching model) (`s_uniward`)
 
-Runtime variant: `S-UNIWARD (spatial, sigma=1, db8 filter bank) + binary STC h=7`
+Runtime variant: `S-UNIWARD (spatial, sigma=1, db8 filter bank) + binary STC h=7 (custom submatrices)`
 
 > **Teaching model.** Reduced illustration of the spatial UNIWARD computation on an 8x8 patch (symmetric padding by 16 dominates); the additive cost of one pixel is shown to equal the directly computed relative wavelet change for that single change. Mini STC with h = 2 instead of 7.
 
@@ -820,4 +820,4 @@ Runtime variant: `S-UNIWARD (spatial, sigma=1, db8 filter bank) + binary STC h=7
 
 Embedded `10` -> recovered `10` - exact match: **True**. Checks: additive cost equals direct relative change for one pixel: pass, recovered bits equal embedded bits: pass.
 
-*Runtime link:* Runtime: S-UNIWARD costs over the whole image (per channel), binary STC h = 7.
+*Runtime link:* Runtime: S-UNIWARD costs computed once per cover (per channel), only the samples of one patch are used, binary STC h = 7.

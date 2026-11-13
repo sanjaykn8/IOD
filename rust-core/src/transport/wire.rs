@@ -1,5 +1,5 @@
 //! AppWire v1: the complete binary wire form of a `SecureAppMessage`
-//! (docs/stego-implementation-note.md §1.1). Strict, bounded, big-endian.
+//! (docs/patchwise-transport.md section 3; unchanged from the first transport version). Strict, bounded, big-endian.
 //! Contains no DroneID / PID.
 
 use crate::crypto::aead::{SealedMessage, NONCE_LEN};

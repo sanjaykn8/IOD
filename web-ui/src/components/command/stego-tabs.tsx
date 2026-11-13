@@ -1,5 +1,5 @@
 // Steganography Lab with two clearly separated views:
-//   * UAV Simulation — Live/Operational Flow (the existing operational page, unchanged)
+//   * UAV Simulation — patch-wise operational flow (knowledge-base guided, per-patch algorithms)
 //   * Algorithm Learning — Worked Calculations and Experiments (educational workbench)
 import { useEffect, useState } from "react";
 import { GraduationCap, Radio } from "lucide-react";
@@ -29,7 +29,7 @@ export function SteganographyLabTabs() {
     <>
       <div className="lab-tabs" role="tablist" aria-label="Steganography Lab views">
         <button type="button" role="tab" aria-selected={view === "live"} className={`lab-tab ${view === "live" ? "lab-tab-on" : ""}`} onClick={() => select("live")} data-testid="tab-live">
-          <Radio aria-hidden="true" /><span><strong>UAV Simulation</strong><small>Live / Operational Flow</small></span>
+          <Radio aria-hidden="true" /><span><strong>UAV Simulation</strong><small>Patch-wise Operational Flow</small></span>
         </button>
         <button type="button" role="tab" aria-selected={view === "learn"} className={`lab-tab ${view === "learn" ? "lab-tab-on" : ""}`} onClick={() => select("learn")} data-testid="tab-learn">
           <GraduationCap aria-hidden="true" /><span><strong>Algorithm Learning</strong><small>Worked Calculations and Experiments</small></span>
@@ -38,7 +38,7 @@ export function SteganographyLabTabs() {
       {view === "live" ? <SteganographyLabPage /> : (
         <>
           <PageHeader eyebrow="STEGANOGRAPHY LAB / ALGORITHM LEARNING" title="Algorithm Learning — Worked Calculations and Experiments"
-            description="Hand-worked mathematics, isolated executions and same-input comparisons of all ten algorithms. Educational only: nothing here is a UAV transmission." />
+            description="Hand-worked mathematics, isolated patch-level executions and same-input comparisons of all ten algorithms. Educational only: nothing here is a UAV transmission." />
           <LearningWorkbench />
         </>
       )}

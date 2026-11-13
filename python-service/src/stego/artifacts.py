@@ -14,8 +14,9 @@ from .config import MAX_ARTIFACT_FILE_BYTES
 from .errors import StegoError
 
 _ID_RE = re.compile(r"[0-9a-f]{32}")
-_FILE_RE = re.compile(r"([0-9a-f]{32})(\.cover)?\.png")
-_SUFFIX = {"stego": ".png", "cover": ".cover.png"}
+_FILE_RE = re.compile(r"([0-9a-f]{32})(\.cover|\.seg|\.labels|\.diff)?\.png")
+# stego/cover are transport files; seg/labels/diff are inspection images for the dashboard only
+_SUFFIX = {"stego": ".png", "cover": ".cover.png", "seg": ".seg.png", "labels": ".labels.png", "diff": ".diff.png"}
 _lock = threading.Lock()
 
 
@@ -83,6 +84,21 @@ class ArtifactStore:
         except OSError as exc:
             raise StegoError("IMAGE_WRITE_FAILED", "could not write artifact", {"errno": exc.errno}) from exc
 
+    def write_replace(self, artifact_id, kind, data):
+        """Atomic write that may replace an existing file. Only for derived inspection images
+        (seg/labels/diff); transport files (stego/cover) are never overwritten."""
+        if kind not in ("seg", "labels", "diff"):
+            raise StegoError("INTERNAL_ERROR", "write_replace is only for inspection images")
+        final = self._path(artifact_id, kind)
+        tmp = os.path.join(self.directory, f".{artifact_id}.{uuid.uuid4().hex}.tmp")
+        try:
+            os.makedirs(self.directory, exist_ok=True)
+            with open(tmp, "wb") as fh:
+                fh.write(data)
+            os.replace(tmp, final)
+        except OSError as exc:
+            raise StegoError("IMAGE_WRITE_FAILED", "could not write inspection image", {"errno": exc.errno}) from exc
+
     def read(self, artifact_id, kind):
         path = self._path(artifact_id, kind)
         try:
@@ -100,7 +116,7 @@ class ArtifactStore:
     def exists(self, artifact_id, kind):
         return os.path.isfile(self._path(artifact_id, kind))
 
-    def delete(self, artifact_id, kinds=("stego", "cover")):
+    def delete(self, artifact_id, kinds=("stego", "cover", "seg", "labels", "diff")):
         for k in kinds:
             try:
                 os.unlink(self._path(artifact_id, k))

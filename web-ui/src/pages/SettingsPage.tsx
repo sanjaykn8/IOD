@@ -22,7 +22,7 @@ export function SettingsPage() {
           <tbody>
             <tr><td>Node.js API gateway</td><td className="mono">http://127.0.0.1:4000</td></tr>
             <tr><td>Rust core HTTP API</td><td className="mono">http://127.0.0.1:8787</td></tr>
-            <tr><td>Python RAG service</td><td className="mono">http://127.0.0.1:5001</td></tr>
+            <tr><td>Python image service (reached only by the Rust core)</td><td className="mono">http://127.0.0.1:5001</td></tr>
           </tbody>
         </table>
       </div>

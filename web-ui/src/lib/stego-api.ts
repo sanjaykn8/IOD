@@ -1,8 +1,8 @@
-// Steganography Lab client. Talks ONLY to the Node gateway (`/api/stego/*`),
-// which relays 1:1 to the Rust core. No keys, no policy, no crypto here.
+// Patch-wise Steganography Lab + Knowledge Base client. Talks ONLY to the Node gateway (`/api/stego/*`),
+// which relays 1:1 to the Rust core. No keys, no selection logic, no crypto here.
 import type {
-  StegoAnalyzeResult, StegoBenchmarkRequest, StegoCoverUploadResult, StegoBenchmarkResult, StegoCameraProbe, StegoCoverRequest, StegoErrorBody, StegoEvent,
-  StegoEventFilter, StegoFailure, StegoMessageResult, StegoPriority, StegoReport, StegoStage, StegoStatus,
+  KnowledgeBase, StegoBenchmarkRequest, StegoCoverUploadResult, StegoBenchmarkResult, StegoCameraProbe, StegoCoverRequest, StegoErrorBody, StegoEvent,
+  StegoEventFilter, StegoFailure, StegoMessageResult, StegoPlanPreview, StegoReport, StegoStage, StegoStatus,
 } from "../types/api";
 
 const BASE = import.meta.env["VITE_API_BASE"] || "http://127.0.0.1:4000/api";
@@ -46,7 +46,7 @@ function qs(f: StegoEventFilter): string {
 
 export interface StegoMessageRequest {
   session_id?: string; d1_id?: string; d2_id?: string; from_id: string; plaintext: string;
-  algorithm?: string; cover?: StegoCoverRequest; priority?: StegoPriority;
+  cover?: StegoCoverRequest;
 }
 
 export const stegoApi = {
@@ -54,7 +54,10 @@ export const stegoApi = {
   probeCamera: (camera_index?: number) => call<StegoCameraProbe>("POST", "/camera/probe", camera_index === undefined ? {} : { camera_index }),
   /** Store a PNG (browser webcam frame or user file) as a cover; the service re-validates and re-encodes it. */
   uploadCover: (image_b64: string, origin: "browser_webcam" | "uploaded") => call<StegoCoverUploadResult>("POST", "/cover/upload", { image_b64, origin }),
-  analyze: (body: { frame_bytes?: number; cover?: StegoCoverRequest; priority?: StegoPriority }) => call<StegoAnalyzeResult>("POST", "/analyze", body),
+  /** Plan preview: segmentation + per-patch knowledge-base retrieval + allocation for a payload LENGTH. Nothing is sealed or embedded. */
+  plan: (body: { payload_bytes?: number; cover?: StegoCoverRequest; min_level?: number }) => call<StegoPlanPreview>("POST", "/plan", body),
+  /** The static algorithm knowledge base and selector settings (read-only). */
+  kb: () => call<KnowledgeBase>("GET", "/kb"),
   /** Full send -> save -> receive -> verify transaction. Failures keep `stages` and `error.stage`. */
   message: (body: StegoMessageRequest) => call<StegoMessageResult>("POST", "/message", body),
   events: (f: StegoEventFilter = {}) => call<{ events: StegoEvent[] }>("GET", `/events${qs(f)}`),
@@ -64,22 +67,39 @@ export const stegoApi = {
 
 export type { StegoFailure };
 
+export type ArtifactKind = "stego" | "cover" | "seg" | "labels" | "diff";
+export type ReportFormat = "json" | "csv" | "patches_csv";
+
 export const stegoUrl = {
-  artifact: (id: string, kind: "stego" | "cover") => `${BASE}/stego/artifacts/${encodeURIComponent(id)}/${kind}`,
-  report: (format: "json" | "csv") => `${BASE}/stego/report?format=${format}`,
+  artifact: (id: string, kind: ArtifactKind) => `${BASE}/stego/artifacts/${encodeURIComponent(id)}/${kind}`,
+  report: (format: ReportFormat) => `${BASE}/stego/report?format=${format}`,
 };
 
-/** Fetch a report as a Blob and trigger a browser download (works cross-origin, unlike <a download>). */
-export async function downloadStegoReport(format: "json" | "csv"): Promise<void> {
-  const res = await fetch(stegoUrl.report(format));
-  if (!res.ok) throw new Error(`Report download failed (${res.status})`);
-  const blob = await res.blob();
+export function downloadBlob(blob: Blob, filename: string): void {
   const href = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = href;
-  a.download = `stego-report.${format}`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(href), 1000);
+}
+
+/** Fetch a report as a Blob and trigger a browser download (works cross-origin, unlike <a download>). */
+export async function downloadStegoReport(format: ReportFormat): Promise<void> {
+  const res = await fetch(stegoUrl.report(format));
+  if (!res.ok) throw new Error(`Report download failed (${res.status})`);
+  downloadBlob(await res.blob(), format === "json" ? "stego-report.json" : format === "csv" ? "stego-events.csv" : "stego-patches.csv");
+}
+
+function csvCell(v: unknown): string {
+  let s = v === null || v === undefined ? "" : Array.isArray(v) ? v.join(" ") : typeof v === "object" ? JSON.stringify(v) : String(v);
+  if (/^[=+\-@]/.test(s) && Number.isNaN(Number(s))) s = `'${s}`; // spreadsheet formula injection
+  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** CSV from rows the backend returned (values are copied, never computed here). */
+export function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
+  return [columns.join(","), ...rows.map((r) => columns.map((c) => csvCell(r[c])).join(","))].join("\n") + "\n";
 }

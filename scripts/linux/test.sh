@@ -7,7 +7,7 @@ echo "== Rust: unit + integration + security-negative tests =="
 cd "$ROOT_DIR/rust-core" && cargo test
 
 echo ""
-echo "== Python: RAG + steganography unit/integration tests =="
+echo "== Python: patch-wise steganography + learning workbench tests =="
 cd "$ROOT_DIR/python-service" && ./venv/bin/python -m pytest tests/ -v
 
 echo ""

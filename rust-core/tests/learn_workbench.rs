@@ -45,8 +45,8 @@ fn learning_experiments_never_touch_operational_state() {
     let fake = Arc::new(FakeStegoBackend::new(d.join("artifacts")));
     let (st, sid) = state_in(fake.clone(), d);
     // one real operational message first
-    let r = MessageRequest { session_id: sid.clone(), from_id: "drone-1".into(), plaintext: b"op".to_vec(), algorithm: None,
-                             cover: json!({"source": "webcam"}), priority: "normal".into(), origin: "test" };
+    let r = MessageRequest { session_id: sid.clone(), from_id: "drone-1".into(), plaintext: b"op".to_vec(),
+                             cover: json!({"source": "webcam"}), origin: "test" };
     pipeline::run_message(&st, r).unwrap_or_else(|f| panic!("{}", f.error));
     let (seq_before, seen_before, ev_before) = {
         let s = st.lock().unwrap();
@@ -149,14 +149,30 @@ fn real_service_all_ten_algorithms_verify_the_test_envelope() {
     let backend: Arc<dyn StegoBackend> = Arc::new(HttpBackend::new(&cfg).unwrap());
     let (st, _) = state_with(backend.clone(), "realpy");
     let out = learn::run_experiment(&st, &json!({"payload_mode": "aead_fixture", "algorithms": "all", "include_images": false,
-                                                 "verify_capacity": false, "cover": {"sample": "natural_rgb_256"}})).unwrap();
+                                                 "patch": "largest", "cover": {"sample": "natural_rgb_256"}})).unwrap();
+    assert_eq!(out["segmentation"]["version"], "arg-cells-1");
+    assert_eq!(out["patch"]["chosen_by"], "largest");
+    assert_eq!(out["production_kb_modified"], false);
+    assert!(out["survey"].as_array().unwrap().len() >= 2, "every patch of the segmentation is surveyed");
     let rs = out["results"].as_array().unwrap();
     assert_eq!(rs.len(), 10);
+    let mut ok = 0;
     for r in rs {
-        assert_eq!(r["status"], "ok", "{}", r);
-        assert_eq!(r["verification"]["status"], "aead_verified", "{}", r["algorithm"]);
-        assert_eq!(r["ber"], 0.0);
+        // an algorithm either embeds the whole envelope into the irregular patch and verifies, or is
+        // reported as unable to (capacity / geometry) -- never shortened, never replaced by another method
+        match r["status"].as_str().unwrap() {
+            "ok" => {
+                ok += 1;
+                assert_eq!(r["verification"]["status"], "aead_verified", "{}", r["algorithm"]);
+                assert_eq!(r["ber"], 0.0);
+                assert_eq!(r["outside_patch_changes"], 0, "{}", r["algorithm"]);
+            }
+            "rejected_capacity" | "unsupported_geometry" => assert_eq!(r["verification"]["status"], "not_extracted"),
+            other => panic!("{}: unexpected status {other}", r["algorithm"]),
+        }
     }
+    assert!(ok >= 8, "only {ok} algorithms could carry the envelope in the largest patch");
+    assert!(learn::run_experiment(&st, &json!({"patch": "biggest"})).is_err());
     // the same payload was used for all algorithms
     let sizes: std::collections::HashSet<String> = rs.iter().map(|r| r["payload_bytes"].to_string()).collect();
     assert_eq!(sizes.len(), 1);

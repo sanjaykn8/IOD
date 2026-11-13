@@ -27,8 +27,9 @@ pub const SYNTHETIC_HEX: &str = "A63C915E";
 pub const LABEL: &str = "Educational experiment - not a live UAV transmission";
 const MAX_MESSAGE: usize = 2048;
 /// Operational transport overhead that the learning payload does NOT include
-/// (Frame v1 header 12 B + HMAC-SHA256 tag 32 B; the bootstrap lives in reserved samples).
-pub const OPERATIONAL_FRAME_OVERHEAD: usize = 12 + 32;
+/// besides the patch manifest (Frame v2 header 16 B + HMAC-SHA256 tag 32 B; the manifest and the
+/// bootstrap preamble travel in reserved rows of the image).
+pub const OPERATIONAL_FRAME_OVERHEAD: usize = 16 + 32;
 
 fn test_key() -> AeadKey {
     let okm = hkdf_expand(TEST_KEY_LABEL, None, b"aead-key", 32);
@@ -79,7 +80,7 @@ pub fn seal_fixture(plaintext: &[u8]) -> (Vec<u8>, Value) {
         "wire_hex_preview": hex_preview(&wire_bytes, 64),
         "wire_binary_preview": bin_preview(&wire_bytes, 8),
         "operational_frame_overhead_bytes_not_included": OPERATIONAL_FRAME_OVERHEAD,
-        "note": "The same AppWire bytes are embedded by every algorithm in this comparison. The live transport additionally wraps them in Frame v1 (12-byte header + 32-byte HMAC) bound to the algorithm id.",
+        "note": "The same AppWire bytes are embedded by every algorithm in this comparison. The live transport additionally splits them over several patches and wraps them in Frame v2 (16-byte header + patch manifest + 32-byte HMAC over manifest and payload).",
     });
     (wire_bytes, info)
 }
@@ -143,7 +144,13 @@ pub fn run_experiment(state: &Mutex<SimulationState>, body: &Value) -> Result<Va
         "payload_b64": b64::encode(&payload),
         "payload_kind": if mode == "aead_fixture" { "aead_test_envelope" } else { "synthetic" },
         "robustness": body.get("robustness").and_then(|v| v.as_bool()).unwrap_or(false),
-        "verify_capacity": body.get("verify_capacity").and_then(|v| v.as_bool()).unwrap_or(true),
+        "patch": match body.get("patch") {
+            None | Some(Value::Null) => json!("most_textured"),
+            Some(Value::String(k)) if ["most_textured", "smoothest", "largest", "smallest"].contains(&k.as_str()) => json!(k),
+            Some(v) if v.as_u64().map(|n| n < 255).unwrap_or(false) => v.clone(),
+            _ => return Err(bad("patch must be a patch id or one of most_textured, smoothest, largest, smallest")),
+        },
+        "survey": body.get("survey").and_then(|v| v.as_bool()).unwrap_or(true),
         "include_images": body.get("include_images").and_then(|v| v.as_bool()).unwrap_or(true),
     });
     if let Some(o) = req.as_object_mut() {
@@ -191,10 +198,11 @@ pub fn run_experiment(state: &Mutex<SimulationState>, body: &Value) -> Result<Va
     Ok(out)
 }
 
-const CSV_COLS: [&str; 22] = [
-    "experiment_id", "algorithm", "variant", "status", "capacity_bits_raw", "capacity_bits_verified", "payload_bytes",
-    "payload_bits", "bits_per_pixel", "mse", "psnr_db", "ssim", "embed_ms", "setup_ms", "extract_ms", "bit_accuracy",
-    "byte_accuracy", "ber", "exact_recovery", "verification", "changed_samples", "robustness",
+const CSV_COLS: [&str; 28] = [
+    "experiment_id", "patch_id", "algorithm", "variant", "status", "geometry_supported", "geometry_reason", "capacity_bits", "param",
+    "payload_bytes", "payload_bits", "bits_per_patch_sample", "mse", "psnr_db", "ssim", "patch_mse", "patch_psnr_db", "embed_ms",
+    "setup_ms", "extract_ms", "bit_accuracy", "byte_accuracy", "ber", "exact_recovery", "outside_patch_changes", "verification",
+    "changed_samples", "robustness",
 ];
 
 pub fn to_csv(rec: &Value) -> String {
@@ -206,6 +214,7 @@ pub fn to_csv(rec: &Value) -> String {
         let cells: Vec<String> = CSV_COLS.iter().map(|c| {
             let v = match *c {
                 "experiment_id" => rec["experiment_id"].clone(),
+                "patch_id" => rec["patch"]["patch_id"].clone(),
                 "verification" => r["verification"]["status"].clone(),
                 "robustness" => rob.clone().map(Value::String).unwrap_or(Value::Null),
                 k => r[k].clone(),
@@ -230,13 +239,17 @@ fn md_num(v: &Value, d: usize) -> String {
 
 pub fn to_markdown(rec: &Value) -> String {
     let mut s = String::new();
-    s += "# Steganography algorithm comparison (educational)\n\n";
+    s += "# Patch-level steganography algorithm comparison (educational)\n\n";
     s += &format!("> **{}.** No UAV session, key or protocol state was involved.\n\n", LABEL);
     s += &format!("* Experiment: `{}`\n", rec["experiment_id"].as_str().unwrap_or("?"));
     s += &format!("* Cover: {} ({}x{} {}, sha256 `{}`)\n", rec["cover"]["description"].as_str().unwrap_or("?"),
         md_num(&rec["cover"]["width"], 0), md_num(&rec["cover"]["height"], 0), rec["cover"]["mode"].as_str().unwrap_or("?"),
         &rec["cover"]["sha256"].as_str().unwrap_or("")[..16.min(rec["cover"]["sha256"].as_str().unwrap_or("").len())]);
-    s += &format!("* Payload mode: `{}`; {} bytes ({} bits), sha256 `{}`; same cover and payload for every algorithm\n",
+    s += &format!("* Segmentation: `{}`, {} irregular patches; experiment patch **#{}** (chosen by `{}`, {} pixels)\n",
+        rec["segmentation"]["version"].as_str().unwrap_or("?"), md_num(&rec["segmentation"]["patch_count"], 0), md_num(&rec["patch"]["patch_id"], 0),
+        rec["patch"]["chosen_by"].as_str().unwrap_or("?"), md_num(&rec["patch"]["features"]["pixels"], 0));
+    s += "* Algorithms are this repository's implemented variants (see the Variant column), not canonical paper implementations. The production knowledge base and selector are not modified by experiments.\n";
+    s += &format!("* Payload mode: `{}`; {} bytes ({} bits), sha256 `{}`; same cover, patch and payload for every algorithm\n",
         rec["payload_mode"].as_str().unwrap_or("?"), md_num(&rec["payload"]["bytes"], 0), md_num(&rec["payload"]["bits"], 0),
         &rec["payload"]["sha256"].as_str().unwrap_or("")[..16.min(rec["payload"]["sha256"].as_str().unwrap_or("").len())]);
     if rec["payload_mode"] == "aead_fixture" {
@@ -246,14 +259,22 @@ pub fn to_markdown(rec: &Value) -> String {
     } else {
         s += "* Payload: synthetic fixture A6 3C 91 5E (not a real ciphertext; AEAD verification not applicable)\n";
     }
-    s += "\n## Metrics\n\n| Algorithm | Variant | Status | Capacity bits (raw / verified) | bpp | MSE | PSNR dB | SSIM | Embed ms | Extract ms | Bit acc. | BER | Verification |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|\n";
+    s += "\n## Metrics\n\n| Algorithm | Variant | Status | Patch capacity bits | bits / patch sample | MSE | PSNR dB | SSIM | Patch PSNR dB | Embed ms | Extract ms | Bit acc. | BER | Outside-patch changes | Verification |\n|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|\n";
     for r in rec["results"].as_array().cloned().unwrap_or_default() {
-        s += &format!("| {} | {} | {} | {} / {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+        s += &format!("| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
             r["algorithm"].as_str().unwrap_or("?"), md_num(&r["variant"], 0), md_num(&r["status"], 0),
-            md_num(&r["capacity_bits_raw"], 0), md_num(&r["capacity_bits_verified"], 0), md_num(&r["bits_per_pixel"], 6),
+            md_num(&r["capacity_bits"], 0), md_num(&r["bits_per_patch_sample"], 6),
             md_num(&r["mse"], 6), if r["psnr_db"].is_null() && r["status"] == "ok" { "inf".into() } else { md_num(&r["psnr_db"], 3) },
-            md_num(&r["ssim"], 6), md_num(&r["embed_ms"], 2), md_num(&r["extract_ms"], 2), md_num(&r["bit_accuracy"], 4),
-            md_num(&r["ber"], 6), md_num(&r["verification"]["status"], 0));
+            md_num(&r["ssim"], 6), md_num(&r["patch_psnr_db"], 3), md_num(&r["embed_ms"], 2), md_num(&r["extract_ms"], 2), md_num(&r["bit_accuracy"], 4),
+            md_num(&r["ber"], 6), md_num(&r["outside_patch_changes"], 0), md_num(&r["verification"]["status"], 0));
+    }
+    if let Some(sv) = rec["survey"].as_array().filter(|a| !a.is_empty()) {
+        s += "\n## Per-patch survey (measured capacity in bits; read-only knowledge-base ranking)\n\n| Patch | Pixels | Gradient | 8x8 blocks | KB top-1 | Unsupported geometry |\n|---|---|---|---|---|---|\n";
+        for p in sv {
+            let uns: Vec<String> = p["unsupported_reasons"].as_object().map(|m| m.keys().cloned().collect()).unwrap_or_default();
+            s += &format!("| {} | {} | {} | {} | {} | {} |\n", md_num(&p["patch_id"], 0), md_num(&p["pixels"], 0), md_num(&p["gradient_mean"], 2),
+                md_num(&p["blocks8"], 0), md_num(&p["kb_selected"], 0), if uns.is_empty() { "-".into() } else { uns.join(", ") });
+        }
     }
     let with_rob: Vec<Value> = rec["results"].as_array().cloned().unwrap_or_default().into_iter().filter(|r| r["robustness"].is_array()).collect();
     if let Some(first) = with_rob.first() {
@@ -316,14 +337,18 @@ mod tests {
 
     #[test]
     fn csv_and_markdown_render() {
-        let rec = json!({"experiment_id": "e1", "payload_mode": "synthetic", "cover": {"description": "c", "width": 8, "height": 8, "mode": "L", "sha256": "ab"},
+        let rec = json!({"experiment_id": "e1", "payload_mode": "synthetic", "segmentation": {"version": "arg-cells-1", "patch_count": 3},
+            "patch": {"patch_id": 2, "chosen_by": "largest", "features": {"pixels": 640}},
+            "survey": [{"patch_id": 0, "pixels": 100, "gradient_mean": 3.5, "blocks8": 0, "kb_selected": "lsb_matching", "unsupported_reasons": {"dct": "NO_COMPLETE_8X8_BLOCK"}}], "cover": {"description": "c", "width": 8, "height": 8, "mode": "L", "sha256": "ab"},
             "payload": {"bytes": 4, "bits": 32, "sha256": "cd"}, "metric_definitions": {"mse": "x"}, "interpretation": ["y"],
             "results": [{"algorithm": "dwt", "variant": "=cmd", "status": "ok", "mse": 0.1, "psnr_db": 50.0, "verification": {"status": "not_applicable_synthetic"},
                          "robustness": [{"attack": "none", "outcome": "recovered", "oracle_ber": 0.0}]}],
             "attacks": [{"id": "none", "label": "No attack", "params": {}}]});
         let c = to_csv(&rec);
-        assert!(c.lines().count() == 2 && c.contains("'=cmd") && c.contains("none=recovered"));
+        assert!(c.lines().count() == 2 && c.contains("'=cmd") && c.contains("none=recovered") && c.lines().nth(1).unwrap().starts_with("e1,2,dwt"));
+        assert_eq!(c.lines().next().unwrap().split(',').count(), CSV_COLS.len());
         let m = to_markdown(&rec);
         assert!(m.contains("| dwt |") && m.contains("not a live UAV transmission") && m.contains("Robustness"));
+        assert!(m.contains("experiment patch **#2**") && m.contains("| 0 | 100 | 3.50 | 0 | lsb_matching | dct |") && m.contains("not canonical paper implementations"));
     }
 }

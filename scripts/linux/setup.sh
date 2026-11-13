@@ -5,6 +5,9 @@
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
+echo "== Removing files left over from older releases =="
+"$ROOT_DIR/scripts/linux/remove_stale_files.sh"
+
 echo "== Checking prerequisites =="
 command -v cargo >/dev/null || { echo "cargo not found - install Rust (https://rustup.rs, or your distro's rustc/cargo package)"; exit 1; }
 command -v node >/dev/null || { echo "node not found - install Node.js 18+"; exit 1; }
@@ -16,18 +19,18 @@ cargo build --release
 
 echo "== Installing Node gateway dependencies =="
 cd "$ROOT_DIR/node-server"
-npm install
+npm ci
 npm run build
 
-echo "== Setting up Python RAG service =="
+echo "== Setting up Python image service =="
 cd "$ROOT_DIR/python-service"
 python3 -m venv venv
-./venv/bin/pip install --upgrade pip
+./venv/bin/python -m pip install --upgrade pip
 ./venv/bin/pip install -r requirements.txt
 
 echo "== Installing React dashboard dependencies =="
 cd "$ROOT_DIR/web-ui"
-npm install
+npm ci
 npm run build
 
 echo ""

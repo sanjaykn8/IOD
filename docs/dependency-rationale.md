@@ -16,7 +16,7 @@ Licenses were read from the registries (MIT and/or Apache-2.0 for every Rust cra
 
 Toolchain: the project originally targeted rustc 1.75 and pinned several crates for it. Those pins were removed; v2 is built and tested with **rustc 1.97.0**. Plonky3 0.9.0-rc.1 needs a recent toolchain.
 
-Node gateway: `express`, `cors`, `node-fetch` (no crypto). Web UI: React/Vite/Tailwind stack (no crypto). Python service: `flask`, `flask-cors`, `pytest` (RAG service unchanged in this phase).
+Node gateway: `express`, `cors`, `node-fetch` (no crypto). Web UI: React/Vite/Tailwind stack (no crypto). Python service: `flask`, `flask-cors`, `numpy`, `Pillow`, `pytest` (optional `opencv-python-headless` for the server-side webcam). The patch-wise redesign added no dependency: segmentation, BM25 and the manifest codec are plain numpy/stdlib; no LLM, embedding or vector-store package is used.
 
 Alternatives rejected for the proof system: arkworks/Groth16/Halo2/KZG-based (elliptic curves — policy), custom homemade "commitment + Fiat–Shamir" (not zero knowledge).
 

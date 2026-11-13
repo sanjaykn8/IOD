@@ -33,7 +33,9 @@ function EduBanner() {
         <strong>Educational experiment — not a live UAV transmission</strong>
         <p>Nothing on this tab touches authentication, group keys, sequence numbers, the operational image transport or its event log.
           Experiments run the same tested algorithm library in isolation; the “readable message” mode uses the production AEAD code path
-          with a <b>test-only key</b> derived from a public label (never an operational key, never displayed).</p>
+          with a <b>test-only key</b> derived from a public label (never an operational key, never displayed).
+          Experiments are <b>patch-level</b>: the cover is segmented into irregular patches by the same segmenter as the transport and every algorithm embeds into one
+          chosen patch mask. Results describe <b>this repository&apos;s variants</b>, not canonical paper implementations, and never change the production knowledge base or selector.</p>
       </div>
     </div>
   );
@@ -176,15 +178,17 @@ function RowDetail({ row, cover }: { row: LearnRow; cover?: string | undefined }
           {cover ? <Inspectable src={cover} pair={row.images.stego} label="Cover" /> : null}
           <Inspectable src={row.images.stego} pair={cover} label="Stego (saved PNG)" testid={`learn-stego-${row.algorithm}`} />
           {row.images.difference_x64 ? <Inspectable src={row.images.difference_x64.png} label={row.images.difference_x64.title} /> : null}
-          {row.images.changed_locations ? <Inspectable src={row.images.changed_locations.png} label={row.images.changed_locations.title} /> : null}
-          {row.images.specific ? <Inspectable src={row.images.specific.png} label={row.images.specific.title} /> : null}
         </div>
       ) : null}
       <dl className="stego-kv">
         {([
-          ["CAPACITY (RAW / VERIFIED)", `${fmt(row.capacity_bits_raw)} / ${fmt(row.capacity_bits_verified)} bits`],
-          ["PAYLOAD", `${row.payload_bytes} B = ${row.payload_bits} bits · ${fmt(row.bits_per_pixel, 6)} bpp`],
-          ["MSE", fmt(row.mse, 6)], ["PSNR", row.psnr_db === null && row.status === "ok" ? "∞ (identical)" : `${fmt(row.psnr_db, 3)} dB`],
+          ["MASK SUPPORT", row.mask_support ?? "n/a"],
+          ["PATCH GEOMETRY", row.geometry_supported === false ? `unsupported: ${row.geometry_reason ?? "?"}` : "supported"],
+          ["PATCH CAPACITY (MEASURED)", `${fmt(row.capacity_bits)} bits`], ["PARAMETER", fmt(row.param)],
+          ["PAYLOAD", `${row.payload_bytes} B = ${row.payload_bits} bits · ${fmt(row.bits_per_patch_sample, 6)} bits / patch sample`],
+          ["MSE (IMAGE)", fmt(row.mse, 6)], ["PSNR (IMAGE)", row.psnr_db === null && row.status === "ok" ? "∞ (identical)" : `${fmt(row.psnr_db, 3)} dB`],
+          ["MSE / PSNR (PATCH ONLY)", `${fmt(row.patch_mse, 6)} / ${row.patch_psnr_db === null && row.status === "ok" ? "∞" : `${fmt(row.patch_psnr_db, 3)} dB`}`],
+          ["CHANGES OUTSIDE THE PATCH", fmt(row.outside_patch_changes)],
           ["SSIM", fmt(row.ssim, 6)], ["EMBED", `${fmt(row.embed_ms, 2)} ms${row.setup_ms ? ` (cost map ${fmt(row.setup_ms, 1)} ms)` : ""}`],
           ["EXTRACT", `${fmt(row.extract_ms, 2)} ms`], ["BIT ACCURACY", fmt(row.bit_accuracy, 6)], ["BER", fmt(row.ber, 6)],
           ["CHANGED SAMPLES", fmt(row.changed_samples)], ["EXTRACTED (HEX)", row.extracted_hex_preview ?? "n/a"],
@@ -193,8 +197,47 @@ function RowDetail({ row, cover }: { row: LearnRow; cover?: string | undefined }
       </dl>
       {row.robustness ? (
         <DataTable label={`Robustness of ${row.algorithm}`}>
-          <thead><tr><th>Attack</th><th>Parameters</th><th>Full pipeline</th><th>Oracle BER</th><th>Outcome</th></tr></thead>
-          <tbody>{row.robustness.map((r) => <tr key={r.attack}><td>{r.label}</td><td><code>{JSON.stringify(r.params)}</code></td><td>{r.full_pipeline}{r.full_error ? <small>{r.full_error}</small> : null}</td><td>{fmt(r.oracle_ber, 4)}</td><td>{r.outcome}</td></tr>)}</tbody>
+          <thead><tr><th>Attack</th><th>Parameters</th><th>Oracle BER (known mask + parameter)</th><th>Outcome</th></tr></thead>
+          <tbody>{row.robustness.map((r) => <tr key={r.attack}><td>{r.label}</td><td><code>{JSON.stringify(r.params)}</code></td><td>{fmt(r.oracle_ber, 4)}{r.oracle_error ? <small>{r.oracle_error}</small> : null}</td><td>{r.outcome}</td></tr>)}</tbody>
+        </DataTable>
+      ) : null}
+    </div>
+  );
+}
+
+/** Segmentation of the experiment cover, the chosen patch and the per-patch survey (capacity / geometry / read-only KB ranking). */
+function PatchSection({ exp, choose }: { exp: LearnExperiment; choose: (id: number) => void }) {
+  const p = exp.patch;
+  if (!exp.segmentation || !p) return null;
+  const f = (p.features ?? {}) as Record<string, unknown>;
+  return (
+    <div className="learn-row-detail" data-testid="learn-patch-section">
+      <div className="learn-wt-head"><div><h3>Irregular segmentation and experiment patch</h3>
+        <small>{exp.segmentation.version} · {exp.segmentation.patch_count} patches · every algorithm embeds into patch #{p.patch_id} (chosen by: {p.chosen_by})</small></div>
+        <Status tone="info">ISOLATED FROM PRODUCTION KB / SELECTOR</Status></div>
+      <div className="learn-images">
+        {exp.segmentation.overlay_png ? <Inspectable src={exp.segmentation.overlay_png} label="Segmentation (same segmenter as the transport)" /> : null}
+        {p.highlight_png ? <Inspectable src={p.highlight_png} label={`Patch #${p.patch_id} mask (rest dimmed)`} testid="learn-patch-highlight" /> : null}
+      </div>
+      <dl className="stego-kv">
+        {([["PATCH PIXELS", fmt(f["pixels"])], ["BBOX W × H", `${fmt(f["width"])} × ${fmt(f["height"])}`], ["COMPACTNESS", fmt(f["compactness"], 4)], ["GRADIENT MEAN", fmt(f["gradient_mean"], 3)],
+          ["VARIANCE", fmt(f["variance"], 2)], ["ENTROPY", fmt(f["entropy"], 3)], ["COMPLETE 8×8 BLOCKS", fmt(f["blocks8"])], ["COMPLETE 2×2 BLOCKS", fmt(f["blocks2"])],
+          ["KB QUERY TERMS (READ-ONLY)", p.kb_retrieval_readonly?.query_terms.join(", ") || "—"], ["KB WOULD SELECT (READ-ONLY)", p.kb_retrieval_readonly?.selected ?? "nothing eligible"],
+        ] as [string, ReactNode][]).map(([k, val]) => <div key={k}><dt>{k}</dt><dd>{val}</dd></div>)}
+      </dl>
+      <p className="stego-muted">{p.note} {exp.variant_notice}</p>
+      {exp.survey?.length ? (
+        <DataTable label="Per-patch capacity and suitability survey">
+          <thead><tr><th>Patch</th><th>Pixels</th><th>Gradient</th><th>8×8 / 2×2 blocks</th><th>Largest measured capacities (bits)</th><th>Unsupported geometry</th><th>KB top-1 for this payload (read-only)</th><th /></tr></thead>
+          <tbody>{exp.survey.map((s) => {
+            const caps = Object.entries(s.capacity_bits).sort((a, b) => b[1] - a[1]);
+            const uns = Object.entries(s.unsupported_reasons);
+            return <tr key={s.patch_id} className={s.patch_id === p.patch_id ? "stego-winner" : ""} data-testid={`learn-survey-${s.patch_id}`}>
+              <td>#{s.patch_id}</td><td>{s.pixels}</td><td>{fmt(s.gradient_mean, 2)}</td><td>{s.blocks8} / {s.blocks2}</td>
+              <td title={caps.map(([k, v]) => `${k}: ${v}`).join("\n")}>{caps.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(" · ")}<small> (hover for all ten)</small></td>
+              <td>{uns.length ? uns.map(([k, v]) => `${k} (${v})`).join(", ") : "—"}</td><td>{s.kb_selected ?? "nothing eligible"}</td>
+              <td>{s.patch_id === p.patch_id ? "current" : <button type="button" className="learn-link" onClick={() => choose(s.patch_id)}>use next run</button>}</td></tr>;
+          })}</tbody>
         </DataTable>
       ) : null}
     </div>
@@ -206,12 +249,12 @@ function ComparisonTable({ exp, pick, picked }: { exp: LearnExperiment; pick: (a
   return (
     <>
       <DataTable label="Comparison of all algorithms">
-        <thead><tr><th>Algorithm</th><th>Status</th><th>Capacity raw / verified (bits)</th><th>bpp</th><th>MSE</th><th>PSNR dB</th><th>SSIM</th><th>Embed ms</th><th>Extract ms</th><th>Bit acc.</th><th>BER</th><th>Verification</th></tr></thead>
+        <thead><tr><th>Algorithm</th><th>Status</th><th>Patch capacity (bits)</th><th>bits / patch sample</th><th>MSE</th><th>PSNR dB</th><th>Patch PSNR dB</th><th>SSIM</th><th>Embed ms</th><th>Extract ms</th><th>Bit acc.</th><th>BER</th><th>Verification</th></tr></thead>
         <tbody>{exp.results.map((r) => (
           <tr key={r.algorithm} className={picked === r.algorithm ? "stego-winner" : r.status === "ok" ? "" : "stego-excluded"} data-testid={`learn-cmp-${r.algorithm}`}>
             <td><button type="button" className="learn-link" onClick={() => pick(r.algorithm)}>{r.algorithm}</button><small className="stego-variant">{r.variant}</small></td>
-            <td>{r.status}{r.error ? <small>{r.error.code}</small> : null}</td><td>{fmt(r.capacity_bits_raw)} / {fmt(r.capacity_bits_verified)}</td>
-            <td>{fmt(r.bits_per_pixel, 5)}</td><td>{fmt(r.mse, 5)}</td><td>{r.psnr_db === null && r.status === "ok" ? "∞" : fmt(r.psnr_db, 2)}</td>
+            <td>{r.status}{r.error ? <small>{r.error.code}</small> : null}</td><td>{fmt(r.capacity_bits)}</td>
+            <td>{fmt(r.bits_per_patch_sample, 5)}</td><td>{fmt(r.mse, 5)}</td><td>{r.psnr_db === null && r.status === "ok" ? "∞" : fmt(r.psnr_db, 2)}</td><td>{r.patch_psnr_db === null && r.status === "ok" ? "∞" : fmt(r.patch_psnr_db, 2)}</td>
             <td>{fmt(r.ssim, 5)}</td><td>{fmt(r.embed_ms, 1)}</td><td>{fmt(r.extract_ms, 1)}</td><td>{fmt(r.bit_accuracy, 4)}</td><td>{fmt(r.ber, 4)}</td>
             <td>{r.verification?.status?.replace(/_/g, " ") ?? "n/a"}</td>
           </tr>))}</tbody>
@@ -221,10 +264,10 @@ function ComparisonTable({ exp, pick, picked }: { exp: LearnExperiment; pick: (a
           <thead><tr><th>Algorithm</th>{attacks.map((a) => <th key={a}>{a}</th>)}</tr></thead>
           <tbody>{exp.results.filter((r) => r.robustness).map((r) => (
             <tr key={r.algorithm}><td>{r.algorithm}</td>{(r.robustness ?? []).map((x) => (
-              <td key={x.attack} className={`learn-rob learn-rob-${x.outcome}`} title={`oracle BER ${x.oracle_ber}`}>{x.outcome === "recovered" ? "✓" : x.outcome === "failed" ? "✗" : x.outcome === "recovered_oracle_only" ? "◐" : "~"} <small>{fmt(x.oracle_ber, 2)}</small></td>))}</tr>))}</tbody>
+              <td key={x.attack} className={`learn-rob learn-rob-${x.outcome}`} title={`oracle BER ${x.oracle_ber}`}>{x.outcome === "recovered" ? "✓" : x.outcome === "failed" ? "✗" : "~"} <small>{fmt(x.oracle_ber, 2)}</small></td>))}</tr>))}</tbody>
         </DataTable>
       ) : null}
-      {attacks.length ? <p className="stego-muted">✓ full pipeline (bootstrap + payload) recovered the exact payload · ◐ exact only with known parameters (bootstrap lost) · ~ partial (oracle BER ≤ 0.1) · ✗ failed (BER ≈ 0.5 is chance level, i.e. no information). Oracle BER = direct extraction with the known algorithm, length and parameter. No failure is repaired or hidden.</p> : null}
+      {attacks.length ? <p className="stego-muted">✓ exact payload recovered · ~ partial (oracle BER ≤ 0.1) · ✗ failed (BER ≈ 0.5 is chance level, i.e. no information). Oracle BER = direct extraction from the attacked image with the known patch mask, algorithm, length and parameter; the operational transport would additionally need the bootstrap and manifest to survive. No failure is repaired or hidden.</p> : null}
     </>
   );
 }
@@ -239,7 +282,7 @@ export function LearningWorkbench() {
   const [sample, setSample] = useState("natural_rgb_256");
   const [upload, setUpload] = useState<string | null>(null);
   const [robust, setRobust] = useState(true);
-  const [verifyCap, setVerifyCap] = useState(true);
+  const [patchSel, setPatchSel] = useState<string>("most_textured");
   const [busy, setBusy] = useState(false);
   const [exp, setExp] = useState<LearnExperiment | null>(null);
   const [expErr, setExpErr] = useState<string | null>(null);
@@ -265,7 +308,7 @@ export function LearningWorkbench() {
     setBusy(true); setExpErr(null);
     const req: LearnExperimentRequest = {
       algorithms: all ? "all" : [alg], payload_mode: mode, ...(mode === "aead_fixture" ? { message } : {}),
-      cover: upload ? { upload_b64: upload } : { sample }, robustness: robust, verify_capacity: verifyCap, include_images: true,
+      cover: upload ? { upload_b64: upload } : { sample }, patch: /^\d+$/.test(patchSel) ? parseInt(patchSel, 10) : patchSel, robustness: robust, include_images: true,
     };
     const r = await learnApi.experiment(req);
     setBusy(false);
@@ -301,7 +344,7 @@ export function LearningWorkbench() {
           <WalkthroughView alg={alg} />
         </Panel>
       ) : (
-        <Panel title={view === "run" ? `B / Run actual example — ${alg}` : "B / Compare all ten on the same cover and payload"} meta={<Status tone="warning">EDUCATIONAL EXPERIMENT</Status>}>
+        <Panel title={view === "run" ? `B / Run actual example — ${alg}` : "B / Compare all ten on the same cover, patch and payload"} meta={<Status tone="warning">EDUCATIONAL EXPERIMENT</Status>}>
           <div className="form-grid stego-grid-4">
             <Field label="Payload">
               <select className={selectClass} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} aria-label="Payload mode">
@@ -318,7 +361,11 @@ export function LearningWorkbench() {
             <label className="field"><span>Upload test image (PNG ≤ 512×512)</span><span className="learn-upload"><Upload aria-hidden="true" /><input type="file" accept="image/png" onChange={(e) => void onUpload(e.target.files?.[0])} aria-label="Upload test PNG" /></span></label>
             <div className="field"><span>Options</span>
               <label className="learn-check"><input type="checkbox" checked={robust} onChange={(e) => setRobust(e.target.checked)} /> robustness attack suite</label>
-              <label className="learn-check"><input type="checkbox" checked={verifyCap} onChange={(e) => setVerifyCap(e.target.checked)} /> verify capacity</label>
+              <label className="learn-check">patch&nbsp;
+                <select className={selectClass} value={patchSel} onChange={(e) => setPatchSel(e.target.value)} aria-label="Patch to embed into">
+                  <option value="most_textured">most textured patch</option><option value="smoothest">smoothest patch</option><option value="largest">largest patch</option><option value="smallest">smallest patch</option>
+                  {(exp?.survey ?? []).map((p) => <option key={p.patch_id} value={String(p.patch_id)}>patch #{p.patch_id} ({p.pixels} px)</option>)}
+                </select></label>
             </div>
           </div>
           {mode === "aead_fixture" ? <Field label="Readable sample message (serialised as UTF-8, then sealed)"><Textarea rows={4} value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Sample message" /></Field>
@@ -330,7 +377,7 @@ export function LearningWorkbench() {
             {exp ? (["json", "csv", "md"] as const).map((f) => <Button key={f} variant="outline" size="sm" onClick={() => void downloadLearnExport(exp.experiment_id, f).catch((e: Error) => setExpErr(e.message))}><Download />{f.toUpperCase()}</Button>) : null}
           </div>
           {expErr ? <div className="notice notice-danger" role="alert"><div><strong>Experiment failed</strong><p>{expErr}</p></div></div> : null}
-          {!exp ? <Empty title="No experiment yet" description="Run an example to see the cover, stego image, difference and algorithm-specific maps, metrics and verification." /> : (
+          {!exp ? <Empty title="No experiment yet" description="Run an example to see the segmentation, the chosen irregular patch, the stego image, the difference map, metrics and verification." /> : (
             <div className="learn-results" data-testid="learn-results">
               <dl className="stego-kv learn-kv">
                 <div><dt>EXPERIMENT</dt><dd>{exp.experiment_id.slice(0, 16)}…</dd></div>
@@ -346,6 +393,7 @@ export function LearningWorkbench() {
                 <div><dt>DURATION</dt><dd>{fmt(exp.duration_ms, 0)} ms</dd></div>
               </dl>
               {exp.payload_mode === "aead_fixture" && pc ? <p className="stego-muted">{fmt(pc["note"])}</p> : null}
+              <PatchSection exp={exp} choose={(id) => setPatchSel(String(id))} />
               {exp.results.length > 1 ? <ComparisonTable exp={exp} pick={setPicked} picked={picked} /> : null}
               {pickedRow ? <RowDetail row={pickedRow} cover={exp.cover.png} /> : exp.results.length > 1 ? <p className="stego-muted">Select an algorithm in the table for its images, maps and robustness details.</p> : null}
               <div className="notice notice-info" role="note"><BookOpen aria-hidden="true" /><div><strong>How to read these numbers</strong><p>{exp.interpretation.join(" ")}</p></div></div>

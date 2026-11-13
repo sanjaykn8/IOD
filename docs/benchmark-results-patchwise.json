@@ -1,0 +1,1077 @@
+{
+ "note": "POST /api/stego/benchmark, 10 iterations x 3 message sizes per cover, alternating directions; development container (not UAV hardware).",
+ "host": {
+  "machine": "x86_64",
+  "system": "Linux",
+  "python": "3.13.18",
+  "cpus": 2
+ },
+ "covers": {
+  "mixed_rgb_320x240_uploaded": {
+   "runs": [
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 3,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 304.755
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 4,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 304.901
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 5,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 299.621
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 6,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 329.448
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 7,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 303.311
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 8,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 300.729
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 9,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 294.866
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 10,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 305.185
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 11,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 298.608
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 2,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 12,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 308.757
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 13,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 312.568
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 14,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 312.872
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 15,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 316.095
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 16,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 325.053
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 17,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 317.935
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 18,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 319.192
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 19,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 314.834
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 20,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 311.099
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 21,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 309.71
+    },
+    {
+     "algorithms_used": {
+      "lsb_matching": 6,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 22,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 318.526
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 23,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 456.971
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 24,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 496.725
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 25,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 485.081
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 26,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 472.982
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 27,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 497.208
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 28,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 534.401
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 29,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 461.008
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 30,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 480.998
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 31,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 479.264
+    },
+    {
+     "algorithms_used": {
+      "dct": 1,
+      "lsb_matching": 12,
+      "s_uniward": 1,
+      "wow": 2
+     },
+     "error_code": null,
+     "event_id": 32,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 493.941
+    }
+   ],
+   "summary": {
+    "environment": {
+     "scope": "benchmark_run"
+    },
+    "generated_ms": 1794542459416,
+    "limitations": [
+     "Host-simulation measurements on one machine; not representative of drone hardware.",
+     "Percentiles are null when fewer than 20 successful samples exist for the series.",
+     "PSNR/SSIM are null when undefined (e.g. identical images); they are never imputed.",
+     "Lossless PNG handoff only; no robustness to JPEG/resizing/filtering is claimed.",
+     "LSB-class methods are statistically detectable; no anti-steganalysis claim is made for any algorithm.",
+     "Per-patch selection is a static knowledge-base lookup (structured filters + BM25); no learned model is involved.",
+     "Algorithm names denote this repository's variants (e.g. additive HUGO approximation, custom STC matrices)."
+    ],
+    "overall": {
+     "frame_bytes": {
+      "mean": 1087,
+      "n": 30,
+      "p50": 895,
+      "p95": 1663
+     },
+     "image_bytes": {
+      "mean": 129262.56666666667,
+      "n": 30,
+      "p50": 128978,
+      "p95": 129865.35
+     },
+     "manifest_bytes": {
+      "mean": 525,
+      "n": 30,
+      "p50": 525,
+      "p95": 525
+     },
+     "mse": {
+      "mean": 0.06407376666666667,
+      "n": 30,
+      "p50": 0.014843499999999999,
+      "p95": 0.1693246
+     },
+     "n_ok": 30,
+     "patch_count": {
+      "mean": 16,
+      "n": 30,
+      "p50": 16,
+      "p95": 16
+     },
+     "psnr": {
+      "mean": 63.29883333333333,
+      "n": 30,
+      "p50": 66.41535,
+      "p95": 67.5544
+     },
+     "refinement_level": {
+      "mean": 0,
+      "n": 30,
+      "p50": 0,
+      "p95": 0
+     },
+     "ssim": {
+      "mean": 0.9993367190133337,
+      "n": 30,
+      "p50": 0.99994726165,
+      "p95": 0.999951313135
+     },
+     "timings_ms": {
+      "aead_open": {
+       "mean": 0.014733333333333338,
+       "n": 30,
+       "p50": 0.0125,
+       "p95": 0.028999999999999942
+      },
+      "aead_seal": {
+       "mean": 0.10919999999999999,
+       "n": 30,
+       "p50": 0.023,
+       "p95": 0.31389999999999996
+      },
+      "capture": {
+       "mean": 2.0515,
+       "n": 30,
+       "p50": 1.496,
+       "p95": 2.5281999999999982
+      },
+      "embed": {
+       "mean": 98.19030000000001,
+       "n": 30,
+       "p50": 72.959,
+       "p95": 152.69834999999998
+      },
+      "extract": {
+       "mean": 16.42153333333333,
+       "n": 30,
+       "p50": 15.721,
+       "p95": 18.42065
+      },
+      "plan": {
+       "mean": 168.1166,
+       "n": 30,
+       "p50": 142.98700000000002,
+       "p95": 237.28455
+      },
+      "read": {
+       "mean": 0.10356666666666668,
+       "n": 30,
+       "p50": 0.099,
+       "p95": 0.13055
+      },
+      "save": {
+       "mean": 1.9780666666666666,
+       "n": 30,
+       "p50": 1.9575,
+       "p95": 2.2367
+      },
+      "total": {
+       "mean": 366.1645000000001,
+       "n": 30,
+       "p50": 313.9755,
+       "p95": 493.6547
+      },
+      "verify": {
+       "mean": 0.01206666666666667,
+       "n": 30,
+       "p50": 0.01,
+       "p95": 0.014
+      }
+     },
+     "used_patches": {
+      "mean": 9.333333333333334,
+      "n": 30,
+      "p50": 8,
+      "p95": 16
+     }
+    },
+    "per_algorithm": [
+     {
+      "algorithm": "dct",
+      "events": 10,
+      "patches": 10,
+      "payload_bytes": 700
+     },
+     {
+      "algorithm": "lsb_matching",
+      "events": 30,
+      "patches": 200,
+      "payload_bytes": 11900
+     },
+     {
+      "algorithm": "s_uniward",
+      "events": 10,
+      "patches": 10,
+      "payload_bytes": 700
+     },
+     {
+      "algorithm": "wow",
+      "events": 30,
+      "patches": 60,
+      "payload_bytes": 3080
+     }
+    ],
+    "schema": "stego-report-2",
+    "totals": {
+     "cover_sources": {
+      "uploaded": 30
+     },
+     "error_counts": {},
+     "events": 30,
+     "failed": 0,
+     "fallback_cover_count": 0,
+     "ok": 30
+    }
+   }
+  },
+  "procedural_fallback_640x480_gray": {
+   "runs": [
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 33,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 449.031
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 34,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 472.018
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 35,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 482.479
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 36,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 434.705
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 37,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 458.406
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 38,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 438.855
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 39,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 466.222
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 40,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 418.6
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 41,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 421.189
+    },
+    {
+     "algorithms_used": {
+      "dwt": 4
+     },
+     "error_code": null,
+     "event_id": 42,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 421.082
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8
+     },
+     "error_code": null,
+     "event_id": 43,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 484.202
+    },
+    {
+     "algorithms_used": {
+      "dwt": 7
+     },
+     "error_code": null,
+     "event_id": 44,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 460.252
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8
+     },
+     "error_code": null,
+     "event_id": 45,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 524.127
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8
+     },
+     "error_code": null,
+     "event_id": 46,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 485.936
+    },
+    {
+     "algorithms_used": {
+      "dwt": 7
+     },
+     "error_code": null,
+     "event_id": 47,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 462.968
+    },
+    {
+     "algorithms_used": {
+      "dwt": 7
+     },
+     "error_code": null,
+     "event_id": 48,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 473.477
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8
+     },
+     "error_code": null,
+     "event_id": 49,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 474.806
+    },
+    {
+     "algorithms_used": {
+      "dwt": 7
+     },
+     "error_code": null,
+     "event_id": 50,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 448.933
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8
+     },
+     "error_code": null,
+     "event_id": 51,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 468.159
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8
+     },
+     "error_code": null,
+     "event_id": 52,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 487.785
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8,
+      "s_uniward": 2
+     },
+     "error_code": null,
+     "event_id": 53,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 621.35
+    },
+    {
+     "algorithms_used": {
+      "dwt": 7,
+      "s_uniward": 1
+     },
+     "error_code": null,
+     "event_id": 54,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 630.435
+    },
+    {
+     "algorithms_used": {
+      "dwt": 9,
+      "s_uniward": 1
+     },
+     "error_code": null,
+     "event_id": 55,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 617.581
+    },
+    {
+     "algorithms_used": {
+      "dwt": 5,
+      "lsb_matching": 1,
+      "s_uniward": 1
+     },
+     "error_code": null,
+     "event_id": 56,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 609.801
+    },
+    {
+     "algorithms_used": {
+      "dwt": 5,
+      "lsb_matching": 1,
+      "s_uniward": 2
+     },
+     "error_code": null,
+     "event_id": 57,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 579.618
+    },
+    {
+     "algorithms_used": {
+      "dwt": 5,
+      "s_uniward": 3
+     },
+     "error_code": null,
+     "event_id": 58,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 630.484
+    },
+    {
+     "algorithms_used": {
+      "dwt": 8,
+      "lsb_matching": 1
+     },
+     "error_code": null,
+     "event_id": 59,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 494.108
+    },
+    {
+     "algorithms_used": {
+      "dwt": 6
+     },
+     "error_code": null,
+     "event_id": 60,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 470.516
+    },
+    {
+     "algorithms_used": {
+      "dwt": 12,
+      "s_uniward": 2
+     },
+     "error_code": null,
+     "event_id": 61,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 662.061
+    },
+    {
+     "algorithms_used": {
+      "dwt": 5,
+      "lsb_matching": 1,
+      "s_uniward": 5
+     },
+     "error_code": null,
+     "event_id": 62,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 663.171
+    }
+   ],
+   "summary": {
+    "environment": {
+     "scope": "benchmark_run"
+    },
+    "generated_ms": 1794542474694,
+    "limitations": [
+     "Host-simulation measurements on one machine; not representative of drone hardware.",
+     "Percentiles are null when fewer than 20 successful samples exist for the series.",
+     "PSNR/SSIM are null when undefined (e.g. identical images); they are never imputed.",
+     "Lossless PNG handoff only; no robustness to JPEG/resizing/filtering is claimed.",
+     "LSB-class methods are statistically detectable; no anti-steganalysis claim is made for any algorithm.",
+     "Per-patch selection is a static knowledge-base lookup (structured filters + BM25); no learned model is involved.",
+     "Algorithm names denote this repository's variants (e.g. additive HUGO approximation, custom STC matrices)."
+    ],
+    "overall": {
+     "frame_bytes": {
+      "mean": 1258.4,
+      "n": 30,
+      "p50": 1062,
+      "p95": 2042.2999999999995
+     },
+     "image_bytes": {
+      "mean": 8460.133333333333,
+      "n": 30,
+      "p50": 7964,
+      "p95": 11713.3
+     },
+     "manifest_bytes": {
+      "mean": 696.4,
+      "n": 30,
+      "p50": 689,
+      "p95": 968.1999999999998
+     },
+     "mse": {
+      "mean": 0.2246196,
+      "n": 30,
+      "p50": 0.1725235,
+      "p95": 0.4857652
+     },
+     "n_ok": 30,
+     "patch_count": {
+      "mean": 8.966666666666667,
+      "n": 30,
+      "p50": 8.5,
+      "p95": 12.649999999999991
+     },
+     "psnr": {
+      "mean": 55.650246666666675,
+      "n": 30,
+      "p50": 55.76245,
+      "p95": 59.451495
+     },
+     "refinement_level": {
+      "mean": 0,
+      "n": 30,
+      "p50": 0,
+      "p95": 0
+     },
+     "ssim": {
+      "mean": 0.9956598982166668,
+      "n": 30,
+      "p50": 0.9971049170999999,
+      "p95": 0.999160240545
+     },
+     "timings_ms": {
+      "aead_open": {
+       "mean": 0.012300000000000005,
+       "n": 30,
+       "p50": 0.012,
+       "p95": 0.013549999999999998
+      },
+      "aead_seal": {
+       "mean": 0.061700000000000005,
+       "n": 30,
+       "p50": 0.0175,
+       "p95": 0.16939999999999997
+      },
+      "capture": {
+       "mean": 126.39426666666665,
+       "n": 30,
+       "p50": 123.45949999999999,
+       "p95": 148.5803999999999
+      },
+      "embed": {
+       "mean": 38.78763333333334,
+       "n": 30,
+       "p50": 21.587,
+       "p95": 104.69009999999996
+      },
+      "extract": {
+       "mean": 25.990866666666665,
+       "n": 30,
+       "p50": 26.5155,
+       "p95": 31.488849999999992
+      },
+      "plan": {
+       "mean": 204.04599999999996,
+       "n": 30,
+       "p50": 189.135,
+       "p95": 273.29965
+      },
+      "read": {
+       "mean": 0.016800000000000013,
+       "n": 30,
+       "p50": 0.0165,
+       "p95": 0.021099999999999994
+      },
+      "save": {
+       "mean": 1.4735333333333334,
+       "n": 30,
+       "p50": 1.4235,
+       "p95": 1.75785
+      },
+      "total": {
+       "mean": 504.5051,
+       "n": 30,
+       "p50": 471.2765,
+       "p95": 645.5370499999999
+      },
+      "verify": {
+       "mean": 0.012066666666666672,
+       "n": 30,
+       "p50": 0.012,
+       "p95": 0.014
+      }
+     },
+     "used_patches": {
+      "mean": 6.9,
+      "n": 30,
+      "p50": 7,
+      "p95": 10.549999999999997
+     }
+    },
+    "per_algorithm": [
+     {
+      "algorithm": "dwt",
+      "events": 30,
+      "patches": 186,
+      "payload_bytes": 13835
+     },
+     {
+      "algorithm": "lsb_matching",
+      "events": 4,
+      "patches": 4,
+      "payload_bytes": 529
+     },
+     {
+      "algorithm": "s_uniward",
+      "events": 8,
+      "patches": 17,
+      "payload_bytes": 2016
+     }
+    ],
+    "schema": "stego-report-2",
+    "totals": {
+     "cover_sources": {
+      "procedural": 30
+     },
+     "error_counts": {},
+     "events": 30,
+     "failed": 0,
+     "fallback_cover_count": 0,
+     "ok": 30
+    }
+   }
+  }
+ }
+}

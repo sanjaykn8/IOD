@@ -5,14 +5,13 @@ use serde_json::{json, Value};
 pub mod stage {
     pub const PREPARE: &str = "prepare";
     pub const AEAD_SEAL: &str = "aead_seal";
-    pub const SELECTOR: &str = "selector";
+    pub const PLAN: &str = "plan";
     pub const EMBED: &str = "embed";
     pub const SAVE: &str = "save";
     pub const READ: &str = "read";
     pub const EXTRACT: &str = "extract";
     pub const VERIFY: &str = "verify_frame";
     pub const AEAD_OPEN: &str = "aead_open";
-    pub const EXPLAIN: &str = "explain";
 }
 
 #[derive(Debug, Clone)]
@@ -52,7 +51,10 @@ impl std::error::Error for StegoError {}
 pub fn status_for_backend_code(code: &str) -> u16 {
     match code {
         "FRAME_TOO_LARGE" => 413,
-        "NO_ELIGIBLE_ALGORITHM" | "ALGORITHM_NOT_ELIGIBLE" | "ENCODE_VERIFY_FAILED" | "EMBED_VERIFY_FAILED" => 422,
+        "NO_ELIGIBLE_ALGORITHM" | "ENCODE_VERIFY_FAILED" | "EMBED_VERIFY_FAILED" | "PATCH_CAPACITY_INSUFFICIENT"
+        | "PATCH_EMBED_FAILED" | "PATCH_UNSUPPORTED" | "SEGMENTATION_FAILED" | "MANIFEST_INVALID" | "MANIFEST_TOO_LARGE"
+        | "FRAME_MALFORMED" => 422,
+        "KB_INVALID" => 500,
         "INVALID_REQUEST" | "IMAGE_TOO_LARGE" | "IMAGE_TOO_SMALL" | "UNSUPPORTED_IMAGE_MODE" => 400,
         "ARTIFACT_NOT_FOUND" => 404,
         "IMAGE_DECODE_ERROR" | "BOOTSTRAP_MISSING" | "BOOTSTRAP_CORRUPT" | "UNSUPPORTED_VERSION" | "UNKNOWN_ALGORITHM"

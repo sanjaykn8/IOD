@@ -4,7 +4,6 @@ import { DronesPage } from "./pages/DronesPage";
 import { GroupsPage } from "./pages/GroupsPage";
 import { AuthenticationPage } from "./pages/AuthenticationPage";
 import { SecureCommPage } from "./pages/SecureCommPage";
-import { RagPage } from "./pages/RagPage";
 import { TracePage } from "./pages/TracePage";
 import { LogsPage } from "./pages/LogsPage";
 import { SettingsPage } from "./pages/SettingsPage";
@@ -15,7 +14,6 @@ const PAGES = [
   { id: "groups", label: "Groups" },
   { id: "auth", label: "Authentication" },
   { id: "secure-comm", label: "Secure Communication" },
-  { id: "rag", label: "RAG Simulation" },
   { id: "trace", label: "Trace Manager" },
   { id: "logs", label: "Protocol Logs" },
   { id: "settings", label: "Settings" },
@@ -49,7 +47,6 @@ export default function App() {
         {page === "groups" && <GroupsPage />}
         {page === "auth" && <AuthenticationPage />}
         {page === "secure-comm" && <SecureCommPage />}
-        {page === "rag" && <RagPage />}
         {page === "trace" && <TracePage />}
         {page === "logs" && <LogsPage />}
         {page === "settings" && <SettingsPage />}

@@ -1,40 +1,50 @@
-# Steganography algorithm registry (transport v2: ten algorithms)
+# Steganography algorithm registry (ten algorithms on irregular patch masks)
 
 Owner of every algorithm: the Python image service (`python-service/src/stego/algorithms/`). There is
 one implementation per algorithm; the Rust core only knows names/ids, and the learning workbench calls
-the same functions. All ten embed the **complete binary payload** (operationally: Frame v1 = header ‖
-AppWire ‖ HMAC tag; the AppWire is already AEAD-encrypted) MSB-first, never touch the 128 bootstrap
-samples, verify capacity before embedding, and are exact through lossless PNG. **None is claimed robust**
-to JPEG, resizing, cropping or filtering, and none is claimed undetectable.
+the same functions. In the patch-wise transport (`patchwise-transport.md`) an algorithm never sees a whole
+image: it is given **one patch mask** and **one chunk** of the payload section (AppWire ‖ frame tag, already
+AEAD-encrypted and authenticated by Rust). Contract (`algorithms/base.py`):
 
-Worked numerical examples for all ten: [`worked-examples.md`](worked-examples.md) (generated from code).
-The educational workbench that runs them in isolation: [`learning-workbench.md`](learning-workbench.md).
+* `support(img, region)` → `(ok, reason)`; `capacity_bits(img, region, param)` → measured on the mask;
+* `embed(ctx, region, out, payload, param)` changes only samples of the patch (checked after every
+  embedding); `extract(img, region, nbytes, param)` needs only the stego image, the mask and the parameter.
+* Bootstrap rows are removed from every mask before an algorithm runs.
+* A method that cannot work on a mask says so (`unsupported`, with a reason); it is never replaced by LSB.
+
+All are exact through lossless PNG. **None is claimed robust** to JPEG, resizing, cropping or filtering, and
+none is claimed undetectable. The names denote **this repository's variants**.
+
+Worked numerical examples for all ten: [`worked-examples.md`](worked-examples.md) (generated from code; small
+fixed arrays, so they show the arithmetic rather than the mask handling).
+The educational workbench that runs them on a patch in isolation: [`learning-workbench.md`](learning-workbench.md).
 
 ## 1. Registry
 
-| id | name | variant (exact) | domain | coding | input | capacity (bits) | extraction |
+`n` = samples of the patch (pixels × channels, bootstrap rows excluded).
+
+| id | name | variant (exact) | domain | coding | mask handling | capacity (bits) | parameter in the manifest |
 |---|---|---|---|---|---|---|---|
-| 1 | `lsb_replacement` | `lsb-replacement-msb-first-v1` | spatial, LSB plane | direct | L/RGB uint8 | `N − 128` (N = samples) | LSBs of samples 128… |
-| 2 | `lsb_matching` | `lsb-matching-pm1-seeded-v1` | spatial, ±1 | direct | L/RGB | `N − 128` | LSBs of samples 128… |
-| 3 | `pvd` | `wu-tsai-pvd-6range-v1` | spatial, pixel pairs | direct | L/RGB | Σ range bits of pairs (exact, cover dependent) | `|a'−b'| − l_k` in `n_k` bits |
-| 4 | `edge_adaptive_lsb` | `edge-mask-7msb-grad-threshold-v1` | spatial, edge mask + LSB | direct | L/RGB | eligible samples (gradient of 7 MSBs ≥ T=6) | rebuild mask from stego, read LSBs |
-| 5 | `dct` | `dct8-midband-6coef-qim-v1` | 8×8 block DCT | direct (QIM) | L/RGB (blue plane) | 6 × usable blocks | `round(X[u,v]/Δ) mod 2`, Δ = 12 |
-| 6 | `dwt` | `haar-l1-hh-qim-v1` | 1-level Haar DWT | direct (QIM) | L/RGB (blue plane) | usable 2×2 blocks | `round(HH/Δ) mod 2`, Δ = 4 |
-| 7 | `dct_svd` | `dct8-svd-s1-qim-v1` | block DCT + SVD | direct (QIM) | L/RGB (blue plane) | usable 8×8 blocks (1 bit each) | `round(σ₁(S)/Δ) mod 2`, Δ = 16 |
-| 8 | `hugo` | HUGO, exact single-change costs (T=90, σ=1, γ=1), additive approximation + binary STC h=7, no model correction | spatial, SPAM co-occurrence model | STC | L/RGB | `min(N−128, 131072) / w`, w ≥ 2 | `H·y` on the same elements |
-| 9 | `wow` | WOW (p = −1, db8 filter bank) + binary STC h=7 | spatial, wavelet directional filters | STC | L/RGB | same as HUGO | `H·y` |
-| 10 | `s_uniward` | S-UNIWARD (spatial, σ = 1, db8 filter bank) + binary STC h=7 | spatial, wavelet relative change | STC | L/RGB | same as HUGO | `H·y` |
+| 1 | `lsb_replacement` | `lsb-replacement-msb-first-v1` | spatial, LSB plane | direct | patch samples, raster order | `n` | 0 |
+| 2 | `lsb_matching` | `lsb-matching-pm1-seeded-v2` | spatial, ±1 | direct | patch samples; sign stream seeded per patch from the cover hash | `n` | 0 |
+| 3 | `pvd` | `wu-tsai-pvd-6range-v1` | spatial, sample pairs | direct | pairs = consecutive entries of the patch's sample list | Σ range bits of the pairs (cover dependent) | 0 |
+| 4 | `edge_adaptive_lsb` | `edge-mask-7msb-grad-threshold-v2` | spatial, edge mask + LSB | direct | gradient uses in-patch neighbours only, so other patches cannot move the carrier set | eligible samples (gradient of 7 MSBs ≥ T) | T (default 6) |
+| 5 | `dct` | `dct8-midband-6coef-qim-v1` | 8×8 block DCT | direct (QIM) | only 8×8 blocks lying completely inside the mask | 6 × complete blocks | Δ (default 12) |
+| 6 | `dwt` | `haar-l1-hh-qim-v1` | 1-level Haar DWT | direct (QIM) | only 2×2 blocks completely inside the mask | complete 2×2 blocks | Δ (default 4) |
+| 7 | `dct_svd` | `dct8-svd-s1-qim-v1` | block DCT + SVD | direct (QIM) | only complete 8×8 blocks | complete 8×8 blocks (1 bit each) | Δ (default 16) |
+| 8 | `hugo` | HUGO **additive approximation**: exact single-change costs (T=90, σ=1, γ=1), no model correction, binary STC h=7 with **custom sub-matrices** | spatial, SPAM co-occurrence model | STC | costs read the cover around the patch; only patch samples are selected and changed | `min(n, 131072) / w` | w (2..64) |
+| 9 | `wow` | WOW (p = −1, db8 filter bank) + the same STC | spatial, wavelet directional filters | STC | cost map computed once per cover; patch samples only | same | w |
+| 10 | `s_uniward` | S-UNIWARD (spatial, σ = 1, db8 filter bank) + the same STC | spatial, wavelet relative change | STC | same | same | w |
 
-Ids 1–5 are unchanged from transport v1 (backward compatible: the bootstrap/frame formats did not
-change; ids 6–10 are new values of the existing `alg_id` byte). Parameters live in the existing
-`param` byte (0 = default): Δ for `dct`/`dwt`/`dct_svd`, T for `edge_adaptive_lsb`, and the STC
-width `w` for HUGO/WOW/S-UNIWARD (0 = automatic rate, see §4). Block methods skip block rows that
-contain any bootstrap sample.
+Ids are stable. Parameters are **explicit** in the authenticated manifest (no implied defaults at the
+receiver). Transform methods work on the gray plane, or the blue plane of RGB. Block positions are aligned to
+the image origin; because patches are unions of 4/8/16-pixel cells, an 8-pixel cell grid gives complete 8×8
+blocks inside every patch, while a 4-pixel grid (images below 64 px) can leave `dct`/`dct_svd` unsupported.
 
-## 2. Original five (unchanged)
+## 2. Spatial and DCT methods
 
 * **LSB replacement**: `p' = (p AND 0xFE) OR b`.
-* **LSB matching**: if `p mod 2 ≠ b`, `p' = p ± 1`, sign from PCG64 seeded with SHA-256(cover‖"LSBM-v1"); 0→+1, 255→−1.
+* **LSB matching**: if `p mod 2 ≠ b`, `p' = p ± 1`, sign from PCG64 seeded with SHA-256("LSBM-v2" ‖ cover digest ‖ patch id); 0→+1, 255→−1.
 * **PVD** (Wu & Tsai 2003): pairs (a,b), `d=|a−b|`, ranges [0,7],[8,15],[16,31],[32,63],[64,127],[128,255] carry 3,3,4,5,6,7 bits; `d' = l_k + v`; sign of a−b kept; `a' = a + ⌈(t−(a−b))/2⌉` clipped, `b' = a' − t`.
 * **Edge-adaptive LSB**: `g = ⌊p/2⌋` (RGB: integer luma of 7-MSB planes), `grad = |Δx g| + |Δy g|`, eligible if `grad ≥ T`; LSB replacement on eligible samples in raster order. A simplified member of the edge-adaptive family (not identical to Luo et al. 2010).
 * **DCT**: orthonormal 8×8 DCT-II, coefficients (1,2),(2,1),(2,2),(1,3),(3,1),(3,0), QIM with Δ=12, per-block verification with one retry in the other direction; saturated covers can fail (`ENCODE_VERIFY_FAILED`).
@@ -51,18 +61,18 @@ contain any bootstrap sample.
 
 ### 3.2 DCT-SVD — `dct8-svd-s1-qim-v1`
 DCT-SVD is a family; this is one concrete variant (the cited family paper is a watermarking scheme and differs).
-1. Plane: gray, or blue plane of RGB. 2. 8×8 blocks, raster order, bootstrap rows skipped, partial edge blocks unused.
+1. Plane: gray, or blue plane of RGB. 2. 8×8 blocks lying completely inside the patch mask, raster order.
 3. `X = C B Cᵀ` (orthonormal DCT-II). 4. Region `S = X[1:5, 1:5]` (4×4, no DC row/column).
 5. `S = U diag(σ₁..σ₄) Vᵀ` (numpy SVD). 6. `σ₁' = qΔ`, `q ≥ 0`, `q ≡ b (mod 2)`, nearest (Δ = 16, range 8–64).
 7. `S' = U diag(σ₁',σ₂,σ₃,σ₄) Vᵀ`, inverse DCT, round, clip. 8. Verify by recomputing σ₁ from the rounded pixels; on failure try the next-nearest valid index (up to 8; e.g. when σ₁' would drop below σ₂ or near saturation).
 Extraction: `round(σ₁/Δ) mod 2`. Rounding changes σ₁ by at most `‖E‖₂ ≤ ‖E‖_F ≤ 4`, so Δ = 16 leaves margin 4.
-Capacity is the lowest of the ten (1 bit per 8×8 block): a 320×240 cover holds 145 bytes; a 640×480 webcam frame 590 bytes.
+Capacity is the lowest of the ten (1 bit per complete 8×8 block): a 4096-pixel patch holds at most 8 bytes, so the planner rarely gives it more than a small chunk.
 
 ## 4. Content-adaptive methods and STC
 
-### 4.1 Common embedding scheme (`stc-pm1-v1`)
-* Cover elements: all samples except `[0,128)`; order = public permutation (PCG64 seeded with SHA-256("IOD-STC-PERM-v1"|name|H|W|C)). **No stego key** — confidentiality/integrity come from the AEAD and frame MAC; a secret permutation would need a key in the Python process, which the architecture forbids.
-* `m` = payload bits, `w` = 1/rate. Automatic: `w = min(10, N_eff // m)`, `N_eff = min(N − 128, 131072)`; explicit `w` ∈ [2, 64] via `param`. The receiver recomputes `w` from image size and bootstrap length.
+### 4.1 Common embedding scheme (`stc-pm1-v2`, per patch)
+* Cover elements: the samples of the patch's own pixels, nothing else; order = public permutation of that list (PCG64 seeded with SHA-256("IOD-STC-PERM-v2"|name|H|W|C|patch id|count)), at most 131072 elements. **No stego key** — confidentiality/integrity come from the AEAD and frame MAC; a secret permutation would need a key in the Python process, which the architecture forbids.
+* `m` = bits of this patch's chunk, `w` = 1/rate, always explicit in the manifest (2..64). The planner chooses `w = min(10, N_eff // m)`, `N_eff = min(n, 131072)`.
 * `x` = LSBs of the first `n = m·w` elements, ρ = algorithm cost; STC returns `y` with `H y = payload` and minimal Σρ over changed elements; each changed element moves by ±1 (binary embedding with ±1 changes). HUGO uses the cheaper of its exact ρ⁺/ρ⁻; WOW/S-UNIWARD costs are symmetric, so the sign comes from a PCG64 stream seeded from the cover hash (0→+1, 255→−1).
 * Extraction: `payload = H y` from the stego LSBs — no costs, no cover.
 
@@ -100,24 +110,19 @@ approximation embedded with binary STC h=7. **No model correction / Gibbs re-swe
 recomputes costs during embedding), so the actual distortion of the combined changes can exceed the
 additive sum. It is not the full HUGO-BD bounding formulation either; costs are computed once on the cover.
 
-## 5. Selector `sel-policy-2`
+## 5. How an algorithm is chosen for a patch
 
-Same rules as `sel-policy-1` (capacity filter → trial encode on the real cover → hard limits MSE ≤ 4,
-PSNR ≥ 40 dB, cost ≤ 1000 → score `w_d·d + w_u·u + w_t·t` → tie-break), now over all ten. Static cost
-model (estimated units, never measured times): WORK/SCAN = dwt 1.0/0.4, dct_svd 2.5/1.2, hugo 8.0/3.0,
-wow 6.0/1.5, s_uniward 6.0/1.5 (original five unchanged). Tie order:
-`s_uniward, wow, hugo, lsb_matching, pvd, edge_adaptive_lsb, dwt, dct_svd, lsb_replacement, dct`.
-Features recorded additionally: cover source (webcam/fallback/upload), bits per pixel, texture statistic,
-bit depth, format, and each candidate's exact variant. A 640×480 selection takes 2.2–4.4 s (150 B–1 KiB frames) on the build host
-(ten trial encodes). Measured decisions for a 150-byte frame: natural 320×240 RGB cover -> `urgent`: lsb_replacement (BEST_SCORE),
-`normal`: lsb_matching (TIE_BREAK_ORDER), `background`: s_uniward (TIE_BREAK_ORDER); B/W fallback 256×256 ->
-lsb_replacement / lsb_matching / lsb_matching. RAG only explains (unchanged).
+Not by this document: by the static knowledge base `python-service/src/stego/kb/algorithm_kb.json`
+(structured filters, then BM25, top-1) described in `patchwise-transport.md` section 9 and shown on the
+Knowledge Base page of the UI. The whole-image selector `sel-policy-2`, its score weights, the priority
+classes and the manual override were removed. Measured usage on two covers is in `benchmarking.md`.
 
 ## 6. Failure modes and limitations
 * All ten: fragile to JPEG/resize/crop/filter (measured in the workbench robustness suite); no anti-steganalysis claim; high PSNR/SSIM ≠ undetectable.
 * `dct`: refuses saturated blocks; `edge_adaptive_lsb`: no capacity on flat covers; `dct_svd`: low capacity (1 bit/64 pixels).
 * STC methods: public permutation (no stego key); non-optimised Ĥ; N_eff capped at 131072 elements (≤ 8 KiB frames at rate 1/2) to bound run time; HUGO variant without model correction; σ/γ for HUGO not re-verified against the full paper text here.
-* Bootstrap is plain LSB replacement in samples 0–127 for every algorithm (unchanged v1 design).
+* Mask-specific: `dct`/`dct_svd` need complete 8×8 blocks and `dwt` complete 2×2 blocks inside the patch; thin or very small patches report `unsupported`. `dct` is additionally excluded by the knowledge base on patches with ≥ 2 % saturated pixels (local heuristic backed by `tests/test_patch_algorithms.py::test_dct_saturated_patch_is_filtered`).
+* The bootstrap carrier (preamble + manifest + CRC) is plain LSB replacement in the reserved top rows; it is detectable and not secret.
 
 ## 7. References
 * Pevný, Filler, Bas — *Using High-Dimensional Image Models to Perform Highly Undetectable Steganography*, IH 2010. https://doi.org/10.1007/978-3-642-16435-4_13

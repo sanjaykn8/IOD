@@ -1,7 +1,7 @@
 {
   "name": "iod-node-gateway",
   "version": "0.1.0",
-  "description": "Thin Node.js/TypeScript API gateway in front of the Rust core HTTP API and the Python RAG service.",
+  "description": "Thin Node.js/TypeScript API gateway in front of the Rust core HTTP API (relay only).",
   "main": "dist/index.js",
   "type": "commonjs",
   "scripts": {

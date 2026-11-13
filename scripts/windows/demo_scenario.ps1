@@ -58,10 +58,8 @@ Invoke-DemoCall POST "/group-key" '{"d1_id":"drone-1","d2_id":"drone-2","mission
 Invoke-DemoStep "j. Send a secure message"
 Invoke-DemoCall POST "/secure-message" '{"from_id":"drone-1","to_id":"drone-2","plaintext":"Perimeter clear, proceeding to waypoint 2."}'
 
-Invoke-DemoStep "k. Run the RAG simulation"
-Invoke-DemoCall POST "/rag/contribute" '{"drone_id":"drone-1","content":"Enemy convoy spotted moving north on route 7, six vehicles","confidence":0.9}'
-Invoke-DemoCall POST "/rag/contribute" '{"drone_id":"drone-2","content":"Convoy of 6 vehicles confirmed heading north on route 7","confidence":0.85}'
-Invoke-DemoCall POST "/rag/run" '{"query":"What is happening on route 7?"}'
+Invoke-DemoStep "k. Patch-wise plan preview (segmentation + per-patch knowledge-base selection; nothing is sent)"
+Invoke-DemoCall POST "/stego/plan" '{"payload_bytes":300,"cover":{"source":"procedural"}}'
 
 Invoke-DemoStep "l. Revoke D1"
 Invoke-DemoCall POST "/drones/drone-1/revoke" $null

@@ -67,5 +67,4 @@ app.listen(config.port, () => {
   // eslint-disable-next-line no-console
   console.log(`iod-node-gateway listening on http://127.0.0.1:${config.port}`);
   console.log(`  -> proxying Rust core at ${config.rustBaseUrl}`);
-  console.log(`  -> proxying Python RAG service at ${config.pythonBaseUrl}`);
 });

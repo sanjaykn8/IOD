@@ -76,44 +76,87 @@ def _decode(uri):
     return np.array(Image.open(io.BytesIO(base64.b64decode(uri.split(",", 1)[1]))), dtype=np.uint8)
 
 
-def test_comparison_uses_same_inputs_and_metrics_are_consistent(tmp_path, monkeypatch):
+def test_patch_experiment_uses_same_inputs_and_metrics_are_consistent(tmp_path, monkeypatch):
     monkeypatch.setenv("IOD_STEGO_ARTIFACT_DIR", str(tmp_path / "ops"))
-    payload = bytes(range(100))
+    payload = bytes(range(24))
     r = E.run({"algorithms": "all", "cover": {"sample": "natural_gray_256"}, "payload_b64": base64.b64encode(payload).decode(),
-               "robustness": False, "verify_capacity": False})
+               "robustness": False, "patch": "largest"})
     assert r["mode"] == "educational" and r["operational"] is False and "not a live UAV" in r["label"]
-    assert r["same_inputs_for_all_algorithms"] and r["payload"]["bytes"] == 100
+    assert r["production_kb_modified"] is False and "repository's implemented variants" in r["variant_notice"]
+    assert r["same_inputs_for_all_algorithms"] and r["payload"]["bytes"] == 24
+    seg = r["segmentation"]
+    assert seg["version"] == "arg-cells-1" and seg["patch_count"] == len(r["survey"]) >= 2
+    pid = r["patch"]["patch_id"]
+    assert r["patch"]["chosen_by"] == "largest"
+    assert r["patch"]["features"]["pixels"] == max(s["pixels"] for s in r["survey"])
     cover = _decode(r["cover"]["png"])
     assert len(r["results"]) == 10
+    done = 0
     for row in r["results"]:
-        if row["status"] == "rejected_capacity":
+        assert row["variant"] and row["mask_support"]
+        if row["status"] in ("rejected_capacity", "unsupported_geometry"):
+            assert "extracted_b64" not in row
             continue
+        done += 1
         assert row["status"] == "ok" and row["exact_recovery"] and row["ber"] == 0.0 and row["bit_accuracy"] == 1.0
+        assert row["outside_patch_changes"] == 0
         stego = _decode(row["images"]["stego"])
         m = metrics.compute(cover, stego)
         assert row["mse"] == pytest.approx(m["mse"]) and row["psnr_db"] == pytest.approx(m["psnr"])
-        assert row["bits_per_pixel"] == pytest.approx(800 / (256 * 256))
+        assert row["bits_per_patch_sample"] == pytest.approx(192 / r["patch"]["features"]["pixels"])
         assert base64.b64decode(row["extracted_b64"]) == payload
-        for k in ("difference_x64", "changed_locations", "specific"):
-            assert row["images"][k]["png"].startswith("data:image/png;base64,")
+        assert row["capacity_bits"] == r["survey"][pid]["capacity_bits"][row["algorithm"]]
+        assert row["images"]["difference_x64"]["png"].startswith("data:image/png;base64,")
+    assert done >= 7
+    assert r["segmentation"]["overlay_png"].startswith("data:image/png") and r["patch"]["highlight_png"].startswith("data:image/png")
     assert not (tmp_path / "ops").exists(), "the workbench must not write to the operational artifact store"
+
+
+def test_patch_choice_keywords_ids_and_survey():
+    base = {"algorithms": ["lsb_replacement", "dct"], "cover": {"sample": "natural_rgb_256"}, "include_images": False}
+    tex = E.run(dict(base, patch="most_textured"))
+    smo = E.run(dict(base, patch="smoothest"))
+    assert tex["patch"]["features"]["gradient_mean"] >= smo["patch"]["features"]["gradient_mean"]
+    n = tex["segmentation"]["patch_count"]
+    one = E.run(dict(base, patch=n - 1))
+    assert one["patch"]["patch_id"] == n - 1 and one["patch"]["chosen_by"] == "explicit"
+    for bad in (n, -1, "biggest", True, 1.5):
+        with pytest.raises(Exception) as e:
+            E.run(dict(base, patch=bad))
+        assert getattr(e.value, "code", None) == "INVALID_REQUEST"
+    for s in tex["survey"]:
+        assert set(s["capacity_bits"]) == set(NAMES) and set(s["supported"]) == set(NAMES)
+        assert s["kb_selected"] in (None, *NAMES) and (s["kb_ranking"][:1] == [s["kb_selected"]] or s["kb_selected"] is None)
+        assert s["blocks8"] >= 0 and isinstance(s["query_terms"], list)
+    ro = tex["patch"]["kb_retrieval_readonly"]
+    assert ro["selector_version"] == "kb-bm25-1" and len(ro["candidates"]) == 10
+
+
+def test_experiments_never_modify_the_production_knowledge_base():
+    from stego.patch import kb as KB
+    before = json.dumps(KB.load(), sort_keys=True)
+    mtime = os.path.getmtime(KB.KB_PATH)
+    E.run({"algorithms": "all", "include_images": False, "robustness": True})
+    assert json.dumps(KB.load(), sort_keys=True) == before and os.path.getmtime(KB.KB_PATH) == mtime
 
 
 def test_insufficient_capacity_is_rejected_not_shortened():
     r = E.run({"algorithms": ["dct_svd", "lsb_replacement"], "cover": {"sample": "gray_64"},
-               "payload_b64": base64.b64encode(b"x" * 200).decode(), "include_images": False, "verify_capacity": False})
+               "payload_b64": base64.b64encode(b"x" * 40).decode(), "include_images": False})
     by = {x["algorithm"]: x for x in r["results"]}
-    assert by["dct_svd"]["status"] == "rejected_capacity" and "not shortened" in by["dct_svd"]["error"]["message"]
+    assert by["dct_svd"]["status"] in ("rejected_capacity", "unsupported_geometry")
+    if by["dct_svd"]["status"] == "rejected_capacity":
+        assert "not shortened" in by["dct_svd"]["error"]["message"]
     assert "extracted_b64" not in by["dct_svd"]
     assert by["lsb_replacement"]["status"] == "ok"
 
 
-def test_verified_capacity_and_robustness_are_deterministic():
+def test_robustness_is_deterministic_and_labelled_oracle():
     req = {"algorithms": ["lsb_matching", "dwt", "s_uniward"], "cover": {"sample": "natural_rgb_256"}, "robustness": True,
-           "include_images": False, "verify_capacity": True}
+           "include_images": False, "patch": "largest"}
     a, b = E.run(req), E.run(req)
     for x, y in zip(a["results"], b["results"]):
-        assert x["capacity_bits_verified"] == x["capacity_bits_raw"] // 8 * 8 and x["capacity_verification"]["passed"]
+        assert x["status"] == "ok"
         assert [r["outcome"] for r in x["robustness"]] == [r["outcome"] for r in y["robustness"]]
         assert [r["oracle_ber"] for r in x["robustness"]] == [r["oracle_ber"] for r in y["robustness"]]
         none = next(r for r in x["robustness"] if r["attack"] == "none")
@@ -122,15 +165,16 @@ def test_verified_capacity_and_robustness_are_deterministic():
             if rr["outcome"] == "partial":
                 assert 0 < rr["oracle_ber"] <= E.PARTIAL_BER
             if rr["oracle_ber"] > E.PARTIAL_BER:
-                assert rr["outcome"] == "failed" or rr["full_pipeline"] == "recovered"
+                assert rr["outcome"] == "failed"
         crop = next(r for r in x["robustness"] if r["attack"] == "crop4")
-        assert crop["full_pipeline"] == "failed" and crop["oracle_ber"] == 1.0  # geometry change desynchronises
+        assert crop["outcome"] == "failed" and crop["oracle_ber"] == 1.0  # geometry change desynchronises
     ids = [at["id"] for at in a["attacks"]]
     assert ids[0] == "none" and {"jpeg75", "resize50", "gauss1", "saltpepper", "blur3"} <= set(ids)
+    assert "oracle" in a["metric_definitions"]["robustness"]
 
 
 def test_default_payload_is_the_synthetic_fixture():
-    r = E.run({"algorithms": ["pvd"], "include_images": False, "verify_capacity": False})
+    r = E.run({"algorithms": ["pvd"], "include_images": False})
     assert r["payload"]["kind"] == "synthetic" and r["payload"]["hex_preview"] == "A6 3C 91 5E"
 
 
@@ -176,7 +220,7 @@ def test_http_routes(client):
     assert r.status_code == 400
     buf = io.BytesIO()
     Image.fromarray(F.sample_cover("gray_64")[0]).save(buf, "PNG")
-    r = client.post("/learn/experiment", json={"algorithms": ["lsb_replacement"], "include_images": False, "verify_capacity": False,
+    r = client.post("/learn/experiment", json={"algorithms": ["lsb_replacement"], "include_images": False,
                                                "cover": {"upload_b64": base64.b64encode(buf.getvalue()).decode()}})
     assert r.status_code == 200 and r.get_json()["cover"]["source"] == "upload"
     jb = io.BytesIO()
@@ -190,5 +234,6 @@ def test_learn_package_does_not_import_operational_service_or_store():
     import learn.walkthrough as wt
     src = open(ex.__file__).read() + open(wt.__file__).read()
     assert "stego.service" not in src and "artifacts" not in src.replace("artifact store", "")
+    assert "codec" not in src and "bootstrap" not in src.replace("bootstrap carrier", "")
     assert not hasattr(ex, "get_store")
     assert os.path.basename(ex.__file__) == "experiment.py"

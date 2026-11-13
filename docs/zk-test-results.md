@@ -7,7 +7,7 @@
 | `tests/end_to_end.rs` | 1 passed | 1 passed |
 | ignored: `zk::tests::standard_params_smoke` | run manually (release): proof 249,798 B, prove 85.6 ms, verify 3.5 ms, conjectured 128 b / proven(list) 120 b / proven(unique) 74 b | not run |
 | ignored: `zk::tests::param_sweep` | **not run** | not run |
-Not executed: Python service tests (RAG untouched, unchanged), Windows builds (no Windows host available), Raspberry Pi/hardware runs.
+Not executed in that phase: Python service tests, Windows builds (no Windows host available), Raspberry Pi/hardware runs.
 API smoke (manual, curl against the release server): create group/drones, register, K1 before auth → `NO_AUTH_SESSION`, authenticate → ALLOW, K1 → ok, K1 again → `SESSION_REPLAY`, secure message → delivered, revoke then authenticate → `PID_NOT_ACTIVE`, trace without token → `NOT_ADMIN`; `/api/drones` response contains no `rho`/secret/seed strings.
 
 ## ZK tests (`rust-core/src/zk/tests.rs`, `zk/air.rs`)

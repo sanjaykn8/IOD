@@ -1,19 +1,29 @@
-//! Transport Frame v1 (docs/stego-implementation-note.md §1.2).
+//! Transport Frame v2 (docs/patchwise-transport.md section 3).
 //!
-//! `frame = "IODF" | ver | alg_id | param | flags | wire_len(4) | wire | tag(32)`,
-//! `tag = HMAC-SHA256(meta_key, "IOD-STEGO-FRAME-v1" | header | wire)`,
-//! `meta_key = HKDF(directional AEAD key, info = "IOD-STEGO-META-v1" | channel_tag | direction)`.
-//! The MAC key is domain-separated from the AEAD key and never leaves Rust.
+//! ```text
+//! frame = "IOD2" | ver=2 | flags=0 | reserved u16=0 | manifest_len u32 | wire_len u32   (16 bytes, BE)
+//!         | manifest | wire | tag(32)
+//! tag      = HMAC-SHA256(meta_key, "IOD-STEGO-FRAME-v2" | header | manifest | wire)
+//! meta_key = HKDF(directional AEAD key, info = "IOD-STEGO-META-v1" | channel_tag | direction)
+//! ```
+//! The MAC therefore covers the complete patch manifest (image dimensions, segmentation and selector
+//! versions, the patch map, every patch's algorithm id, parameter, payload offset and payload length)
+//! and the AppWire payload. The MAC key is domain-separated from the AEAD key and never leaves Rust;
+//! the image service neither creates nor checks the tag.
+//!
+//! Frame v1 ("IODF", one algorithm per image) is not accepted: there is no interoperability
+//! between v1 and v2 images (see the migration note in the documentation).
 
 use crate::crypto::aead::AeadKey;
 use crate::crypto::kdf::{hkdf_expand, hmac_sha256, hmac_verify};
 use crate::transport::error::{stage, StegoError};
+use crate::transport::manifest::{FIXED_LEN, ENTRY_LEN, MAX_MANIFEST_BYTES};
 
-pub const FRAME_MAGIC: &[u8; 4] = b"IODF";
-pub const FRAME_VERSION: u8 = 1;
-pub const HEADER_LEN: usize = 12;
+pub const FRAME_MAGIC: &[u8; 4] = b"IOD2";
+pub const FRAME_VERSION: u8 = 2;
+pub const HEADER_LEN: usize = 16;
 pub const TAG_LEN: usize = 32;
-const MAC_DOMAIN: &[u8] = b"IOD-STEGO-FRAME-v1";
+const MAC_DOMAIN: &[u8] = b"IOD-STEGO-FRAME-v2";
 const META_INFO: &[u8] = b"IOD-STEGO-META-v1";
 
 /// Dedicated metadata-authentication key. No `Debug`/`Clone`/`Serialize` on purpose.
@@ -34,124 +44,176 @@ fn err(code: &str, msg: &str) -> StegoError {
     StegoError::new(code, stage::VERIFY, 422, msg)
 }
 
-fn mac_input(header: &[u8], wire: &[u8]) -> Vec<u8> {
-    let mut m = Vec::with_capacity(MAC_DOMAIN.len() + header.len() + wire.len());
+fn mac_input(authenticated: &[u8]) -> Vec<u8> {
+    let mut m = Vec::with_capacity(MAC_DOMAIN.len() + authenticated.len());
     m.extend_from_slice(MAC_DOMAIN);
-    m.extend_from_slice(header);
-    m.extend_from_slice(wire);
+    m.extend_from_slice(authenticated);
     m
 }
 
-fn mac(key: &MetaKey, header: &[u8], wire: &[u8]) -> [u8; 32] {
-    hmac_sha256(&key.0, &mac_input(header, wire))
+pub fn frame_len_for(manifest_len: usize, wire_len: usize) -> usize {
+    HEADER_LEN + manifest_len + wire_len + TAG_LEN
 }
 
-pub fn frame_len_for(wire_len: usize) -> usize {
-    HEADER_LEN + wire_len + TAG_LEN
+/// Length of the part of the frame that the patches carry (`wire | tag`).
+pub fn payload_section_len(wire_len: usize) -> usize {
+    wire_len + TAG_LEN
 }
 
-pub fn build_frame(key: &MetaKey, alg_id: u8, param: u8, wire: &[u8], max_frame: usize) -> Result<Vec<u8>, StegoError> {
-    let total = frame_len_for(wire.len());
+pub fn build_frame(key: &MetaKey, manifest: &[u8], wire: &[u8], max_frame: usize) -> Result<Vec<u8>, StegoError> {
+    if manifest.len() > MAX_MANIFEST_BYTES || wire.is_empty() || wire.len() > u32::MAX as usize {
+        return Err(StegoError::new("FRAME_MALFORMED", stage::PREPARE, 422, "manifest or payload size out of range"));
+    }
+    let total = frame_len_for(manifest.len(), wire.len());
     if total > max_frame {
         return Err(StegoError::new("FRAME_TOO_LARGE", stage::PREPARE, 413, format!("frame of {total} bytes exceeds the configured maximum of {max_frame}")));
     }
     let mut f = Vec::with_capacity(total);
     f.extend_from_slice(FRAME_MAGIC);
-    f.push(FRAME_VERSION);
-    f.push(alg_id);
-    f.push(param);
-    f.push(0);
+    f.extend_from_slice(&[FRAME_VERSION, 0, 0, 0]);
+    f.extend_from_slice(&(manifest.len() as u32).to_be_bytes());
     f.extend_from_slice(&(wire.len() as u32).to_be_bytes());
-    let tag = mac(key, &f[..HEADER_LEN], wire);
+    f.extend_from_slice(manifest);
     f.extend_from_slice(wire);
+    let tag = hmac_sha256(&key.0, &mac_input(&f));
     f.extend_from_slice(&tag);
     Ok(f)
 }
 
-/// Strictly parse and authenticate. `expect_*` come from the (unauthenticated)
-/// image bootstrap and must match the authenticated header. Returns the AppWire bytes.
-pub fn parse_and_verify<'a>(
-    key: &MetaKey,
-    frame: &'a [u8],
-    expect_alg: u8,
-    expect_param: u8,
-    max_frame: usize,
-) -> Result<&'a [u8], StegoError> {
+/// Strictly parse the frame structure and authenticate it. Returns `(manifest_bytes, wire_bytes)`;
+/// both are authenticated but the manifest still has to pass `manifest::parse`.
+/// Nothing from the frame is interpreted semantically before the MAC verified.
+pub fn parse_and_verify<'a>(key: &MetaKey, frame: &'a [u8], max_frame: usize) -> Result<(&'a [u8], &'a [u8]), StegoError> {
     if frame.len() > max_frame {
         return Err(err("FRAME_TOO_LARGE", "frame exceeds configured maximum"));
     }
-    if frame.len() < HEADER_LEN + TAG_LEN {
-        return Err(err("FRAME_MALFORMED", "frame shorter than header plus tag"));
+    if frame.len() < HEADER_LEN + FIXED_LEN + ENTRY_LEN + 1 + 1 + TAG_LEN {
+        return Err(err("FRAME_MALFORMED", "frame shorter than the minimum frame"));
     }
     if &frame[..4] != FRAME_MAGIC {
-        return Err(err("FRAME_MALFORMED", "bad frame magic"));
+        return Err(err("FRAME_MALFORMED", "bad frame magic (Frame v1 images are not accepted)"));
     }
     if frame[4] != FRAME_VERSION {
         return Err(err("FRAME_VERSION_UNSUPPORTED", "unsupported frame version"));
     }
-    if frame[7] != 0 {
+    if frame[5] != 0 || frame[6] != 0 || frame[7] != 0 {
         return Err(err("FRAME_MALFORMED", "non-zero reserved flags"));
     }
-    let wire_len = u32::from_be_bytes(frame[8..12].try_into().unwrap()) as usize;
-    if frame.len() != frame_len_for(wire_len) {
-        return Err(err("FRAME_MALFORMED", "declared payload length does not match frame length"));
+    let mlen = u32::from_be_bytes(frame[8..12].try_into().unwrap()) as usize;
+    let wlen = u32::from_be_bytes(frame[12..16].try_into().unwrap()) as usize;
+    if mlen > MAX_MANIFEST_BYTES || wlen == 0 {
+        return Err(err("FRAME_MALFORMED", "declared manifest or payload length out of range"));
     }
-    let (header, rest) = frame.split_at(HEADER_LEN);
-    let (wire, tag) = rest.split_at(wire_len);
-    // Authenticate FIRST; only then trust any header field semantically.
-    if !hmac_verify(&key.0, &mac_input(header, wire), tag) {
-        return Err(err("FRAME_AUTH_FAILED", "frame metadata authentication failed"));
+    // checked arithmetic: both lengths are attacker-controlled
+    let expect = HEADER_LEN.checked_add(mlen).and_then(|x| x.checked_add(wlen)).and_then(|x| x.checked_add(TAG_LEN));
+    if expect != Some(frame.len()) {
+        return Err(err("FRAME_MALFORMED", "declared lengths do not match the frame length"));
     }
-    if frame[5] != expect_alg || frame[6] != expect_param {
-        return Err(err("FRAME_ALGORITHM_MISMATCH", "authenticated algorithm differs from the image bootstrap"));
+    let (authed, tag) = frame.split_at(frame.len() - TAG_LEN);
+    if !hmac_verify(&key.0, &mac_input(authed), tag) {
+        return Err(err("FRAME_AUTH_FAILED", "frame authentication failed (manifest or payload modified, or wrong channel/direction)"));
     }
-    Ok(wire)
+    Ok((&authed[HEADER_LEN..HEADER_LEN + mlen], &authed[HEADER_LEN + mlen..]))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::transport::manifest;
+
     fn key(b: u8, dir: u8) -> MetaKey {
         derive_meta_key(&AeadKey([b; 32]), &[5; 16], dir)
     }
-    #[test]
-    fn build_parse_round_trip() {
-        let k = key(1, 1);
-        let f = build_frame(&k, 3, 0, b"wire-bytes", 4096).unwrap();
-        assert_eq!(f.len(), frame_len_for(10));
-        assert_eq!(parse_and_verify(&k, &f, 3, 0, 4096).unwrap(), b"wire-bytes");
+    fn man(payload: u32) -> Vec<u8> {
+        manifest::sample(64, 64, 1, payload, &[(1, 0), (6, 4)]).encode()
     }
+
+    #[test]
+    fn build_parse_round_trip_and_layout() {
+        let k = key(1, 1);
+        let m = man(10 + 32);
+        let f = build_frame(&k, &m, b"wire-bytes", 4096).unwrap();
+        assert_eq!(f.len(), frame_len_for(m.len(), 10));
+        assert_eq!(&f[..8], b"IOD2\x02\x00\x00\x00");
+        assert_eq!(u32::from_be_bytes(f[8..12].try_into().unwrap()) as usize, m.len());
+        assert_eq!(u32::from_be_bytes(f[12..16].try_into().unwrap()), 10);
+        let (pm, w) = parse_and_verify(&k, &f, 4096).unwrap();
+        assert_eq!(pm, &m[..]);
+        assert_eq!(w, b"wire-bytes");
+        assert_eq!(payload_section_len(10), 42);
+    }
+
+    #[test]
+    fn test_vector_tag_is_hmac_over_domain_header_manifest_wire() {
+        let k = key(1, 1);
+        let m = man(40);
+        let f = build_frame(&k, &m, &[0xAB; 8], 4096).unwrap();
+        let mut input = b"IOD-STEGO-FRAME-v2".to_vec();
+        input.extend_from_slice(&f[..f.len() - 32]);
+        assert_eq!(&f[f.len() - 32..], &hmac_sha256(&k.0, &input)[..]);
+    }
+
     #[test]
     fn every_single_byte_flip_is_rejected() {
         let k = key(1, 1);
-        let f = build_frame(&k, 2, 0, &[0xAB; 40], 4096).unwrap();
+        let m = man(72);
+        let f = build_frame(&k, &m, &[0xAB; 40], 4096).unwrap();
         for i in 0..f.len() {
-            let mut t = f.clone();
-            t[i] ^= 0x01;
-            assert!(parse_and_verify(&k, &t, 2, 0, 4096).is_err(), "flip at {i} accepted");
+            for bit in [0x01u8, 0x80] {
+                let mut t = f.clone();
+                t[i] ^= bit;
+                assert!(parse_and_verify(&k, &t, 4096).is_err(), "flip at {i} accepted");
+            }
         }
     }
+
+    #[test]
+    fn manifest_field_changes_fail_authentication() {
+        let k = key(1, 1);
+        let m = man(72);
+        let f = build_frame(&k, &m, &[0xAB; 40], 4096).unwrap();
+        let e1 = HEADER_LEN + manifest::FIXED_LEN + manifest::ENTRY_LEN;
+        // algorithm id, parameter, offset, length, width, a map label
+        for off in [e1, e1 + 1, e1 + 7, e1 + 11, HEADER_LEN + 9, HEADER_LEN + m.len() - 2] {
+            let mut t = f.clone();
+            t[off] ^= 0x01;
+            assert_eq!(parse_and_verify(&k, &t, 4096).unwrap_err().code, "FRAME_AUTH_FAILED", "offset {off}");
+        }
+    }
+
     #[test]
     fn wrong_key_direction_or_channel_fails() {
-        let f = build_frame(&key(1, 1), 1, 0, b"x", 4096).unwrap();
-        assert_eq!(parse_and_verify(&key(2, 1), &f, 1, 0, 4096).unwrap_err().code, "FRAME_AUTH_FAILED");
-        assert_eq!(parse_and_verify(&key(1, 2), &f, 1, 0, 4096).unwrap_err().code, "FRAME_AUTH_FAILED");
+        let m = man(33);
+        let f = build_frame(&key(1, 1), &m, b"x", 4096).unwrap();
+        assert_eq!(parse_and_verify(&key(2, 1), &f, 4096).unwrap_err().code, "FRAME_AUTH_FAILED");
+        assert_eq!(parse_and_verify(&key(1, 2), &f, 4096).unwrap_err().code, "FRAME_AUTH_FAILED");
         let other_ch = derive_meta_key(&AeadKey([1; 32]), &[6; 16], 1);
-        assert_eq!(parse_and_verify(&other_ch, &f, 1, 0, 4096).unwrap_err().code, "FRAME_AUTH_FAILED");
+        assert_eq!(parse_and_verify(&other_ch, &f, 4096).unwrap_err().code, "FRAME_AUTH_FAILED");
     }
+
     #[test]
-    fn bootstrap_mismatch_truncation_and_limits() {
+    fn structure_limits_versions_and_v1_frames() {
         let k = key(1, 1);
-        let f = build_frame(&k, 4, 6, b"abc", 4096).unwrap();
-        assert_eq!(parse_and_verify(&k, &f, 5, 6, 4096).unwrap_err().code, "FRAME_ALGORITHM_MISMATCH");
-        assert_eq!(parse_and_verify(&k, &f, 4, 7, 4096).unwrap_err().code, "FRAME_ALGORITHM_MISMATCH");
-        assert!(parse_and_verify(&k, &f[..f.len() - 1], 4, 6, 4096).is_err());
-        assert!(parse_and_verify(&k, &f, 4, 6, 20).is_err());
-        assert_eq!(build_frame(&k, 1, 0, &[0; 100], 50).unwrap_err().code, "FRAME_TOO_LARGE");
+        let m = man(35);
+        let f = build_frame(&k, &m, b"abc", 4096).unwrap();
+        assert!(parse_and_verify(&k, &f[..f.len() - 1], 4096).is_err());
+        assert_eq!(parse_and_verify(&k, &f, 50).unwrap_err().code, "FRAME_TOO_LARGE");
+        assert_eq!(build_frame(&k, &m, &[0; 100], 50).unwrap_err().code, "FRAME_TOO_LARGE");
+        assert_eq!(build_frame(&k, &m, &[], 4096).unwrap_err().code, "FRAME_MALFORMED");
         let mut v = f.clone();
-        v[4] = 9;
-        assert_eq!(parse_and_verify(&k, &v, 4, 6, 4096).unwrap_err().code, "FRAME_VERSION_UNSUPPORTED");
+        v[4] = 1;
+        assert_eq!(parse_and_verify(&k, &v, 4096).unwrap_err().code, "FRAME_VERSION_UNSUPPORTED");
+        let mut v1 = f.clone();
+        v1[..4].copy_from_slice(b"IODF");
+        assert_eq!(parse_and_verify(&k, &v1, 4096).unwrap_err().code, "FRAME_MALFORMED");
+        let mut big = f.clone();
+        big[8..12].copy_from_slice(&0xFFFF_FFF0u32.to_be_bytes());
+        assert_eq!(parse_and_verify(&k, &big, 4096).unwrap_err().code, "FRAME_MALFORMED");
+        let mut fl = f.clone();
+        fl[6] = 1;
+        assert_eq!(parse_and_verify(&k, &fl, 4096).unwrap_err().code, "FRAME_MALFORMED");
     }
+
     #[test]
     fn meta_key_is_not_the_aead_key() {
         let a = AeadKey([7; 32]);

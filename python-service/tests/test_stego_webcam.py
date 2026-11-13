@@ -32,16 +32,19 @@ def test_upload_roundtrip_and_use_as_cover(store):
     assert store.exists(c["artifact_id"], "cover")
     stored, _ = images.decode_png(store.read(c["artifact_id"], "cover"), LIM)
     assert np.array_equal(stored, arr)  # lossless, never resized
-    an = service.analyze({"frame_bytes": 200, "cover": {"source": "browser_webcam", "cover_id": c["artifact_id"]}}, store)
+    an = service.plan({"payload_bytes": 200, "cover": {"source": "browser_webcam", "cover_id": c["artifact_id"]}}, store)
     assert an["cover"]["source"] == "browser_webcam" and an["cover"]["artifact_id"] == c["artifact_id"]
-    assert an["selection"]["selected"]
+    assert an["plan"]["used_patches"] >= 1 and store.exists(c["artifact_id"], "seg")
 
 
 def test_encode_with_uploaded_cover_keeps_cover_and_label(store):
     arr = natural_cover(128, 128)
     cid = service.upload_cover({"image_b64": b64png(arr)}, store)["cover"]["artifact_id"]
-    res = service.encode({"frame_b64": base64.b64encode(b"x" * 300).decode(), "algorithm": "lsb_matching",
-                          "cover": {"source": "browser_webcam", "cover_id": cid}}, store)
+    spec = {"source": "browser_webcam", "cover_id": cid}
+    pl = service.plan({"payload_bytes": 300, "cover": spec}, store)
+    man = base64.b64decode(pl["manifest_b64"])
+    frame = b"IOD2" + bytes([2, 0, 0, 0]) + len(man).to_bytes(4, "big") + (268).to_bytes(4, "big") + man + b"x" * 300
+    res = service.encode({"frame_b64": base64.b64encode(frame).decode(), "cover": spec}, store)
     assert res["cover"]["source"] == "browser_webcam" and res["cover"]["artifact_id"] == cid
     assert store.exists(cid, "cover") and store.exists(res["artifact_id"], "stego")
 

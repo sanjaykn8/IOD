@@ -27,7 +27,7 @@ cd node-server
 npm install
 npm run build      # tsc -> dist/
 
-# Python RAG service
+# Python image service
 cd python-service
 python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt   # venv/Scripts/pip.exe on Windows
@@ -47,7 +47,7 @@ IOD_DB_PATH=iod_simulation.db IOD_BIND_ADDR=127.0.0.1:8787 ./target/release/iod-
 # Windows (PowerShell):
 #   $env:IOD_DB_PATH="iod_simulation.db"; $env:IOD_BIND_ADDR="127.0.0.1:8787"; .\target\release\iod-server.exe
 
-# Terminal 2 — Python RAG service
+# Terminal 2 — Python image service
 cd python-service
 ./venv/bin/python src/app.py            # venv\Scripts\python.exe src\app.py on Windows
 
@@ -91,3 +91,22 @@ tamper/negative case.
 ## Regenerating test vectors / running benchmarks
 
 See `docs/testing.md` and `docs/benchmarking.md`.
+
+## Environment variables of the patch-wise steganography transport
+
+Both processes must see the **same artifact directory** (the run scripts export one absolute path for both; when you
+start the processes by hand, set `IOD_STEGO_ARTIFACT_DIR` to the same absolute path in the Rust and the Python terminal).
+
+| Variable | Process | Default | Meaning |
+|---|---|---|---|
+| `IOD_STEGO_ARTIFACT_DIR` | Rust, Python | `./data/stego-artifacts` (relative to each process!) | shared directory for cover/stego/inspection PNGs |
+| `IOD_PYTHON_URL` | Rust | `http://127.0.0.1:5001` | image service (loopback only unless `IOD_STEGO_ALLOW_NONLOOPBACK=1`) |
+| `IOD_PYTHON_HOST`, `IOD_PYTHON_PORT` | Python | `127.0.0.1`, `5001` | bind address |
+| `IOD_STEGO_MAX_FRAME_BYTES`, `IOD_STEGO_MAX_WIDTH`, `IOD_STEGO_MAX_HEIGHT`, `IOD_STEGO_HTTP_TIMEOUT_MS` | Rust | see `transport/config.rs` | limits sent with every request |
+| `IOD_STEGO_SEG_*`, `IOD_STEGO_TARGET_CHUNK_BYTES`, `IOD_STEGO_MAX_REPLANS` | Rust | see `patchwise-transport.md` section 7 | segmentation settings, chunk size, re-plan bound |
+| `IOD_STEGO_CAMERA` (`auto`/`disabled`), `IOD_STEGO_CAMERA_INDEX`, `IOD_STEGO_CAMERA_TIMEOUT_S` | Python | `auto` | server-side webcam; without one a procedural cover is used |
+| `IOD_STEGO_RETENTION_MAX_ARTIFACTS` | Python | `0` (keep all) | artifact retention |
+
+No variable carries a key or a secret; do not put secrets in a `.env` file for this project (none is needed).
+The knowledge base is the source-controlled file `python-service/src/stego/kb/algorithm_kb.json`; it is validated when
+the Python service starts and the service refuses to start with an invalid file.

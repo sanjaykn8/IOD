@@ -75,8 +75,28 @@ TOTAL K1-K3 (sequential, no network)                 avg=    2.2090 ms  p50=    
 Reminder: host-simulation measurements only; no network, no embedded hardware.
 ```
 
-## Steganography transport benchmark (host simulation, 2026-10-29)
-Files: `benchmark-results-stego-host-simulation.txt`, `benchmark-results-stego-natural-cover.json`. 200 transactions: 180 delivered, 20 DCT refusals on the B/W cover. End-to-end p50 ≈ 348–364 ms, p95 ≈ 377–404 ms (measured, this host, includes PNG write/read and Python calls). PSNR ≈ 69 dB (LSB family), 49 dB (PVD), 53.6 dB (DCT). Reports give percentiles only when n ≥ 20; estimated costs in the selector are a static model and are labelled estimated, never mixed with measured timings.
+## Patch-wise steganography transport (development container, 2026-11-13)
 
-## Ten-algorithm measurements (host simulation, 2026-10-30)
-From `docs/samples/learning-comparison-all-ten.md` (256x256 RGB, 112-byte payload, one run, measured with perf_counter): embedding 0.15 ms (LSB replacement) to 188 ms (HUGO; WOW 95 ms, S-UNIWARD 85 ms incl. cost maps), extraction 2.4-8.4 ms; PSNR 52.5 dB (DCT-SVD) to 76.6 dB (WOW). Single runs, no percentiles (n < 20). Operational selection on a 640x480 RGB cover with ten trial encodes (single runs): 2.2 s (150-byte frame), 2.9 s (400 B), 4.4 s (1 KiB) on this host.
+Source: `benchmark-results-patchwise.json` (`POST /api/stego/benchmark`, 10 iterations × message sizes 64 / 256 / 1024 bytes
+per cover, alternating directions, release build, single machine, loopback HTTP). 60 transactions, 60 delivered.
+
+| Cover | Patches (mean) | Used (mean) | PSNR mean | SSIM mean | plan p50 / p95 | embed p50 / p95 | extract p50 | total p50 / p95 |
+|---|---|---|---|---|---|---|---|---|
+| 320×240 RGB varied test cover (uploaded) | 16 | 9.3 | 63.3 dB | 0.99934 | 143 / 237 ms | 73 / 153 ms | 15.7 ms | 314 / 494 ms |
+| 640×480 gray procedural fallback | 9.0 | 6.9 | 55.7 dB | 0.99566 | 189 / 273 ms | 22 / 105 ms | 26.5 ms | 471 / 646 ms |
+
+Algorithms actually used (patches, payload bytes): varied cover — `lsb_matching` 200 / 11 900, `wow` 60 / 3 080, `dct` 10 / 700,
+`s_uniward` 10 / 700; procedural cover — `dwt` 186 / 13 835, `s_uniward` 17 / 2 016, `lsb_matching` 4 / 529 (the procedural
+cover is largely saturated black/white, which the knowledge base maps to the DWT entry). Rust-side work (AEAD seal/open, MAC
+and manifest verification) is below 0.2 ms per transaction; the time is image processing in Python (planning includes
+segmentation, feature extraction, ten capacity measurements per patch and a dry-run embedding; the procedural cover's
+`capture` step of ~125 ms is its generation). p95 values come from n = 30 per cover.
+
+These are measurements of this implementation on this host, not of UAV hardware or a radio link, and they say nothing
+about detectability.
+
+## Ten algorithms on one patch (educational workbench, 2026-11-13)
+From `docs/samples/learning-patch-comparison-all-ten.md` (256×256 RGB sample, largest patch = 25 088 pixels, 112-byte AEAD
+payload, single run): embedding 0.17 ms (LSB replacement) to 149 ms (HUGO; WOW and S-UNIWARD ≈ 60 ms incl. cost maps),
+extraction 1.8–3.6 ms; whole-image PSNR 53.5 dB (PVD) to 79.3 dB (S-UNIWARD); `dct_svd` was rejected for capacity (392 bits
+in that patch). Single runs, not statistics.

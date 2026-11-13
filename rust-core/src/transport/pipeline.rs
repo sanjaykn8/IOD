@@ -1,9 +1,13 @@
-//! End-to-end image-transport transactions (docs/stego-implementation-note.md).
+//! End-to-end patch-wise image-transport transactions (docs/patchwise-transport.md).
 //!
-//! seal (Rust) -> select+cover (Python, deterministic) -> frame+MAC (Rust)
-//! -> embed + PNG save (Python) -> [handoff by artifact id] -> local read
-//! -> extract (Python) -> strict parse + MAC (Rust) -> channel/replay/AEAD (Rust)
-//! -> explanation (Python RAG, explanation only).
+//! seal (Rust) -> plan: cover + adaptive segmentation + per-patch knowledge-base selection +
+//! chunk allocation (Python; receives only the payload LENGTH) -> manifest validation +
+//! Frame v2 + MAC over manifest and payload (Rust) -> patch embedding + PNG save + re-read
+//! (Python) -> [handoff by artifact id] -> local read -> extraction from the image's own
+//! bootstrap + manifest, no re-segmentation (Python) -> frame MAC, strict manifest parse,
+//! AppWire, channel/direction/replay, AEAD (Rust).
+//!
+//! No LLM, no explanation stage, no message priority, no single-algorithm or plaintext fallback.
 //!
 //! The global state mutex is never held across a backend call.
 //! Everything fails closed with a stable error code and a persisted event.
@@ -12,11 +16,11 @@ use crate::api::state::SimulationState;
 use crate::crypto::aead::AeadKey;
 use crate::protocol::entities::SessionState;
 use crate::protocol::secure_messaging::{self, SecureMessagingError};
-use crate::transport::backend::{is_artifact_id, StegoBackend, ALGS};
+use crate::transport::backend::{is_artifact_id, StegoBackend};
 use crate::transport::config::StegoConfig;
 use crate::transport::error::{stage, StegoError};
-use crate::transport::explain;
 use crate::transport::frame;
+use crate::transport::manifest::{self, Manifest};
 use crate::transport::wire;
 use crate::transport::b64;
 use serde_json::{json, Map, Value};
@@ -24,7 +28,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-pub const TRANSPORT_FORMAT_VERSION: &str = "frame-v1/appwire-v1/bootstrap-v1";
+pub const TRANSPORT_FORMAT_VERSION: &str = "frame-v2/appwire-v1/bootstrap-v2/manifest-v1";
 const MAX_ARTIFACT_FILE: u64 = 64 * 1024 * 1024;
 
 pub struct TxFailure {
@@ -43,9 +47,7 @@ pub struct MessageRequest {
     pub session_id: String,
     pub from_id: String,
     pub plaintext: Vec<u8>,
-    pub algorithm: Option<String>,
     pub cover: Value,
-    pub priority: String,
     pub origin: &'static str,
 }
 
@@ -113,13 +115,16 @@ struct Sent {
     seq: u32,
     from_role: &'static str,
     to_role: &'static str,
-    selection: Value,
+    plan: Value,
+    inspection: Value,
+    manifest: Value,
     cover: Value,
     stego: Value,
     embed: Value,
     frame_sha: String,
     frame_len: usize,
     wire_len: usize,
+    manifest_len: usize,
     file_sha: String,
     file_size: u64,
 }
@@ -146,14 +151,92 @@ fn read_artifact_file(cfg: &StegoConfig, id: &str, kind_suffix: &str, st: &'stat
     std::fs::read(&path).map_err(|_| StegoError::new("ARTIFACT_NOT_FOUND", st, 404, "saved image could not be read"))
 }
 
-/// Raw PNG bytes for the dashboard preview (id validated, fixed suffixes only).
+/// Raw PNG bytes for the dashboard (id validated, fixed suffixes only).
 pub fn artifact_png(cfg: &StegoConfig, id: &str, kind: &str) -> Result<Vec<u8>, StegoError> {
     let suffix = match kind {
         "stego" => ".png",
         "cover" => ".cover.png",
-        _ => return Err(StegoError::new("INVALID_REQUEST", stage::READ, 400, "kind must be stego or cover")),
+        "seg" => ".seg.png",
+        "labels" => ".labels.png",
+        "diff" => ".diff.png",
+        _ => return Err(StegoError::new("INVALID_REQUEST", stage::READ, 400, "kind must be stego, cover, seg, labels or diff")),
     };
     read_artifact_file(cfg, id, suffix, stage::READ)
+}
+
+fn malformed(st: &'static str, msg: &str) -> StegoError {
+    StegoError::new("BACKEND_MALFORMED_RESPONSE", st, 502, msg)
+}
+
+/// What the plan request may contain: the payload LENGTH and cover/segmentation parameters -- never bytes or keys.
+fn plan_request(h: &Handles, payload_bytes: usize, cover: &Value, min_level: u32) -> Value {
+    json!({"payload_bytes": payload_bytes, "cover": cover, "limits": h.cfg.limits(), "segmentation": h.cfg.segmentation,
+           "min_level": min_level, "target_chunk_bytes": h.cfg.target_chunk_bytes})
+}
+
+struct Planned {
+    manifest_bytes: Vec<u8>,
+    manifest: Manifest,
+    plan: Value,
+    cover: Value,
+    inspection: Value,
+    timings: Value,
+    level: u32,
+}
+
+/// Decode and independently validate what the image service planned. The manifest is not trusted:
+/// it must parse strictly, describe exactly this payload and this cover, and agree with the diagnostics.
+fn accept_plan(h: &Handles, resp: &Value, payload_bytes: usize) -> Result<Planned, StegoError> {
+    let mb = b64::decode(need_str(resp, "manifest_b64", stage::PLAN)?, manifest::MAX_MANIFEST_BYTES).map_err(|m| malformed(stage::PLAN, &m))?;
+    let man = manifest::parse(&mb, h.cfg.max_width.max(h.cfg.max_height)).map_err(|e| restage(e, stage::PLAN))?;
+    let cover = resp.get("cover").cloned().unwrap_or(Value::Null);
+    let plan = resp.get("plan").cloned().unwrap_or(Value::Null);
+    if man.payload_len as usize != payload_bytes {
+        return Err(StegoError::new("MANIFEST_INVALID", stage::PLAN, 422, "planned manifest does not cover the sealed payload length"));
+    }
+    if man.width as u32 > h.cfg.max_width || man.height as u32 > h.cfg.max_height {
+        return Err(StegoError::new("MANIFEST_INVALID", stage::PLAN, 422, "planned image exceeds the configured dimensions"));
+    }
+    if cover["width"].as_u64() != Some(man.width as u64) || cover["height"].as_u64() != Some(man.height as u64) || cover["channels"].as_u64() != Some(man.channels as u64) {
+        return Err(StegoError::new("MANIFEST_INVALID", stage::PLAN, 422, "manifest geometry differs from the reported cover"));
+    }
+    let cover_id = need_str(&cover, "artifact_id", stage::PLAN)?;
+    if !is_artifact_id(cover_id) {
+        return Err(malformed(stage::PLAN, "cover artifact id malformed"));
+    }
+    if plan["patch_count"].as_u64() != Some(man.patches.len() as u64) || plan["used_patches"].as_u64() != Some(man.used().count() as u64) {
+        return Err(malformed(stage::PLAN, "plan diagnostics disagree with the manifest"));
+    }
+    let level = plan["refinement_level"].as_u64().filter(|l| *l <= 6).ok_or_else(|| malformed(stage::PLAN, "refinement level missing"))? as u32;
+    Ok(Planned { manifest_bytes: mb, manifest: man, plan, cover, inspection: resp.get("inspection").cloned().unwrap_or(Value::Null),
+                 timings: resp.get("timings_ms").cloned().unwrap_or(json!({})), level })
+}
+
+/// Per-patch record kept in the persisted event (the full diagnostics go to the API response only).
+fn compact_patches(plan: &Value) -> Value {
+    let rows: Vec<Value> = plan["patches"].as_array().map(|a| a.iter().map(|p| {
+        let r = &p["retrieval"];
+        let top = r["candidates"].as_array().and_then(|c| c.iter().find(|c| c["algorithm"] == p["selected"]));
+        json!({
+            "patch_id": p["patch_id"], "used": p["used"], "pixels": p["features"]["pixels"], "usable_pixels": p["features"]["usable_pixels"],
+            "gradient_mean": p["features"]["gradient_mean"], "variance": p["features"]["variance"], "entropy": p["features"]["entropy"],
+            "algorithm": p["selected"], "alg_id": p["alg_id"], "param": p["param"],
+            "payload_offset": p["payload_offset"], "payload_length": p["payload_length"],
+            "capacity_bytes": p["measured_capacity_bytes"], "kb_entry": top.map(|c| c["kb_entry"].clone()).unwrap_or(Value::Null),
+            "bm25": top.map(|c| c["bm25"].clone()).unwrap_or(Value::Null), "query_terms": r["query_terms"], "ranking": r["ranking"],
+        })
+    }).collect()).unwrap_or_default();
+    Value::Array(rows)
+}
+
+fn algorithms_json(man: &Manifest) -> (Value, Option<&'static str>) {
+    let used = man.algorithms_used();
+    let dominant = used.iter().max_by(|a, b| a.2.cmp(&b.2).then(b.0.cmp(a.0))).map(|a| a.0);
+    let mut m = Map::new();
+    for (name, patches, bytes) in &used {
+        m.insert(name.to_string(), json!({"patches": patches, "payload_bytes": bytes}));
+    }
+    (Value::Object(m), dominant)
 }
 
 fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &MessageRequest) -> Result<Sent, StegoError> {
@@ -201,107 +284,126 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     let msg = secure_messaging::seal_message(&key, tag, direction, seq, &req.plaintext);
     let wire_bytes = wire::encode_app_wire(&msg);
     let meta = frame::derive_meta_key(&key, &tag, direction);
-    let frame_len = frame::frame_len_for(wire_bytes.len());
+    let payload_bytes = frame::payload_section_len(wire_bytes.len());
+    let min_frame = frame::frame_len_for(manifest::FIXED_LEN + manifest::ENTRY_LEN + 2, wire_bytes.len());
     let ms = tx.ms(t);
     tx.timing("aead_seal", ms);
     tx.set("wire_bytes", json!(wire_bytes.len()));
-    tx.set("frame_bytes", json!(frame_len));
-    if frame_len > h.cfg.max_frame_bytes {
-        let e = StegoError::new("FRAME_TOO_LARGE", stage::AEAD_SEAL, 413, format!("sealed frame of {frame_len} bytes exceeds the configured maximum of {} bytes", h.cfg.max_frame_bytes));
+    tx.set("payload_bytes", json!(payload_bytes));
+    if min_frame > h.cfg.max_frame_bytes {
+        let e = StegoError::new("FRAME_TOO_LARGE", stage::AEAD_SEAL, 413, format!("sealed message needs a frame of at least {min_frame} bytes, above the configured maximum of {} bytes", h.cfg.max_frame_bytes));
         tx.fail("aead_seal", ms, &e);
         return Err(e);
     }
-    tx.ok("aead_seal", ms, format!("sealed; frame will be {frame_len} bytes"));
+    tx.ok("aead_seal", ms, format!("sealed; {payload_bytes} bytes (AppWire + frame tag) to distribute over patches"));
 
-    // ---- cover acquisition + deterministic selection (Python; no keys, only the frame length)
-    let t = Instant::now();
-    let mut areq = json!({"frame_bytes": frame_len, "cover": req.cover, "priority": req.priority, "policy": h.cfg.policy, "limits": h.cfg.limits()});
-    if let Some(a) = &req.algorithm {
-        areq["algorithm"] = json!(a);
-    }
-    let analysis = h.backend.analyze(&areq).map_err(|e| restage(e, stage::SELECTOR));
-    let analysis = match analysis {
-        Ok(a) => a,
-        Err(e) => {
-            let ms = tx.ms(t);
-            tx.fail("selector", ms, &e);
-            if let Some(d) = &e.details {
-                if let Some(c) = d.get("candidates") {
-                    tx.set("candidates", c.clone());
+    // ---- plan -> validate -> frame + MAC -> embed, with a bounded re-plan at a coarser segmentation
+    let mut cover_spec = req.cover.clone();
+    let mut min_level: u32 = 0;
+    let mut replans: Vec<Value> = Vec::new();
+    let mut first_cover: Option<Value> = None;
+    let (planned, frame_bytes, enc, plan_wall, embed_wall) = loop {
+        let t = Instant::now();
+        let resp = h.backend.plan(&plan_request(h, payload_bytes, &cover_spec, min_level)).map_err(|e| restage(e, stage::PLAN));
+        let planned = resp.and_then(|r| accept_plan(h, &r, payload_bytes));
+        let planned = match planned {
+            Ok(p) => p,
+            Err(e) => {
+                let ms = tx.ms(t);
+                tx.fail("plan", ms, &e);
+                if let Some(a) = e.details.as_ref().and_then(|d| d.get("attempts")) {
+                    tx.set("plan_attempts", a.clone());
                 }
+                tx.set("replans", json!(replans));
+                return Err(e);
             }
-            return Err(e);
+        };
+        let plan_wall = tx.ms(t);
+        if first_cover.is_none() {
+            first_cover = Some(planned.cover.clone());
+        }
+        // Frame v2: header | manifest | AppWire | HMAC (the tag covers the manifest and the payload)
+        let frame_bytes = match frame::build_frame(&meta, &planned.manifest_bytes, &wire_bytes, h.cfg.max_frame_bytes) {
+            Ok(f) => f,
+            Err(e) => {
+                tx.fail("plan", plan_wall, &e);
+                return Err(e);
+            }
+        };
+        let cover_id = planned.cover["artifact_id"].as_str().unwrap_or("").to_string();
+        let t = Instant::now();
+        let ereq = json!({"frame_b64": b64::encode(&frame_bytes), "cover": {"source": "test_cover", "test_cover_id": cover_id}, "limits": h.cfg.limits()});
+        match h.backend.encode(&ereq).map_err(|e| restage(e, stage::EMBED)) {
+            Ok(enc) => break (planned, frame_bytes, enc, plan_wall, tx.ms(t)),
+            Err(e) if e.code == "PATCH_EMBED_FAILED" && (replans.len() as u32) < h.cfg.max_replans => {
+                // A patch could not carry its chunk with the selected algorithm. There is no fallback to
+                // another algorithm: the same cover is re-planned with a coarser segmentation (bounded).
+                replans.push(json!({"level": planned.level, "error_code": e.code, "details": e.details, "patches": planned.manifest.patches.len()}));
+                min_level = planned.level + 1;
+                cover_spec = json!({"source": "test_cover", "test_cover_id": cover_id});
+                continue;
+            }
+            Err(e) => {
+                let ms = tx.ms(t);
+                tx.ok("plan", plan_wall, format!("{} patches planned at level {}", planned.manifest.patches.len(), planned.level));
+                tx.fail("embed", ms, &e);
+                tx.set("replans", json!(replans));
+                return Err(e);
+            }
         }
     };
-    let wall = tx.ms(t);
-    let selection = analysis.get("selection").cloned().unwrap_or(Value::Null);
-    let cover = analysis.get("cover").cloned().unwrap_or(Value::Null);
-    let selected = need_str(&selection, "selected", stage::SELECTOR)?.to_string();
-    let alg_idx = ALGS.iter().position(|a| *a == selected).ok_or_else(|| StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::SELECTOR, 502, "backend selected an unknown algorithm"))?;
-    let alg_id = (alg_idx + 1) as u8;
-    if selection["selected_alg_id"].as_u64() != Some(alg_id as u64) {
-        return Err(StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::SELECTOR, 502, "selected algorithm id does not match its name"));
+    let man = &planned.manifest;
+    let mut cover = first_cover.unwrap_or(Value::Null);
+    // a re-plan reuses the stored cover; keep the original acquisition labels (source / fallback reason)
+    for k in ["artifact_id", "width", "height", "mode", "channels", "sha256"] {
+        cover[k] = planned.cover[k].clone();
     }
-    let param = selection["selected_param"].as_u64().unwrap_or(0);
-    if param > 255 {
-        return Err(StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::SELECTOR, 502, "selected parameter out of range"));
-    }
-    let cover_id = need_str(&cover, "artifact_id", stage::SELECTOR)?.to_string();
-    if !is_artifact_id(&cover_id) {
-        return Err(StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::SELECTOR, 502, "cover artifact id malformed"));
-    }
-    let atim = analysis.get("timings_ms").cloned().unwrap_or(json!({}));
-    tx.timing("capture", atim["capture"].as_f64().unwrap_or(0.0));
-    tx.timing("select", atim["select"].as_f64().unwrap_or(0.0));
-    tx.set("selection_policy_version", selection["policy_version"].clone());
-    tx.set("selection_mode", selection["mode"].clone());
-    tx.set("selection_reason_code", selection["reason_code"].clone());
-    tx.set("candidates", selection["candidates"].clone());
-    tx.set("algorithm", json!(selected));
-    tx.set("param", json!(param));
+    let (algs, dominant) = algorithms_json(man);
+    tx.timing("capture", planned.timings["capture"].as_f64().unwrap_or(0.0));
+    tx.timing("plan", planned.timings["plan"].as_f64().unwrap_or(0.0));
+    tx.set("segmentation_version", planned.plan["segmentation"]["version"].clone());
+    tx.set("selector_version", planned.plan["selector_version"].clone());
+    tx.set("kb_version", planned.plan["kb_version"].clone());
+    tx.set("refinement_level", json!(planned.level));
+    tx.set("replans", json!(replans));
+    tx.set("plan_attempts", planned.plan["attempts"].clone());
+    tx.set("patch_count", json!(man.patches.len()));
+    tx.set("used_patches", json!(man.used().count()));
+    tx.set("reserved_rows", json!(man.reserved_rows));
+    tx.set("manifest_bytes", json!(planned.manifest_bytes.len()));
+    tx.set("algorithms_used", algs);
+    tx.set("algorithm", json!(dominant));
+    tx.set("patches", compact_patches(&planned.plan));
     tx.set("cover_source", cover["source"].clone());
     tx.set("cover_fallback_reason", cover["fallback_reason"].clone());
     for k in ["width", "height", "mode", "channels"] {
         tx.set(k, cover[k].clone());
     }
     tx.set("cover_sha256", cover["sha256"].clone());
-    tx.ok("selector", wall, format!("{selected} selected ({})", selection["reason_code"].as_str().unwrap_or("?")));
+    tx.set("cover_artifact_id", cover["artifact_id"].clone());
+    tx.ok("plan", plan_wall, format!("{} patches ({} used) at refinement level {}; manifest {} bytes validated", man.patches.len(), man.used().count(), planned.level, planned.manifest_bytes.len()));
 
-    // ---- frame + metadata MAC (Rust)
-    let frame_bytes = frame::build_frame(&meta, alg_id, param as u8, &wire_bytes, h.cfg.max_frame_bytes)?;
     let frame_sha = sha_hex(&frame_bytes);
+    tx.set("frame_bytes", json!(frame_bytes.len()));
     tx.set("frame_sha256_prefix", json!(&frame_sha[..16]));
 
-    // ---- embed + save PNG (Python)
-    let t = Instant::now();
-    let ereq = json!({
-        "frame_b64": b64::encode(&frame_bytes),
-        "cover": {"source": "test_cover", "test_cover_id": cover_id},
-        "algorithm": selected, "param": param, "priority": req.priority, "policy": h.cfg.policy, "limits": h.cfg.limits(),
-    });
-    let enc = h.backend.encode(&ereq).map_err(|e| restage(e, stage::EMBED));
-    let enc = match enc {
-        Ok(v) => v,
-        Err(e) => {
-            let ms = tx.ms(t);
-            tx.fail("embed", ms, &e);
-            return Err(e);
-        }
-    };
-    let wall = tx.ms(t);
     let artifact_id = need_str(&enc, "artifact_id", stage::EMBED)?.to_string();
     if !is_artifact_id(&artifact_id) {
-        return Err(StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::EMBED, 502, "artifact id malformed"));
+        return Err(malformed(stage::EMBED, "artifact id malformed"));
     }
     let embed = enc.get("embed").cloned().unwrap_or(Value::Null);
     let stego = enc.get("stego").cloned().unwrap_or(Value::Null);
-    if embed["frame_len"].as_u64() != Some(frame_bytes.len() as u64) || embed["alg_id"].as_u64() != Some(alg_id as u64) {
-        return Err(StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::EMBED, 502, "embed report disagrees with the requested frame/algorithm"));
+    if embed["frame_len"].as_u64() != Some(frame_bytes.len() as u64) || embed["used_patches"].as_u64() != Some(man.used().count() as u64)
+        || embed["exact_frame_recovery_from_saved_png"].as_bool() != Some(true)
+    {
+        let e = malformed(stage::EMBED, "embed report disagrees with the requested frame or did not verify the saved image");
+        tx.fail("embed", embed_wall, &e);
+        return Err(e);
     }
     let etim = enc.get("timings_ms").cloned().unwrap_or(json!({}));
     tx.timing("embed", etim["embed"].as_f64().unwrap_or(0.0));
     tx.timing("embed_verify", etim["verify"].as_f64().unwrap_or(0.0));
-    tx.ok("embed", wall, format!("embedded {} bytes with {selected}", frame_bytes.len()));
+    tx.ok("embed", embed_wall, format!("{} bytes embedded in {} patches; saved image re-read and verified", frame_bytes.len(), man.used().count()));
 
     // ---- Rust confirms the saved file exists, is readable, and matches the reported hash
     let t = Instant::now();
@@ -326,14 +428,10 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     tx.timing("save", etim["save"].as_f64().unwrap_or(0.0) + ms);
     tx.ok("save", etim["save"].as_f64().unwrap_or(0.0) + ms, format!("{}.png ({} bytes)", artifact_id, file.len()));
 
-    // record rich fields
     tx.set("artifact_id", json!(artifact_id));
     tx.set("stego_sha256", json!(file_sha));
     tx.set("image_bytes", json!(file.len()));
     tx.set("output_format", json!("PNG"));
-    tx.set("capacity_bytes", embed["capacity_bytes"].clone());
-    let cap = embed["capacity_bytes"].as_u64().unwrap_or(0) as i64;
-    tx.set("capacity_margin_bytes", json!(cap - frame_bytes.len() as i64));
     let m = &embed["metrics"];
     tx.set("mse", m["mse"].clone());
     tx.set("psnr", m["psnr"].clone());
@@ -342,7 +440,8 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     tx.set("ssim_defined", json!(m["ssim"].is_number()));
     tx.set("changed_fraction", m["changed_fraction"].clone());
 
-    Ok(Sent { artifact_id, direction, seq, from_role, to_role, selection, cover, stego, embed, frame_sha, frame_len: frame_bytes.len(), wire_len: wire_bytes.len(), file_sha, file_size: file.len() as u64 })
+    Ok(Sent { artifact_id, direction, seq, from_role, to_role, manifest: man.summary(), plan: planned.plan, inspection: planned.inspection, cover, stego, embed,
+              frame_sha, frame_len: frame_bytes.len(), wire_len: wire_bytes.len(), manifest_len: planned.manifest_bytes.len(), file_sha, file_size: file.len() as u64 })
 }
 
 // ------------------------------------------------------ receive half ---
@@ -355,6 +454,8 @@ struct Received {
     to_role: &'static str,
     image: Value,
     bootstrap: Value,
+    manifest: Value,
+    patches: Value,
     frame_sha: String,
 }
 
@@ -407,7 +508,7 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
     tx.set("stego_sha256", json!(file_sha));
     tx.set("output_format", json!("PNG"));
 
-    // ---- extraction (Python reads the same saved file by id)
+    // ---- extraction (Python reads the same saved file by id; bootstrap + manifest come from the image)
     let t = Instant::now();
     let ex = h.backend.extract(artifact_id, &h.cfg.limits()).map_err(|e| restage(e, stage::EXTRACT));
     let ex = match ex {
@@ -421,14 +522,15 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
     let wall = tx.ms(t);
     let image = ex.get("image").cloned().unwrap_or(Value::Null);
     let bootstrap = ex.get("bootstrap").cloned().unwrap_or(Value::Null);
-    let xt = ex.get("timings_ms").cloned().unwrap_or(json!({}));
     tx.timing("extract", wall);
     let step = (|| -> Result<Vec<u8>, StegoError> {
         if image["sha256"].as_str() != Some(file_sha.as_str()) {
             return Err(StegoError::new("ARTIFACT_HASH_MISMATCH", stage::EXTRACT, 500, "the image service read different bytes than the Rust core"));
         }
-        b64::decode(need_str(&ex, "frame_b64", stage::EXTRACT)?, h.cfg.max_frame_bytes)
-            .map_err(|m| StegoError::new("BACKEND_MALFORMED_RESPONSE", stage::EXTRACT, 502, m))
+        if ex["resegmented"].as_bool() != Some(false) {
+            return Err(malformed(stage::EXTRACT, "the image service must extract from the embedded manifest without re-segmenting"));
+        }
+        b64::decode(need_str(&ex, "frame_b64", stage::EXTRACT)?, h.cfg.max_frame_bytes).map_err(|m| malformed(stage::EXTRACT, &m))
     })();
     let frame_bytes = match step {
         Ok(f) => f,
@@ -437,10 +539,7 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
             return Err(e);
         }
     };
-    let _ = xt;
-    tx.ok("extract", wall, format!("recovered {} bytes via {}", frame_bytes.len(), bootstrap["algorithm"].as_str().unwrap_or("?")));
-    tx.set("algorithm", bootstrap["algorithm"].clone());
-    tx.set("param", bootstrap["param"].clone());
+    tx.ok("extract", wall, format!("reconstructed a {}-byte frame from the image's bootstrap, manifest and patches (untrusted until verified)", frame_bytes.len()));
     for k in ["width", "height", "mode", "channels"] {
         tx.set(k, image[k].clone());
     }
@@ -451,25 +550,31 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
         tx.set("frame_match", json!(sent == frame_sha));
     }
 
-    // ---- strict frame parse + metadata MAC (Rust)
+    // ---- frame MAC first, then strict manifest + AppWire parsing (Rust)
     let t = Instant::now();
     let meta = frame::derive_meta_key(&key, &tag, expected_dir);
-    let verify = (|| -> Result<wire::Parsed, StegoError> {
+    let verify = (|| -> Result<(wire::Parsed, Manifest), StegoError> {
         if bootstrap["frame_len"].as_u64() != Some(frame_bytes.len() as u64) {
             return Err(StegoError::new("FRAME_LENGTH_MISMATCH", stage::VERIFY, 422, "bootstrap frame length differs from the recovered frame"));
         }
-        let alg = bootstrap["alg_id"].as_u64().filter(|a| (1..=ALGS.len() as u64).contains(a)).ok_or_else(|| StegoError::new("UNKNOWN_ALGORITHM", stage::VERIFY, 422, "bootstrap algorithm id invalid"))? as u8;
-        let param = bootstrap["param"].as_u64().filter(|p| *p <= 255).ok_or_else(|| StegoError::new("BOOTSTRAP_CORRUPT", stage::VERIFY, 422, "bootstrap parameter invalid"))? as u8;
-        let payload = frame::parse_and_verify(&meta, &frame_bytes, alg, param, h.cfg.max_frame_bytes)?;
+        let (man_bytes, payload) = frame::parse_and_verify(&meta, &frame_bytes, h.cfg.max_frame_bytes)?;
+        // authenticated from here on; still parsed strictly
+        let man = manifest::parse(man_bytes, h.cfg.max_width.max(h.cfg.max_height))?;
+        if man.payload_len as usize != frame::payload_section_len(payload.len()) {
+            return Err(StegoError::new("MANIFEST_INVALID", stage::VERIFY, 422, "authenticated manifest does not match the frame payload length"));
+        }
+        if image["width"].as_u64() != Some(man.width as u64) || image["height"].as_u64() != Some(man.height as u64) || image["channels"].as_u64() != Some(man.channels as u64) {
+            return Err(StegoError::new("MANIFEST_INVALID", stage::VERIFY, 422, "authenticated manifest geometry differs from the image that was read"));
+        }
         let msg = wire::decode_app_wire(payload, h.cfg.max_frame_bytes)?;
-        Ok(wire::Parsed { msg })
+        Ok((wire::Parsed { msg }, man))
     })();
     let ms = tx.ms(t);
     tx.timing("verify", ms);
-    let parsed = match verify {
+    let (parsed, man) = match verify {
         Ok(p) => {
             tx.set("header_mac_ok", json!(true));
-            tx.ok("verify_frame", ms, "frame header authenticated; algorithm consistent with bootstrap");
+            tx.ok("verify_frame", ms, "frame MAC verified over manifest and payload; manifest parsed strictly");
             p
         }
         Err(e) => {
@@ -478,6 +583,14 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
             return Err(e);
         }
     };
+    let (algs, dominant) = algorithms_json(&man);
+    if tx.ev.get("algorithm").map(|a| a.is_null()).unwrap_or(true) {
+        tx.set("algorithm", json!(dominant));
+        tx.set("algorithms_used", algs);
+        tx.set("patch_count", json!(man.patches.len()));
+        tx.set("used_patches", json!(man.used().count()));
+        tx.set("manifest_bytes", json!(man.encode().len()));
+    }
 
     // ---- channel/direction/replay + AEAD open (locked, commit last_seen)
     let t = Instant::now();
@@ -510,37 +623,8 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
     tx.set("aead_ok", json!(true));
     tx.set("seq", json!(parsed.msg.header_seq));
     tx.ok("aead_open", ms, "channel, direction, replay and AEAD checks passed");
-    Ok(Received { plaintext, direction: expected_dir, seq: parsed.msg.header_seq, from_role, to_role, image, bootstrap, frame_sha })
-}
-
-// ---------------------------------------------------------- explain ---
-
-fn do_explain(h: &Handles, tx: &mut Tx, selection: &Value, embed: &Value, cover: &Value) -> Value {
-    let t = Instant::now();
-    let report = json!({
-        "selection": selection,
-        "embed": {"algorithm": embed["algorithm"], "capacity_bytes": embed["capacity_bytes"], "frame_len": embed["frame_len"], "metrics": embed["metrics"]},
-        "cover": {"source": cover["source"], "fallback_reason": cover["fallback_reason"], "width": cover["width"], "height": cover["height"], "mode": cover["mode"]},
-        "policy": h.cfg.policy,
-    });
-    let result = match h.backend.explain(&report) {
-        Ok(resp) => explain::accept_rag_response(&resp, selection).map_err(|why| why),
-        Err(e) => Err(format!("rag_unavailable:{}", e.code)),
-    };
-    let ms = tx.ms(t);
-    tx.timing("explain", ms);
-    match result {
-        Ok(v) => {
-            tx.ok("explain", ms, "simulated RAG explanation (explanation only)");
-            tx.set("explanation_status", json!("simulated_rag"));
-            v
-        }
-        Err(why) => {
-            tx.ok("explain", ms, format!("deterministic fallback explanation ({why})"));
-            tx.set("explanation_status", json!("fallback_deterministic"));
-            explain::fallback_explanation(selection, embed, &why)
-        }
-    }
+    Ok(Received { plaintext, direction: expected_dir, seq: parsed.msg.header_seq, from_role, to_role, image, bootstrap,
+                  manifest: man.summary(), patches: ex.get("patches").cloned().unwrap_or(json!([])), frame_sha })
 }
 
 // ----------------------------------------------------------- finish ---
@@ -582,19 +666,28 @@ fn fail_out(state: &Mutex<SimulationState>, mut tx: Tx, e: StegoError) -> TxFail
 }
 
 fn artifact_json(sent: &Sent) -> Value {
+    let cid = sent.cover["artifact_id"].as_str().unwrap_or("");
     json!({
-        "id": sent.artifact_id, "stego_sha256": sent.file_sha, "size": sent.file_size,
+        "id": sent.artifact_id, "cover_id": cid, "stego_sha256": sent.file_sha, "size": sent.file_size,
         "preview_url": format!("/api/stego/artifacts/{}/stego", sent.artifact_id),
-        "cover_preview_url": format!("/api/stego/artifacts/{}/cover", sent.cover["artifact_id"].as_str().unwrap_or("")),
+        "cover_preview_url": format!("/api/stego/artifacts/{cid}/cover"),
+        "segmentation_overlay_url": format!("/api/stego/artifacts/{cid}/seg"),
+        "label_map_url": format!("/api/stego/artifacts/{cid}/labels"),
+        "difference_url": format!("/api/stego/artifacts/{}/diff", sent.artifact_id),
         "image": sent.stego,
         "width": sent.stego["width"], "height": sent.stego["height"], "mode": sent.stego["mode"],
         "channels": sent.stego["channels"], "format": sent.stego["format"],
     })
 }
 
+fn transport_json(sent: &Sent) -> Value {
+    json!({"format_version": TRANSPORT_FORMAT_VERSION, "frame_bytes": sent.frame_len, "wire_bytes": sent.wire_len, "manifest_bytes": sent.manifest_len,
+           "payload_section_bytes": sent.wire_len + frame::TAG_LEN, "mac": "HMAC-SHA256 over header | manifest | AppWire (Rust only)"})
+}
+
 // ----------------------------------------------------------- public ---
 
-/// Full transaction: send -> save -> receive (from the saved file) -> verify -> explain.
+/// Full transaction: send -> save -> receive (from the saved file) -> verify.
 pub fn run_message(state: &Mutex<SimulationState>, req: MessageRequest) -> Result<Value, TxFailure> {
     let h = handles(state);
     let mut tx = Tx::new("transaction", &req.session_id, req.origin);
@@ -614,8 +707,6 @@ pub fn run_message(state: &Mutex<SimulationState>, req: MessageRequest) -> Resul
         Ok(r) => r,
         Err(e) => return Err(fail_out(state, tx, e)),
     };
-    let explanation = do_explain(&h, &mut tx, &sent.selection, &sent.embed, &sent.cover);
-    tx.set("explanation_payload_kind", json!(explanation["status"]));
     let id = persist_event(state, &mut tx, true, None);
     let timings = Value::Object({
         let mut t = tx.timings.clone();
@@ -626,11 +717,11 @@ pub fn run_message(state: &Mutex<SimulationState>, req: MessageRequest) -> Resul
         "ok": true, "event_id": id, "session_id": req.session_id, "direction": rec.direction, "seq": rec.seq,
         "from_role": rec.from_role, "to_role": rec.to_role,
         "delivered_message": String::from_utf8_lossy(&rec.plaintext),
-        "artifact": artifact_json(&sent), "cover": sent.cover, "selection": sent.selection, "embed": sent.embed,
-        "bootstrap": rec.bootstrap, "received_image": rec.image,
-        "verification": {"frame_match": rec.frame_sha == sent.frame_sha, "header_mac_ok": true, "algorithm_consistent": true, "aead_ok": true},
-        "timings_ms": timings, "stages": tx.stages, "explanation": explanation,
-        "transport": {"format_version": TRANSPORT_FORMAT_VERSION, "frame_bytes": sent.frame_len, "wire_bytes": sent.wire_len},
+        "artifact": artifact_json(&sent), "cover": sent.cover, "plan": sent.plan, "inspection": sent.inspection, "manifest": sent.manifest, "embed": sent.embed,
+        "bootstrap": rec.bootstrap, "received_image": rec.image, "received_manifest": rec.manifest, "extraction": rec.patches,
+        "verification": {"frame_match": rec.frame_sha == sent.frame_sha, "header_mac_ok": true, "manifest_authenticated": true, "aead_ok": true,
+                         "resegmented": false, "full_frame_recovered": true},
+        "timings_ms": timings, "stages": tx.stages, "transport": transport_json(&sent),
     }))
 }
 
@@ -642,15 +733,13 @@ pub fn run_send(state: &Mutex<SimulationState>, req: MessageRequest) -> Result<V
         Ok(s) => s,
         Err(e) => return Err(fail_out(state, tx, e)),
     };
-    let explanation = do_explain(&h, &mut tx, &sent.selection, &sent.embed, &sent.cover);
     let id = persist_event(state, &mut tx, true, None);
     Ok(json!({
         "ok": true, "event_id": id, "session_id": req.session_id, "direction": sent.direction, "seq": sent.seq,
         "from_role": sent.from_role, "to_role": sent.to_role,
-        "artifact": artifact_json(&sent), "cover": sent.cover, "selection": sent.selection, "embed": sent.embed,
+        "artifact": artifact_json(&sent), "cover": sent.cover, "plan": sent.plan, "inspection": sent.inspection, "manifest": sent.manifest, "embed": sent.embed,
         "frame_sha256_prefix": &sent.frame_sha[..16],
-        "timings_ms": Value::Object(tx.timings.clone()), "stages": tx.stages, "explanation": explanation,
-        "transport": {"format_version": TRANSPORT_FORMAT_VERSION, "frame_bytes": sent.frame_len, "wire_bytes": sent.wire_len},
+        "timings_ms": Value::Object(tx.timings.clone()), "stages": tx.stages, "transport": transport_json(&sent),
     }))
 }
 
@@ -666,37 +755,35 @@ pub fn run_receive(state: &Mutex<SimulationState>, session_id: &str, recipient_i
     Ok(json!({
         "ok": true, "event_id": id, "session_id": session_id, "direction": rec.direction, "seq": rec.seq,
         "from_role": rec.from_role, "to_role": rec.to_role, "delivered_message": String::from_utf8_lossy(&rec.plaintext),
-        "bootstrap": rec.bootstrap, "received_image": rec.image,
-        "verification": {"header_mac_ok": true, "algorithm_consistent": true, "aead_ok": true},
+        "bootstrap": rec.bootstrap, "received_image": rec.image, "received_manifest": rec.manifest, "extraction": rec.patches,
+        "verification": {"header_mac_ok": true, "manifest_authenticated": true, "aead_ok": true, "resegmented": false, "full_frame_recovered": true},
         "timings_ms": Value::Object(tx.timings.clone()), "stages": tx.stages,
     }))
 }
 
-/// Selection analysis for the Lab (no keys, no message): a synthetic frame length only.
-pub fn run_analyze(state: &Mutex<SimulationState>, frame_bytes: usize, cover: &Value, priority: &str, algorithm: Option<&str>) -> Result<Value, StegoError> {
+/// Plan preview for the Lab (no keys, no message, nothing embedded): segmentation, per-patch
+/// retrieval and allocation for a payload of `payload_bytes`. The returned manifest is validated
+/// exactly as on the send path.
+pub fn run_plan_preview(state: &Mutex<SimulationState>, payload_bytes: usize, cover: &Value, min_level: u32) -> Result<Value, StegoError> {
     let h = handles(state);
-    if frame_bytes == 0 || frame_bytes > h.cfg.max_frame_bytes {
-        return Err(StegoError::new("FRAME_TOO_LARGE", stage::SELECTOR, 413, format!("frame_bytes must be within 1..={}", h.cfg.max_frame_bytes)));
-    }
-    let mut areq = json!({"frame_bytes": frame_bytes, "cover": cover, "priority": priority, "policy": h.cfg.policy, "limits": h.cfg.limits()});
-    if let Some(a) = algorithm {
-        areq["algorithm"] = json!(a);
+    if payload_bytes <= frame::TAG_LEN || payload_bytes > h.cfg.max_frame_bytes {
+        return Err(StegoError::new("INVALID_REQUEST", stage::PLAN, 400, format!("payload_bytes must be within {}..={}", frame::TAG_LEN + 1, h.cfg.max_frame_bytes)));
     }
     let t = Instant::now();
-    let out = h.backend.analyze(&areq).map_err(|e| restage(e, stage::SELECTOR))?;
-    Ok(json!({"ok": true, "selection": out["selection"], "cover": out["cover"], "timings_ms": out["timings_ms"],
-              "wall_ms": r3(t.elapsed().as_secs_f64() * 1000.0), "note": "analysis only: no message sealed, no stego image saved"}))
+    let resp = h.backend.plan(&plan_request(&h, payload_bytes, cover, min_level)).map_err(|e| restage(e, stage::PLAN))?;
+    let p = accept_plan(&h, &resp, payload_bytes)?;
+    let cid = p.cover["artifact_id"].as_str().unwrap_or("").to_string();
+    Ok(json!({"ok": true, "plan": p.plan, "manifest": p.manifest.summary(), "manifest_bytes": p.manifest_bytes.len(), "cover": p.cover, "inspection": p.inspection,
+              "artifact": {"cover_id": cid, "cover_preview_url": format!("/api/stego/artifacts/{cid}/cover"),
+                           "segmentation_overlay_url": format!("/api/stego/artifacts/{cid}/seg"), "label_map_url": format!("/api/stego/artifacts/{cid}/labels")},
+              "timings_ms": p.timings, "wall_ms": r3(t.elapsed().as_secs_f64() * 1000.0),
+              "note": "plan preview only: no message sealed, no frame authenticated, no stego image saved"}))
 }
 
 /// Repeatable benchmark: real sealed messages through the full pipeline.
-pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iterations: usize, sizes: &[usize], algorithms: &[String], cover: &Value) -> Result<Value, StegoError> {
-    if iterations == 0 || iterations > 50 || sizes.is_empty() || sizes.len() > 8 || algorithms.is_empty() || algorithms.len() > 5 || iterations * sizes.len() * algorithms.len() > 400 {
-        return Err(StegoError::new("INVALID_REQUEST", stage::PREPARE, 400, "benchmark bounds: iterations<=50, sizes<=8, algorithms<=5, total runs<=400"));
-    }
-    for a in algorithms {
-        if !ALGS.contains(&a.as_str()) {
-            return Err(StegoError::new("INVALID_REQUEST", stage::PREPARE, 400, format!("unknown algorithm '{a}'")));
-        }
+pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iterations: usize, sizes: &[usize], cover: &Value) -> Result<Value, StegoError> {
+    if iterations == 0 || iterations > 50 || sizes.is_empty() || sizes.len() > 8 || iterations * sizes.len() > 400 {
+        return Err(StegoError::new("INVALID_REQUEST", stage::PREPARE, 400, "benchmark bounds: iterations<=50, sizes<=8, total runs<=400"));
     }
     let (d1, d2) = {
         let s = state.lock().unwrap();
@@ -705,21 +792,19 @@ pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iteration
     };
     let mut runs = Vec::new();
     let mut ids: Vec<i64> = Vec::new();
-    for alg in algorithms {
-        for &size in sizes {
-            if size == 0 || size > 60_000 {
-                return Err(StegoError::new("INVALID_REQUEST", stage::PREPARE, 400, "benchmark payload size must be within 1..=60000"));
-            }
-            for i in 0..iterations {
-                let from = if i % 2 == 0 { d1.clone() } else { d2.clone() };
-                let req = MessageRequest { session_id: session_id.to_string(), from_id: from, plaintext: vec![b'b'; size], algorithm: Some(alg.clone()), cover: cover.clone(), priority: "normal".into(), origin: "benchmark" };
-                let (ok, id, code, total) = match run_message(state, req) {
-                    Ok(v) => (true, v["event_id"].as_i64().unwrap_or(-1), Value::Null, v["timings_ms"]["total"].clone()),
-                    Err(f) => (false, f.event_id, json!(f.error.code), Value::Null),
-                };
-                ids.push(id);
-                runs.push(json!({"algorithm": alg, "payload_bytes": size, "iteration": i, "ok": ok, "event_id": id, "error_code": code, "total_ms": total}));
-            }
+    for &size in sizes {
+        if size == 0 || size > 60_000 {
+            return Err(StegoError::new("INVALID_REQUEST", stage::PREPARE, 400, "benchmark payload size must be within 1..=60000"));
+        }
+        for i in 0..iterations {
+            let from = if i % 2 == 0 { d1.clone() } else { d2.clone() };
+            let req = MessageRequest { session_id: session_id.to_string(), from_id: from, plaintext: vec![b'b'; size], cover: cover.clone(), origin: "benchmark" };
+            let (ok, id, code, total, algs) = match run_message(state, req) {
+                Ok(v) => (true, v["event_id"].as_i64().unwrap_or(-1), Value::Null, v["timings_ms"]["total"].clone(), v["plan"]["algorithms_used"].clone()),
+                Err(f) => (false, f.event_id, json!(f.error.code), Value::Null, Value::Null),
+            };
+            ids.push(id);
+            runs.push(json!({"payload_bytes": size, "iteration": i, "ok": ok, "event_id": id, "error_code": code, "total_ms": total, "algorithms_used": algs}));
         }
     }
     let events: Vec<Value> = {

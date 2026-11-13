@@ -3,17 +3,17 @@
 //! * `TransportProvider` / `PassthroughTransport` -- the original minimal
 //!   interface, retained for unit tests of the sealing layer only. The live
 //!   application-message path does NOT use passthrough.
-//! * `pipeline` -- the image-based transport (frame v1 + bootstrap v1 over
-//!   a Python image service). See `docs/stego-transport.md`.
+//! * `pipeline` -- the patch-wise image transport (Frame v2 + patch manifest v1 +
+//!   bootstrap v2 over a Python image service). See `docs/patchwise-transport.md`.
 
 pub mod b64;
 pub mod backend;
 pub mod config;
 pub mod error;
-pub mod explain;
 pub mod fake;
 pub mod frame;
 pub mod http;
+pub mod manifest;
 pub mod pipeline;
 pub mod report;
 pub mod wire;

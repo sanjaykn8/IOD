@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command demo launch: starts the Rust core, Python RAG service, and
+# One-command demo launch: starts the Rust core, Python image service, and
 # Node gateway (in that dependency order, with short delays), then
 # prints the dashboard URL. Run scripts/linux/setup.sh first if you
 # haven't already. Leaves all three services running in the background;
@@ -26,7 +26,7 @@ IOD_DB_PATH="$IOD_DB_PATH" IOD_BIND_ADDR="$IOD_BIND_ADDR" \
 echo $! > "$PID_DIR/rust.pid"
 sleep 1
 
-echo "== Starting Python RAG service on 127.0.0.1:$IOD_PYTHON_PORT =="
+echo "== Starting Python image service on 127.0.0.1:$IOD_PYTHON_PORT =="
 cd "$ROOT_DIR/python-service"
 IOD_PYTHON_PORT="$IOD_PYTHON_PORT" \
   nohup setsid ./venv/bin/python src/app.py > "$ROOT_DIR/.demo-python.log" 2>&1 &
@@ -36,7 +36,6 @@ sleep 1
 echo "== Starting Node gateway on 127.0.0.1:$IOD_NODE_PORT =="
 cd "$ROOT_DIR/node-server"
 IOD_NODE_PORT="$IOD_NODE_PORT" IOD_RUST_BASE_URL="http://$IOD_BIND_ADDR" \
-  IOD_PYTHON_BASE_URL="http://127.0.0.1:$IOD_PYTHON_PORT" \
   nohup setsid node dist/index.js > "$ROOT_DIR/.demo-node.log" 2>&1 &
 echo $! > "$PID_DIR/node.pid"
 sleep 1

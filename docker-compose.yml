@@ -11,16 +11,16 @@ services:
       - "8787:8787"
     environment:
       # Plain HTTP to the Python image service on the private compose network.
-      IOD_PYTHON_URL: http://python-rag:5001
+      IOD_PYTHON_URL: http://python-image:5001
       IOD_STEGO_ALLOW_NONLOOPBACK: "1"
       IOD_STEGO_ARTIFACT_DIR: /artifacts
     volumes:
       - iod-data:/data
       - iod-artifacts:/artifacts
     depends_on:
-      - python-rag
+      - python-image
 
-  python-rag:
+  python-image:
     build: ./python-service
     ports:
       - "5001:5001"
@@ -39,13 +39,11 @@ services:
       # Inside the Compose network, services reach each other by service
       # name, not 127.0.0.1 (that would mean "this container itself").
       # This was a real bug caught during a manual re-review of this
-      # file: the Node gateway's own defaults (127.0.0.1:8787 /
-      # 127.0.0.1:5001) only work for the native, non-Docker run path.
+      # file: the Node gateway's own default (127.0.0.1:8787) only works
+      # for the native, non-Docker run path. The gateway never calls Python.
       IOD_RUST_BASE_URL: http://rust-core:8787
-      IOD_PYTHON_BASE_URL: http://python-rag:5001
     depends_on:
       - rust-core
-      - python-rag
 
   web-ui:
     build:

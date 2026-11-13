@@ -1,4 +1,4 @@
-"""Flask blueprint for the stego endpoints (spec §4.1)."""
+"""Flask blueprint for the patch-wise stego endpoints (docs/api.md)."""
 
 import logging
 
@@ -91,9 +91,9 @@ def capture():
     return jsonify(service.capture(_body()))
 
 
-@bp.post("/analyze")
-def analyze():
-    return jsonify(service.analyze(_body()))
+@bp.post("/plan")
+def plan():
+    return jsonify(service.plan(_body()))
 
 
 @bp.post("/encode")
@@ -106,7 +106,6 @@ def extract():
     return jsonify(service.extract_artifact(_body()))
 
 
-@bp.post("/explain")
-def explain():
-    from rag.explain import explain as run_explain
-    return jsonify(run_explain(_body()))
+@bp.get("/kb")
+def knowledge_base():
+    return jsonify(service.knowledge_base())

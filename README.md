@@ -6,9 +6,10 @@ fuzzy extractor, ML-KEM-768/Kyber768 and ML-DSA-44/Dilithium2, a Poseidon
 Merkle membership tree, a transparent (non-ECC) ZK membership proof, the
 full M1-M8 authentication handshake, K1-K4 GCS-assisted group-key
 establishment, AEAD secure messaging, Zero Trust authorization, a Trace
-Manager, a collaborative RAG/mock-LLM simulation, and a full web
-dashboard — built across Rust (security-critical core), Node.js/
-TypeScript (API gateway), Python (RAG), and React (dashboard).
+Manager, a patch-wise, knowledge-base-guided image steganography transport
+for application messages, and a full web dashboard — built across Rust
+(security-critical core), Node.js/TypeScript (API gateway), Python (image
+processing) and React (dashboard).
 
 **Zero elliptic-curve cryptography anywhere in this project** — see
 `docs/ecc-audit.md` for the full, methodical audit.
@@ -38,9 +39,8 @@ security property. Benchmarks are host-simulation measurements only.
 | Zero Trust | **REAL** (deterministic, configurable, replaceable policy engine — not ML-based) |
 | Trace Manager | **REAL** |
 | SQLite persistence | **REAL** |
-| RAG retrieval | **SIMULATED** (word-overlap, not embeddings) |
-| RAG Byzantine-ish validation | **SIMULATED** (a labeled heuristic, not a real BFT defense) |
-| Mock LLM | **REAL** (genuinely deterministic, template-based; no network call) |
+| Patch-wise stego transport (segmentation, static knowledge base + BM25 selection, Frame v2, authenticated manifest) | **REAL** (simulation: file handoff, no radio link) |
+| Per-patch algorithm selection | **REAL**, deterministic lookup in a hand-curated knowledge base; no LLM, no learned model |
 | Ollama LLM provider | **PLACEHOLDER/FUTURE** (interface only, `NotImplementedError`) |
 | Steganography transport | **PLACEHOLDER/FUTURE** (interface only, per explicit project scope) |
 | Node.js↔Rust live updates | **REAL SSE to the browser**, via internal polling on the Rust↔Node leg (documented toolchain-driven decision, see `docs/architecture.md`) |
@@ -50,7 +50,7 @@ security property. Benchmarks are host-simulation measurements only.
 
 ```
 React (web-ui) -> Node.js gateway (node-server) -> Rust core HTTP API (iod-server)
-                                                  -> Python RAG service (python-service)
+                                   Rust core -> Python image service (python-service; no keys, loopback only)
 ```
 
 Full diagram and the reasoning behind every architectural decision
@@ -100,7 +100,7 @@ exist. Override the path with `IOD_DB_PATH` (see `configs/README.md`).
 
 **One-command demo (Linux/macOS):**
 ```bash
-./scripts/linux/run_demo.sh          # starts Rust core, Python RAG, Node gateway
+./scripts/linux/run_demo.sh          # starts Rust core, Python image service, Node gateway
 cd web-ui && npm run dev              # in another terminal: starts the dashboard
 # open http://127.0.0.1:5173
 ./scripts/linux/stop_demo.sh          # when done
@@ -129,7 +129,7 @@ With the backend services running (`run_demo.sh`/`run_demo.ps1`):
 This exercises, via the real HTTP API, exactly the walkthrough the
 project was scoped around: create D1 and D2 → create a group → register
 both → authenticate D1→D2 (real ALLOW) → establish a group key → send
-and decrypt a secure message → run the RAG simulation → revoke D1 →
+and decrypt a secure message (carried in a PNG) → preview a patch plan → revoke D1 →
 attempt authentication again (real denial) → inspect the audit log →
 invoke the Trace Manager. **This exact script was run in this project's
 development session and its full real output is captured in
@@ -141,7 +141,7 @@ through the identical scenario visually.
 Open `http://127.0.0.1:5173` after starting the dashboard dev server (or
 serve `web-ui/dist/` after `npm run build` with any static file server).
 Nine pages, all functional (not mockups): Dashboard, Drones, Groups,
-Authentication, Secure Communication, RAG Simulation, Trace Manager,
+Authentication, Secure Communication, Steganography Lab, Knowledge Base, Trace Manager,
 Protocol Logs (live via SSE), and Settings. Every control was actually
 driven end-to-end with a headless browser (Playwright) during
 development — see `docs/testing.md` for the full verification writeup
@@ -149,7 +149,7 @@ and the one real UI bug it caught and fixed.
 
 ## Steganography transport (application messages)
 
-After M1–M8 and K1–K3 (unchanged), each application message is AEAD-sealed in Rust, wrapped as AppWire v1 and a Frame v1 (header + wire + HKDF-keyed HMAC-SHA256 tag), embedded in a PNG by one of ten algorithms (LSB replacement, LSB matching, PVD, edge-adaptive LSB, DCT, Haar DWT, DCT-SVD, HUGO, WOW, S-UNIWARD; the last three with syndrome-trellis codes), saved, and the receiver reads **only the saved file**. Both directions use images; there is no plaintext fallback, and failures are structured errors persisted as events. A deterministic policy selector (`sel-policy-2`) chooses the algorithm; RAG only explains the choice. The Lab has a second, separate tab, **Algorithm Learning**, with step-by-step worked calculations for all ten algorithms, isolated experiments, same-input comparisons, a robustness attack suite and report export (`docs/learning-workbench.md`, `docs/worked-examples.md`). UI: **Steganography Lab** (`/steganography`). Cover: **browser webcam** (live preview and capture in the Lab, any laptop, use `http://127.0.0.1:5173`), a PNG you upload, the server-side OpenCV webcam, or a procedural B/W fallback. Tested with Chromium's synthetic camera and a fake `cv2`; **not run against a physical webcam**. Limits: PNG-lossless only, not robust to JPEG/resize, plaintext loopback hop, simulation. Full detail: `docs/stego-transport.md`.
+After M1–M8 and K1–K3 (unchanged), each application message is AEAD-sealed in Rust and wrapped as AppWire v1. The Python image service then segments the cover into **irregular patches** by adaptive region growing, computes a feature vector per patch and selects **one algorithm per patch** from a static, curated knowledge base (structured hard filters, then BM25, top-1; no LLM, no embeddings, no network). The payload is cut into sequential chunks, one per used patch. Rust validates the resulting **patch manifest**, builds **Frame v2** and authenticates manifest + payload with an HKDF-keyed HMAC-SHA256; Python (which never holds a key) embeds, saves the PNG and re-reads it. The receiver reads **only the saved file**, takes the bootstrap and manifest from the image (it never re-segments), and Rust verifies the MAC, the manifest, channel/direction/replay and the AEAD. Ten algorithm ids (LSB replacement, LSB matching, PVD, edge-adaptive LSB, DCT, Haar DWT, DCT-SVD, HUGO additive approximation, WOW, S-UNIWARD; the last three with custom-matrix syndrome-trellis codes) all work on patch masks. Both directions use images; there is no plaintext fallback, no single-algorithm fallback and no message priority class; failures are structured errors persisted as events. UI: **Steganography Lab** (`/steganography`: overlay, patch inspector, per-patch retrieval, before/after/difference, exports), **Knowledge Base / Retrieval Monitor** (`/knowledge-base`) and the separate educational **Algorithm Learning** tab (`docs/learning-workbench.md`, `docs/worked-examples.md`). Cover: browser webcam, uploaded PNG, server-side OpenCV webcam, or a procedural fallback; **not run against a physical webcam**. Limits: PNG-lossless only, not robust to JPEG/resize, plaintext loopback hop, simulation. Exact formats, MAC coverage, test vectors and limitations: `docs/patchwise-transport.md`. What changed and what was removed: `IMPLEMENTATION_REPORT.md`.
 
 Quick check: `python3 scripts/stego_smoke.py` (with services running; see the script header). Standalone tool: `tools/stego-standalone/`.
 
@@ -216,17 +216,18 @@ the top of `rust-core/src/bin/vectors.rs`.
    Please report any remaining issues.
 7. v2 builds with rustc 1.97 (Plonky3 `=0.9.0-rc.1` is pinned exactly); the
    PQ crates are Round-3 Kyber768/Dilithium2, not final FIPS 203/204.
-8. RAG simulation state is in-memory/process-lifetime only (not
-   persisted to SQLite) — a documented simplification.
+8. The steganography transport is a lossless-PNG file handoff inside one
+   host; it is not robust to recompression and no steganalysis resistance
+   is claimed (`docs/patchwise-transport.md` section 13).
 
 ## Documentation index
 
 `docs/architecture.md` · `docs/protocol.md` · `docs/cryptography.md` ·
 `docs/zk-specification.md` · `docs/zk-design.md` · `docs/zk-security-analysis.md` · `docs/zk-implementation.md` · `docs/zk-test-results.md` · `docs/paper-evidence.md` · `docs/puf.md` · `docs/merkle-tree.md` ·
-`docs/zero-trust.md` · `docs/rag.md` · `docs/threat-model.md` ·
+`docs/zero-trust.md` · `docs/threat-model.md` ·
 `docs/security-assumptions.md` · `docs/api.md` · `docs/development.md` ·
 `docs/testing.md` · `docs/benchmarking.md` · `docs/troubleshooting.md` ·
 `docs/research-notes.md` · `docs/dependency-rationale.md` ·
 `docs/ecc-audit.md` · `docs/security-review.md` ·
-`docs/stego-transport.md` · `docs/stego-algorithms.md` · `docs/learning-workbench.md` · `docs/worked-examples.md` · `docs/stego-implementation-note.md` ·
+`docs/patchwise-transport.md` · `docs/stego-algorithms.md` · `docs/learning-workbench.md` · `docs/worked-examples.md` · `IMPLEMENTATION_REPORT.md` ·
 `docs/IMPLEMENTATION_STATUS.md` (the complete, phase-by-phase build log)

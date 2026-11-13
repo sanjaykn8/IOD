@@ -84,3 +84,20 @@ building from scratch, Python 3.9+ is required.
 * "Camera is busy": close other apps using the camera (video calls). "No camera found": check the device and drivers.
 * Upload rejected with `IMAGE_DECODE_ERROR`: only lossless PNG is accepted. `IMAGE_TOO_LARGE`: lower the resolution (limit 4096 per side by default).
 * The server-side (OpenCV) path is separate: install `python-service/requirements-camera.txt`; `CAMERA_ABSENT`/`CAMERA_PERMISSION_DENIED` in the result means it fell back to the procedural cover.
+
+## Build fails with `pythonClient.ts ... pythonBaseUrl` or `"RagPage" is not exported`
+
+The release was extracted **over** an older copy. Unzipping never deletes files, so modules that the
+patch-wise redesign removed (for example `node-server/src/services/pythonClient.ts` and
+`web-ui/src/routes/rag.tsx`) are still on disk and still compiled. Run the cleanup, then setup again:
+
+```powershell
+.\scripts\windows\remove_stale_files.ps1      # Linux/macOS: ./scripts/linux/remove_stale_files.sh
+.\scripts\windows\setup.ps1
+```
+
+`setup.ps1` / `setup.sh` now run this cleanup automatically, stop at the first failing step, and install the
+exact dependency versions from `package-lock.json` (`npm ci`). Do not run `npm audit fix --force`: it upgrades
+packages past the tested versions (major versions of vite, zod and typescript-eslint). If you already did, restore
+`web-ui/package.json` and `web-ui/package-lock.json` from the release zip before running setup. The reported
+advisories are in development tooling (linter dependencies), not in code that runs in the dashboard or services.

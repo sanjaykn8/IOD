@@ -1,0 +1,1120 @@
+{
+ "kb_version": "patch-kb-1",
+ "schema_version": 1,
+ "description": "Static, curated knowledge base for per-patch algorithm selection (structured filters + BM25, top-1). No LLM. Edit in source control; validated at start-up.",
+ "selector": {
+  "version": "kb-bm25-1",
+  "bm25": {
+   "k1": 1.5,
+   "b": 0.75
+  },
+  "field_weights": {
+   "suitable_terms": 3,
+   "summary": 1,
+   "suitable_when": 1
+  },
+  "tie_break": "higher BM25 score, then lower algorithm id",
+  "capacity_source": "measured by the algorithm implementation on the patch (KB capacity text is advisory only)"
+ },
+ "query_terms": [
+  {
+   "term": "flat",
+   "feature": "variance",
+   "op": "<",
+   "value": 4
+  },
+  {
+   "term": "smooth",
+   "feature": "gradient_mean",
+   "op": "<",
+   "value": 4
+  },
+  {
+   "term": "moderate-texture",
+   "feature": "gradient_mean",
+   "op": "between",
+   "value": [
+    4,
+    12
+   ]
+  },
+  {
+   "term": "textured",
+   "feature": "gradient_mean",
+   "op": ">=",
+   "value": 12
+  },
+  {
+   "term": "noisy",
+   "feature": "texture",
+   "op": ">=",
+   "value": 20
+  },
+  {
+   "term": "edge-rich",
+   "feature": "edge_density",
+   "op": ">=",
+   "value": 0.2
+  },
+  {
+   "term": "few-edges",
+   "feature": "edge_density",
+   "op": "<",
+   "value": 0.03
+  },
+  {
+   "term": "high-entropy",
+   "feature": "entropy",
+   "op": ">=",
+   "value": 6.5
+  },
+  {
+   "term": "low-entropy",
+   "feature": "entropy",
+   "op": "<",
+   "value": 4.0
+  },
+  {
+   "term": "saturated",
+   "feature": "saturation",
+   "op": ">=",
+   "value": 0.1
+  },
+  {
+   "term": "binary",
+   "feature": "saturation",
+   "op": ">=",
+   "value": 0.9
+  },
+  {
+   "term": "dark",
+   "feature": "mean",
+   "op": "<",
+   "value": 50
+  },
+  {
+   "term": "bright",
+   "feature": "mean",
+   "op": ">",
+   "value": 205
+  },
+  {
+   "term": "large-region",
+   "feature": "usable_pixels",
+   "op": ">=",
+   "value": 16384
+  },
+  {
+   "term": "medium-region",
+   "feature": "usable_pixels",
+   "op": "between",
+   "value": [
+    2048,
+    16384
+   ]
+  },
+  {
+   "term": "small-region",
+   "feature": "usable_pixels",
+   "op": "<",
+   "value": 2048
+  },
+  {
+   "term": "compact",
+   "feature": "compactness",
+   "op": ">=",
+   "value": 0.35
+  },
+  {
+   "term": "elongated",
+   "feature": "aspect_ratio",
+   "op": ">=",
+   "value": 3.0
+  },
+  {
+   "term": "ragged",
+   "feature": "block8_fill",
+   "op": "<",
+   "value": 0.5
+  },
+  {
+   "term": "block-aligned",
+   "feature": "block8_fill",
+   "op": ">=",
+   "value": 0.8
+  },
+  {
+   "term": "high-frequency",
+   "feature": "hf_energy_ratio",
+   "op": ">=",
+   "value": 0.35
+  },
+  {
+   "term": "low-frequency",
+   "feature": "hf_energy_ratio",
+   "op": "<",
+   "value": 0.12
+  },
+  {
+   "term": "low-rate",
+   "feature": "bits_per_sample",
+   "op": "<",
+   "value": 0.02
+  },
+  {
+   "term": "medium-rate",
+   "feature": "bits_per_sample",
+   "op": "between",
+   "value": [
+    0.02,
+    0.15
+   ]
+  },
+  {
+   "term": "high-rate",
+   "feature": "bits_per_sample",
+   "op": ">=",
+   "value": 0.15
+  },
+  {
+   "term": "color",
+   "feature": "channels",
+   "op": "==",
+   "value": 3
+  },
+  {
+   "term": "grayscale",
+   "feature": "channels",
+   "op": "==",
+   "value": 1
+  }
+ ],
+ "query_terms_note": "Thresholds are local heuristics (kind=local_heuristic); they only decide which descriptive terms enter the BM25 query.",
+ "evidence_kinds": {
+  "published": "stated in the cited source",
+  "implementation": "property of this repository's variant",
+  "local_heuristic": "maintainer judgement, not a published result; validate with the listed experiment"
+ },
+ "citation_note": "DOIs were entered from the maintainers' reference list and are not machine-verified in this build; check the DOI record before citing.",
+ "references": [
+  {
+   "id": "wu2003",
+   "title": "A steganographic method for images by pixel-value differencing",
+   "authors": "D.-C. Wu, W.-H. Tsai",
+   "year": 2003,
+   "venue": "Pattern Recognition Letters 24(9-10):1613-1626",
+   "doi": "10.1016/S0167-8655(02)00402-6",
+   "url": "https://doi.org/10.1016/S0167-8655(02)00402-6"
+  },
+  {
+   "id": "sharp2001",
+   "title": "An Implementation of Key-Based Digital Signal Steganography",
+   "authors": "T. Sharp",
+   "year": 2001,
+   "venue": "Information Hiding (IH 2001), LNCS 2137",
+   "doi": "10.1007/3-540-45496-9_2",
+   "url": "https://doi.org/10.1007/3-540-45496-9_2"
+  },
+  {
+   "id": "ker2005",
+   "title": "Steganalysis of LSB matching in grayscale images",
+   "authors": "A. D. Ker",
+   "year": 2005,
+   "venue": "IEEE Signal Processing Letters 12(6):441-444",
+   "doi": "10.1109/LSP.2005.847889",
+   "url": "https://doi.org/10.1109/LSP.2005.847889"
+  },
+  {
+   "id": "westfeld1999",
+   "title": "Attacks on Steganographic Systems",
+   "authors": "A. Westfeld, A. Pfitzmann",
+   "year": 1999,
+   "venue": "Information Hiding (IH 1999), LNCS 1768",
+   "doi": "10.1007/10719724_5",
+   "url": "https://doi.org/10.1007/10719724_5"
+  },
+  {
+   "id": "fridrich2001",
+   "title": "Detecting LSB steganography in color and gray-scale images",
+   "authors": "J. Fridrich, M. Goljan, R. Du",
+   "year": 2001,
+   "venue": "IEEE MultiMedia 8(4):22-28",
+   "doi": "10.1109/93.959097",
+   "url": "https://doi.org/10.1109/93.959097"
+  },
+  {
+   "id": "luo2010",
+   "title": "Edge Adaptive Image Steganography Based on LSB Matching Revisited",
+   "authors": "W. Luo, F. Huang, J. Huang",
+   "year": 2010,
+   "venue": "IEEE Trans. Information Forensics and Security 5(2):201-214",
+   "doi": "10.1109/TIFS.2009.2035372",
+   "url": "https://doi.org/10.1109/TIFS.2009.2035372"
+  },
+  {
+   "id": "chen2001",
+   "title": "Quantization index modulation: a class of provably good methods for digital watermarking and information embedding",
+   "authors": "B. Chen, G. W. Wornell",
+   "year": 2001,
+   "venue": "IEEE Trans. Information Theory 47(4):1423-1443",
+   "doi": "10.1109/18.923725",
+   "url": "https://doi.org/10.1109/18.923725"
+  },
+  {
+   "id": "pevny2010hugo",
+   "title": "Using High-Dimensional Image Models to Perform Highly Undetectable Steganography",
+   "authors": "T. Pevny, T. Filler, P. Bas",
+   "year": 2010,
+   "venue": "Information Hiding (IH 2010), LNCS 6387",
+   "doi": "10.1007/978-3-642-16435-4_13",
+   "url": "https://doi.org/10.1007/978-3-642-16435-4_13"
+  },
+  {
+   "id": "filler2011",
+   "title": "Minimizing Additive Distortion in Steganography Using Syndrome-Trellis Codes",
+   "authors": "T. Filler, J. Judas, J. Fridrich",
+   "year": 2011,
+   "venue": "IEEE Trans. Information Forensics and Security 6(3):920-935",
+   "doi": "10.1109/TIFS.2011.2134094",
+   "url": "https://doi.org/10.1109/TIFS.2011.2134094"
+  },
+  {
+   "id": "holub2012",
+   "title": "Designing steganographic distortion using directional filters",
+   "authors": "V. Holub, J. Fridrich",
+   "year": 2012,
+   "venue": "IEEE Int. Workshop on Information Forensics and Security (WIFS)",
+   "doi": "10.1109/WIFS.2012.6412655",
+   "url": "https://doi.org/10.1109/WIFS.2012.6412655"
+  },
+  {
+   "id": "holub2014",
+   "title": "Universal distortion function for steganography in an arbitrary domain",
+   "authors": "V. Holub, J. Fridrich, T. Denemark",
+   "year": 2014,
+   "venue": "EURASIP Journal on Information Security 2014:1",
+   "doi": "10.1186/1687-417X-2014-1",
+   "url": "https://doi.org/10.1186/1687-417X-2014-1"
+  },
+  {
+   "id": "pevny2010spam",
+   "title": "Steganalysis by Subtractive Pixel Adjacency Matrix",
+   "authors": "T. Pevny, P. Bas, J. Fridrich",
+   "year": 2010,
+   "venue": "IEEE Trans. Information Forensics and Security 5(2):215-224",
+   "doi": "10.1109/TIFS.2010.2045842",
+   "url": "https://doi.org/10.1109/TIFS.2010.2045842"
+  },
+  {
+   "id": "fridrich2012srm",
+   "title": "Rich Models for Steganalysis of Digital Images",
+   "authors": "J. Fridrich, J. Kodovsky",
+   "year": 2012,
+   "venue": "IEEE Trans. Information Forensics and Security 7(3):868-882",
+   "doi": "10.1109/TIFS.2012.2190402",
+   "url": "https://doi.org/10.1109/TIFS.2012.2190402"
+  },
+  {
+   "id": "fridrich2009book",
+   "title": "Steganography in Digital Media: Principles, Algorithms, and Applications",
+   "authors": "J. Fridrich",
+   "year": 2009,
+   "venue": "Cambridge University Press",
+   "doi": "10.1017/CBO9781139192903",
+   "url": "https://doi.org/10.1017/CBO9781139192903"
+  },
+  {
+   "id": "adams1994",
+   "title": "Seeded region growing",
+   "authors": "R. Adams, L. Bischof",
+   "year": 1994,
+   "venue": "IEEE Trans. Pattern Analysis and Machine Intelligence 16(6):641-647",
+   "doi": "10.1109/34.295913",
+   "url": "https://doi.org/10.1109/34.295913"
+  },
+  {
+   "id": "robertson2009",
+   "title": "The Probabilistic Relevance Framework: BM25 and Beyond",
+   "authors": "S. Robertson, H. Zaragoza",
+   "year": 2009,
+   "venue": "Foundations and Trends in Information Retrieval 3(4):333-389",
+   "doi": "10.1561/1500000019",
+   "url": "https://doi.org/10.1561/1500000019"
+  },
+  {
+   "id": "wang2004",
+   "title": "Image quality assessment: from error visibility to structural similarity",
+   "authors": "Z. Wang, A. C. Bovik, H. R. Sheikh, E. P. Simoncelli",
+   "year": 2004,
+   "venue": "IEEE Trans. Image Processing 13(4):600-612",
+   "doi": "10.1109/TIP.2003.819861",
+   "url": "https://doi.org/10.1109/TIP.2003.819861"
+  },
+  {
+   "id": "dctsvd2012",
+   "title": "A DCT-SVD based robust watermarking scheme for grayscale image",
+   "authors": "(see DOI record)",
+   "year": 2012,
+   "venue": "ACM ICACCI 2012",
+   "doi": "10.1145/2345396.2345490",
+   "url": "https://doi.org/10.1145/2345396.2345490"
+  }
+ ],
+ "entries": [
+  {
+   "id": 1,
+   "name": "lsb_replacement",
+   "variant": "lsb-replacement-msb-first-v1 (patch samples, raster order)",
+   "domain": "spatial",
+   "sub_domain": "LSB plane, direct",
+   "summary": "Overwrites the least significant bit of consecutive patch samples with payload bits.",
+   "suitable_terms": [
+    "noisy",
+    "high-entropy",
+    "high-rate",
+    "small-region",
+    "elongated",
+    "ragged"
+   ],
+   "suitable_when": [
+    "noisy or high-entropy patches where LSB planes already look random",
+    "small, thin or ragged patches (no geometry requirement)",
+    "chunks that need a high bit rate"
+   ],
+   "avoid_when": [
+    "smooth or flat patches (pairs-of-values artefacts are most visible to steganalysis there)",
+    "saturated patches (LSB plane of 0/255 areas is constant in the cover)"
+   ],
+   "requirements": {
+    "min_usable_pixels": 1,
+    "block": 0,
+    "min_blocks": 0
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "1 bit per sample of the patch (3 per RGB pixel)",
+    "factors": [
+     "usable pixels",
+     "channels"
+    ],
+    "advisory_bits_per_sample": 1.0
+   },
+   "distortion": {
+    "impact": "at most +/-1 on half of the used samples (expected MSE 0.5 on used samples)",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "lowest",
+    "notes": "one vectorised mask-and-or"
+   },
+   "assumptions": "8-bit L or RGB, lossless PNG; all channels used",
+   "extraction": "read LSBs of the same raster-order patch samples; needs only the patch mask and chunk length",
+   "limitations": [
+    "statistically detectable (chi-square / RS / sample-pair analysis)",
+    "destroyed by any lossy processing"
+   ],
+   "references": [
+    "fridrich2009book",
+    "westfeld1999",
+    "fridrich2001"
+   ],
+   "evidence": [
+    {
+     "claim": "LSB replacement creates pairs-of-values asymmetry that chi-square and RS analysis detect",
+     "kind": "published",
+     "refs": [
+      "westfeld1999",
+      "fridrich2001"
+     ]
+    },
+    {
+     "claim": "Preferring noisy/high-entropy patches for this method",
+     "kind": "local_heuristic",
+     "validate": "Learning workbench -> patch survey: compare PSNR/SSIM and extraction on patches with and without the stated characteristic."
+    }
+   ]
+  },
+  {
+   "id": 2,
+   "name": "lsb_matching",
+   "variant": "lsb-matching-pm1-seeded-v2 (patch samples; sign stream seeded per patch from the cover hash)",
+   "domain": "spatial",
+   "sub_domain": "LSB plane, +/-1",
+   "summary": "Changes a sample by +1 or -1 only when its LSB differs from the payload bit.",
+   "suitable_terms": [
+    "textured",
+    "noisy",
+    "high-entropy",
+    "medium-rate",
+    "high-rate",
+    "small-region",
+    "elongated",
+    "ragged"
+   ],
+   "suitable_when": [
+    "textured or noisy patches",
+    "irregular patches of any shape",
+    "medium to high bit rates where coding-based methods lack capacity"
+   ],
+   "avoid_when": [
+    "smooth patches (histogram smoothing is easier to detect)"
+   ],
+   "requirements": {
+    "min_usable_pixels": 1,
+    "block": 0,
+    "min_blocks": 0
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "1 bit per sample of the patch",
+    "factors": [
+     "usable pixels",
+     "channels"
+    ],
+    "advisory_bits_per_sample": 1.0
+   },
+   "distortion": {
+    "impact": "+/-1 on about half of the used samples; avoids the pairs-of-values artefact",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "low",
+    "notes": "one seeded random draw per bit"
+   },
+   "assumptions": "8-bit L or RGB, lossless PNG",
+   "extraction": "read LSBs of the same patch samples; the sign stream is not needed",
+   "limitations": [
+    "detectable by histogram-characteristic-function and rich-model steganalysis",
+    "destroyed by lossy processing"
+   ],
+   "references": [
+    "sharp2001",
+    "ker2005",
+    "fridrich2012srm"
+   ],
+   "evidence": [
+    {
+     "claim": "+/-1 embedding removes the pairs-of-values asymmetry but remains detectable in grayscale images",
+     "kind": "published",
+     "refs": [
+      "ker2005"
+     ]
+    },
+    {
+     "claim": "Variant: per-patch seeded sign stream (not a secret key)",
+     "kind": "implementation"
+    },
+    {
+     "claim": "Preferring textured/noisy patches",
+     "kind": "local_heuristic",
+     "validate": "Learning workbench -> patch survey: compare PSNR/SSIM and extraction on patches with and without the stated characteristic."
+    }
+   ]
+  },
+  {
+   "id": 3,
+   "name": "pvd",
+   "variant": "wu-tsai-pvd-6range-v1 (pairs = consecutive patch samples)",
+   "domain": "spatial",
+   "sub_domain": "pixel-pair differences",
+   "summary": "Hides 3-7 bits in the difference of a sample pair; larger differences carry more bits.",
+   "suitable_terms": [
+    "edge-rich",
+    "textured",
+    "high-rate",
+    "medium-rate",
+    "high-frequency"
+   ],
+   "suitable_when": [
+    "edge-rich or high-contrast patches (large differences carry more bits)",
+    "chunks that need the highest capacity"
+   ],
+   "avoid_when": [
+    "smooth patches at low rate (every used pair is re-quantised, changes can exceed 1 level)"
+   ],
+   "requirements": {
+    "min_usable_pixels": 1,
+    "block": 0,
+    "min_blocks": 0,
+    "min_samples": 2
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "3,3,4,5,6,7 bits per pair for |a-b| in [0,7],[8,15],[16,31],[32,63],[64,127],[128,255]; exact, cover dependent",
+    "factors": [
+     "pair differences",
+     "usable samples"
+    ],
+    "advisory_bits_per_sample": 1.6
+   },
+   "distortion": {
+    "impact": "individual samples can change by several levels, concentrated where differences are large",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "low",
+    "notes": "vectorised range lookup"
+   },
+   "assumptions": "8-bit L or RGB, lossless PNG; pairs are consecutive entries of the patch sample list",
+   "extraction": "recompute |a'-b'| per pair; the range of a pair is preserved by embedding, so positions re-synchronise from the stego image",
+   "limitations": [
+    "histogram steps at range boundaries are statistically detectable",
+    "destroyed by lossy processing"
+   ],
+   "references": [
+    "wu2003"
+   ],
+   "evidence": [
+    {
+     "claim": "Wu-Tsai range table and the edge/smooth capacity argument",
+     "kind": "published",
+     "refs": [
+      "wu2003"
+     ]
+    },
+    {
+     "claim": "Variant: pairs are consecutive patch samples (for RGB this pairs neighbouring channels), not strictly horizontal neighbours as in the paper",
+     "kind": "implementation"
+    }
+   ]
+  },
+  {
+   "id": 4,
+   "name": "edge_adaptive_lsb",
+   "variant": "edge-mask-7msb-grad-threshold-v2 (gradient restricted to the patch)",
+   "domain": "spatial",
+   "sub_domain": "edge mask + LSB",
+   "summary": "LSB replacement only on pixels whose 7-MSB gradient reaches a threshold (default 6).",
+   "suitable_terms": [
+    "edge-rich",
+    "moderate-texture",
+    "low-rate",
+    "ragged"
+   ],
+   "suitable_when": [
+    "patches with clear edges and a small chunk",
+    "when changes should stay off flat areas"
+   ],
+   "avoid_when": [
+    "patches with few edges (little or no capacity)"
+   ],
+   "requirements": {
+    "min_usable_pixels": 1,
+    "block": 0,
+    "min_blocks": 0
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "one bit per sample of each eligible (edge) pixel inside the patch; can be zero",
+    "factors": [
+     "edge density",
+     "threshold"
+    ],
+    "advisory_bits_per_sample": 0.3
+   },
+   "distortion": {
+    "impact": "+/-1 confined to edge pixels",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "low",
+    "notes": "gradient of the patch bounding box"
+   },
+   "assumptions": "8-bit L or RGB, lossless PNG; RGB uses an integer luma of the 7-MSB planes",
+   "extraction": "rebuild the mask from the stego patch (7 MSBs are never modified by this method), read LSBs",
+   "limitations": [
+    "simplified mask, not the LSBMR scheme of the cited paper",
+    "statistically detectable as an LSB-class method"
+   ],
+   "references": [
+    "luo2010"
+   ],
+   "evidence": [
+    {
+     "claim": "Edge regions tolerate embedding better than smooth regions; edge-adaptive selection",
+     "kind": "published",
+     "refs": [
+      "luo2010"
+     ]
+    },
+    {
+     "claim": "Variant: threshold on a 7-MSB gradient computed only from pixels inside the patch",
+     "kind": "implementation"
+    }
+   ]
+  },
+  {
+   "id": 5,
+   "name": "dct",
+   "variant": "dct8-midband-6coef-qim-v1 (complete 8x8 blocks inside the patch)",
+   "domain": "transform",
+   "sub_domain": "8x8 block DCT, QIM",
+   "summary": "Quantisation-index modulation of 6 mid-frequency coefficients per complete 8x8 block.",
+   "suitable_terms": [
+    "moderate-texture",
+    "block-aligned",
+    "compact",
+    "medium-region",
+    "large-region",
+    "low-rate",
+    "low-frequency"
+   ],
+   "suitable_when": [
+    "compact, block-aligned patches with moderate texture",
+    "low-rate chunks"
+   ],
+   "avoid_when": [
+    "saturated patches (clipping breaks coefficient round-trips)",
+    "ragged or thin patches without complete blocks"
+   ],
+   "requirements": {
+    "min_usable_pixels": 64,
+    "block": 8,
+    "min_blocks": 1
+   },
+   "hard_avoid": [
+    {
+     "feature": "saturation",
+     "op": ">=",
+     "value": 0.02,
+     "reason": "SATURATED_BLOCKS_BREAK_DCT_ROUNDTRIP"
+    }
+   ],
+   "capacity": {
+    "behavior": "6 bits per complete 8x8 block of the global grid inside the patch",
+    "factors": [
+     "complete blocks",
+     "patch shape"
+    ],
+    "advisory_bits_per_sample": 0.094
+   },
+   "distortion": {
+    "impact": "coefficients move by up to one quantisation step (12); highest per-block distortion with dct_svd",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "medium",
+    "notes": "forward/inverse block transform with verification"
+   },
+   "assumptions": "8-bit; gray plane or the blue plane of RGB; lossless PNG",
+   "extraction": "same blocks (complete 8x8 blocks inside the mask, raster order), parity of round(X/delta)",
+   "limitations": [
+    "not robust to JPEG in this implementation",
+    "refuses blocks that fail verification"
+   ],
+   "references": [
+    "chen2001"
+   ],
+   "evidence": [
+    {
+     "claim": "QIM embedding principle",
+     "kind": "published",
+     "refs": [
+      "chen2001"
+     ]
+    },
+    {
+     "claim": "Saturation threshold 0.02 as a hard exclusion",
+     "kind": "local_heuristic",
+     "validate": "tests/test_patch_algorithms.py::test_dct_saturated_patch_is_filtered and the workbench patch survey on the B/W cover"
+    }
+   ]
+  },
+  {
+   "id": 6,
+   "name": "dwt",
+   "variant": "haar-l1-hh-qim-v1 (complete 2x2 blocks inside the patch)",
+   "domain": "transform",
+   "sub_domain": "1-level Haar DWT, QIM on HH",
+   "summary": "One bit per complete 2x2 block in the Haar diagonal detail coefficient.",
+   "suitable_terms": [
+    "binary",
+    "saturated",
+    "flat",
+    "dark",
+    "bright",
+    "low-entropy",
+    "low-rate"
+   ],
+   "suitable_when": [
+    "flat, saturated or two-level (black/white) patches where LSB-style and DCT methods are unsuitable",
+    "low-rate chunks"
+   ],
+   "avoid_when": [
+    "chunks needing more than 0.25 bit per pixel"
+   ],
+   "requirements": {
+    "min_usable_pixels": 4,
+    "block": 2,
+    "min_blocks": 8
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "1 bit per complete 2x2 block of the embedding plane",
+    "factors": [
+     "complete 2x2 blocks"
+    ],
+    "advisory_bits_per_sample": 0.25
+   },
+   "distortion": {
+    "impact": "HH moves by up to two steps of delta=4, spread over four pixels",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "low",
+    "notes": "vectorised Haar step with per-block verification"
+   },
+   "assumptions": "8-bit; gray plane or the blue plane of RGB; lossless PNG",
+   "extraction": "same 2x2 blocks, parity of round(HH/delta)",
+   "limitations": [
+    "not robust to JPEG/resizing (measured)",
+    "one concrete Haar/QIM variant, not a canonical DWT scheme"
+   ],
+   "references": [
+    "chen2001"
+   ],
+   "evidence": [
+    {
+     "claim": "QIM principle",
+     "kind": "published",
+     "refs": [
+      "chen2001"
+     ]
+    },
+    {
+     "claim": "Works on saturated black/white covers through alternative pixel patterns",
+     "kind": "implementation",
+     "validate": "tests: transform methods on the procedural B/W cover"
+    }
+   ]
+  },
+  {
+   "id": 7,
+   "name": "dct_svd",
+   "variant": "dct8-svd-s1-qim-v1 (complete 8x8 blocks inside the patch)",
+   "domain": "transform",
+   "sub_domain": "block DCT + SVD, QIM on sigma_1",
+   "summary": "One bit per complete 8x8 block in the largest singular value of a mid-band DCT sub-matrix.",
+   "suitable_terms": [
+    "large-region",
+    "block-aligned",
+    "compact",
+    "low-rate",
+    "textured",
+    "low-frequency"
+   ],
+   "suitable_when": [
+    "large, compact, block-aligned patches",
+    "very small chunks"
+   ],
+   "avoid_when": [
+    "small or ragged patches (1 bit per 64 pixels)"
+   ],
+   "requirements": {
+    "min_usable_pixels": 64,
+    "block": 8,
+    "min_blocks": 8
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "1 bit per complete 8x8 block; lowest capacity of the ten",
+    "factors": [
+     "complete blocks"
+    ],
+    "advisory_bits_per_sample": 0.0156
+   },
+   "distortion": {
+    "impact": "sigma_1 moves by up to one step (16), spread over 64 pixels",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "medium",
+    "notes": "DCT + 4x4 SVD + verification per block"
+   },
+   "assumptions": "8-bit; gray plane or the blue plane of RGB; lossless PNG",
+   "extraction": "same blocks, parity of round(sigma_1/delta)",
+   "limitations": [
+    "one concrete member of the DCT-SVD family; the cited paper is a watermarking scheme and differs",
+    "not robust to JPEG here"
+   ],
+   "references": [
+    "chen2001",
+    "dctsvd2012"
+   ],
+   "evidence": [
+    {
+     "claim": "DCT-SVD family (watermarking)",
+     "kind": "published",
+     "refs": [
+      "dctsvd2012"
+     ]
+    },
+    {
+     "claim": "This variant (region, rule, step) is repository specific",
+     "kind": "implementation"
+    }
+   ]
+  },
+  {
+   "id": 8,
+   "name": "hugo",
+   "variant": "HUGO additive approximation: exact single-change costs (T=90, sigma=1, gamma=1) + binary STC h=7, no model correction",
+   "domain": "distortion/STC",
+   "sub_domain": "SPAM co-occurrence model",
+   "summary": "Minimises a weighted change of pixel-difference co-occurrences; embeds with syndrome-trellis codes.",
+   "suitable_terms": [
+    "textured",
+    "noisy",
+    "high-entropy",
+    "large-region",
+    "medium-region",
+    "low-rate"
+   ],
+   "suitable_when": [
+    "textured, noisy patches with many samples",
+    "low-rate chunks (more samples per bit lower the distortion)"
+   ],
+   "avoid_when": [
+    "chunks above 0.5 bit per sample (no capacity)",
+    "very small patches"
+   ],
+   "requirements": {
+    "min_usable_pixels": 16,
+    "block": 0,
+    "min_blocks": 0
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "at most min(samples, 131072)/2 bits; the planner uses up to 10 samples per bit",
+    "factors": [
+     "usable samples",
+     "code rate 1/w"
+    ],
+    "advisory_bits_per_sample": 0.5
+   },
+   "distortion": {
+    "impact": "+/-1 on few samples, placed where the co-occurrence model changes least",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "highest",
+    "notes": "per-sample cost evaluation + Viterbi over 128 states"
+   },
+   "assumptions": "8-bit L or RGB (each channel treated as a plane), lossless PNG; binary syndrome-trellis codes, constraint height 7, deterministic non-optimised submatrices (not the published tables)",
+   "extraction": "syndrome of the LSBs of the same permuted patch samples; needs mask, chunk length and w",
+   "limitations": [
+    "additive approximation without model correction, not canonical HUGO",
+    "sigma and gamma not re-verified against the full paper text",
+    "public permutation (no stego key)"
+   ],
+   "references": [
+    "pevny2010hugo",
+    "filler2011",
+    "pevny2010spam"
+   ],
+   "evidence": [
+    {
+     "claim": "HUGO distortion (weighted co-occurrence differences, T=90)",
+     "kind": "published",
+     "refs": [
+      "pevny2010hugo"
+     ]
+    },
+    {
+     "claim": "STC minimises additive distortion",
+     "kind": "published",
+     "refs": [
+      "filler2011"
+     ]
+    },
+    {
+     "claim": "Single-change additive costs, custom STC submatrices, per-patch domain",
+     "kind": "implementation"
+    }
+   ]
+  },
+  {
+   "id": 9,
+   "name": "wow",
+   "variant": "WOW (p=-1, db8 filter bank) + binary STC h=7",
+   "domain": "distortion/STC",
+   "sub_domain": "wavelet directional filters",
+   "summary": "Costs are low only where the content is textured in every direction; embeds with syndrome-trellis codes.",
+   "suitable_terms": [
+    "textured",
+    "high-frequency",
+    "edge-rich",
+    "large-region",
+    "low-rate",
+    "color"
+   ],
+   "suitable_when": [
+    "cluttered, high-frequency patches",
+    "low-rate chunks"
+   ],
+   "avoid_when": [
+    "chunks above 0.5 bit per sample",
+    "very small patches"
+   ],
+   "requirements": {
+    "min_usable_pixels": 16,
+    "block": 0,
+    "min_blocks": 0
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "at most min(samples, 131072)/2 bits",
+    "factors": [
+     "usable samples",
+     "code rate 1/w"
+    ],
+    "advisory_bits_per_sample": 0.5
+   },
+   "distortion": {
+    "impact": "+/-1 on few samples, avoiding smooth areas and clean edges",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "high",
+    "notes": "three filter passes per channel (once per cover) + Viterbi"
+   },
+   "assumptions": "8-bit L or RGB (per channel), lossless PNG; binary syndrome-trellis codes, constraint height 7, deterministic non-optimised submatrices (not the published tables)",
+   "extraction": "syndrome of the LSBs of the same permuted patch samples",
+   "limitations": [
+    "cost map is computed on the whole cover (read-only) and indexed by the patch",
+    "public permutation (no stego key)",
+    "distortion minimisation is not proof of undetectability"
+   ],
+   "references": [
+    "holub2012",
+    "filler2011"
+   ],
+   "evidence": [
+    {
+     "claim": "WOW cost: reciprocal aggregation of directional residual suitabilities",
+     "kind": "published",
+     "refs": [
+      "holub2012"
+     ]
+    },
+    {
+     "claim": "Aggregation aligned with the exact adjoint; custom STC submatrices",
+     "kind": "implementation"
+    }
+   ]
+  },
+  {
+   "id": 10,
+   "name": "s_uniward",
+   "variant": "S-UNIWARD (spatial, sigma=1, db8 filter bank) + binary STC h=7",
+   "domain": "distortion/STC",
+   "sub_domain": "wavelet relative change",
+   "summary": "Cost = relative change of directional wavelet coefficients; embeds with syndrome-trellis codes.",
+   "suitable_terms": [
+    "smooth",
+    "moderate-texture",
+    "large-region",
+    "medium-region",
+    "low-rate",
+    "color",
+    "grayscale",
+    "compact"
+   ],
+   "suitable_when": [
+    "patches mixing smooth and textured content (the cost map steers changes to the textured part)",
+    "low-rate chunks",
+    "general natural content"
+   ],
+   "avoid_when": [
+    "chunks above 0.5 bit per sample",
+    "very small patches"
+   ],
+   "requirements": {
+    "min_usable_pixels": 16,
+    "block": 0,
+    "min_blocks": 0
+   },
+   "hard_avoid": [],
+   "capacity": {
+    "behavior": "at most min(samples, 131072)/2 bits",
+    "factors": [
+     "usable samples",
+     "code rate 1/w"
+    ],
+    "advisory_bits_per_sample": 0.5
+   },
+   "distortion": {
+    "impact": "+/-1 on few samples where wavelet coefficients change least in relative terms",
+    "metrics": [
+     "MSE",
+     "PSNR",
+     "SSIM"
+    ]
+   },
+   "cost": {
+    "relative": "high",
+    "notes": "three filter passes per channel (once per cover) + Viterbi"
+   },
+   "assumptions": "8-bit L or RGB (per channel), lossless PNG; binary syndrome-trellis codes, constraint height 7, deterministic non-optimised submatrices (not the published tables)",
+   "extraction": "syndrome of the LSBs of the same permuted patch samples",
+   "limitations": [
+    "spatial variant only (not J-UNIWARD)",
+    "public permutation (no stego key)",
+    "distortion minimisation is not proof of undetectability"
+   ],
+   "references": [
+    "holub2014",
+    "filler2011"
+   ],
+   "evidence": [
+    {
+     "claim": "UNIWARD distortion and its additive approximation",
+     "kind": "published",
+     "refs": [
+      "holub2014"
+     ]
+    },
+    {
+     "claim": "Per-patch STC domain; custom STC submatrices",
+     "kind": "implementation"
+    }
+   ]
+  }
+ ]
+}

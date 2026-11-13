@@ -1,4 +1,9 @@
-"""Orchestration: cover -> select -> embed -> verify -> save -> verify -> descriptor."""
+"""Orchestration of the patch-wise transport (image side only; no keys, no MAC).
+
+plan    : cover -> adaptive segmentation -> patch features -> KB retrieval -> allocation -> manifest
+encode  : Frame v2 (built and authenticated by Rust) -> patch embedding -> PNG save -> re-read -> verify
+extract : saved PNG -> preamble -> manifest -> patch chunks -> reconstructed frame (for Rust to verify)
+"""
 
 import base64
 import binascii
@@ -8,9 +13,10 @@ import time
 
 import numpy as np
 
-from . import artifacts, codec, config, cover as cover_mod, images, metrics, selector
-from .algorithms import BY_NAME, get_by_name
+from . import artifacts, codec, config, cover as cover_mod, images, metrics
+from .algorithms import BY_ID, BY_NAME
 from .errors import StegoError
+from .patch import FORMAT_VERSION, SEGMENTATION_VERSION, SELECTOR_VERSION, kb as KB, manifest as M, planner, segment as S
 
 log = logging.getLogger("stego")
 
@@ -40,24 +46,13 @@ def cover_descriptor(cov, artifact_id, png_bytes):
 
 
 def _persist_cover(cov, store, artifact_id=None):
-    """Save the cover as <id>.cover.png (unless it already is a stored test cover)."""
-    if cov.artifact_id is not None:  # already a stored cover (test cover / browser webcam / upload)
+    """Save the cover as <id>.cover.png (unless it already is a stored cover)."""
+    if cov.artifact_id is not None:
         return cov.artifact_id, store.read(cov.artifact_id, "cover")
     aid = artifact_id or artifacts.new_id()
     png = images.encode_png(cov.array)
     store.write(aid, "cover", png)
     return aid, png
-
-
-def _parse_algorithm(req):
-    alg = req.get("algorithm")
-    if alg is None:
-        return None, None
-    get_by_name(alg)
-    param = req.get("param")
-    if param is not None:
-        BY_NAME[alg].resolve_param(param)
-    return alg, param
 
 
 def capture(req, store=None):
@@ -79,26 +74,46 @@ def upload_cover(req, store=None):
     return {"ok": True, "cover": cover_descriptor(cov, aid, png), "timings_ms": {"store": _ms(t0)}}
 
 
-def analyze(req, store=None):
+from .patch.render import overlay_png, palette  # noqa: E402,F401
+
+
+def _seg_config(req):
+    return S.parse_config(req.get("segmentation"))
+
+
+def plan(req, store=None):
+    """Cover analysis + segmentation + per-patch retrieval + allocation -> manifest (no payload bytes)."""
     store = store or get_store()
     limits = config.parse_limits(req.get("limits"))
-    fb = req.get("frame_bytes")
-    if isinstance(fb, bool) or not isinstance(fb, int):
-        raise StegoError("INVALID_REQUEST", "frame_bytes must be an integer")
-    algorithm, param = _parse_algorithm(req)
+    pb = req.get("payload_bytes")
+    if isinstance(pb, bool) or not isinstance(pb, int) or not M.TAG_LEN < pb <= limits.max_frame_bytes:
+        raise StegoError("INVALID_REQUEST", "payload_bytes must be an integer in (32, max_frame_bytes]")
+    ml = req.get("min_level", 0)
+    seg_cfg = _seg_config(req)
+    if isinstance(ml, bool) or not isinstance(ml, int) or not 0 <= ml <= seg_cfg.max_refine_levels:
+        raise StegoError("SEGMENTATION_FAILED" if isinstance(ml, int) and not isinstance(ml, bool) and ml > seg_cfg.max_refine_levels else "INVALID_REQUEST",
+                         "refinement level exhausted or invalid", {"max_refine_levels": seg_cfg.max_refine_levels})
+    tc = req.get("target_chunk_bytes", planner.DEFAULT_TARGET_CHUNK)
+    if isinstance(tc, bool) or not isinstance(tc, int):
+        raise StegoError("INVALID_REQUEST", "target_chunk_bytes must be an integer")
     t0 = time.perf_counter()
     cov = cover_mod.acquire(req.get("cover"), limits, store)
     t_cap = _ms(t0)
     t1 = time.perf_counter()
-    selection = selector.select(cov.array, fb, req.get("priority"), req.get("policy"), forced=algorithm, cover_source=cov.source,
-                                forced_param=param, max_frame_bytes=limits.max_frame_bytes)
-    t_sel = _ms(t1)
+    pl = planner.plan(cov.array, pb, seg_cfg, ml, tc)
+    t_plan = _ms(t1)
     t2 = time.perf_counter()
     aid, png = _persist_cover(cov, store)
+    store.write_replace(aid, "seg", overlay_png(cov.array, pl.seg.labels, pl.seg.n_regions, pl.parsed.reserved_rows))
+    store.write_replace(aid, "labels", images.encode_png(pl.seg.labels))
     store.enforce_retention(keep_id=aid)
-    log.info("analyze ok frame_bytes=%d selected=%s", fb, selection["selected"])
-    return {"ok": True, "selection": selection, "cover": cover_descriptor(cov, aid, png),
-            "timings_ms": {"capture": t_cap, "select": t_sel, "save": _ms(t2)}}
+    d = pl.diagnostics
+    log.info("plan ok payload_bytes=%d patches=%d used=%d level=%d", pb, d["patch_count"], d["used_patches"], d["refinement_level"])
+    return {"ok": True, "format_version": FORMAT_VERSION, "manifest_b64": base64.b64encode(pl.manifest).decode("ascii"),
+            "manifest_sha256": _sha(pl.manifest), "plan": d, "cover": cover_descriptor(cov, aid, png),
+            "inspection": {"segmentation_overlay": f"{aid}.seg.png", "label_map": f"{aid}.labels.png",
+                           "palette": palette(pl.seg.n_regions).tolist()},
+            "timings_ms": {"capture": t_cap, "plan": t_plan, "save": _ms(t2)}}
 
 
 def _decode_frame(req, limits):
@@ -113,81 +128,78 @@ def _decode_frame(req, limits):
         raise StegoError("INVALID_REQUEST", "frame_b64 is not valid base64") from exc
     if len(frame) > limits.max_frame_bytes:
         raise StegoError("FRAME_TOO_LARGE", "frame exceeds maximum", {"max_frame_bytes": limits.max_frame_bytes})
-    if len(frame) < 1:
-        raise StegoError("INVALID_REQUEST", "frame must not be empty")
     return frame
+
+
+def manifest_summary(man):
+    return {"version": M.MANIFEST_VERSION, "segmentation_version": SEGMENTATION_VERSION, "selector_version": SELECTOR_VERSION,
+            "width": man.width, "height": man.height, "channels": man.channels, "cell_size": man.cell,
+            "patch_count": len(man.patches), "reserved_rows": man.reserved_rows, "payload_len": man.payload_len,
+            "patches": [{"patch_id": i, "alg_id": e.alg_id, "algorithm": BY_ID[e.alg_id].name if e.alg_id else None,
+                         "param": e.param, "payload_offset": e.offset if e.alg_id else None, "payload_length": e.length}
+                        for i, e in enumerate(man.patches)]}
 
 
 def encode(req, store=None):
     store = store or get_store()
     limits = config.parse_limits(req.get("limits"))
     frame = _decode_frame(req, limits)
-    algorithm, param = _parse_algorithm(req)
+    spec = req.get("cover")
+    if not isinstance(spec, dict) or spec.get("source") not in cover_mod.STORED_SOURCES:
+        raise StegoError("INVALID_REQUEST", "encode needs the stored cover that was planned (cover.source test_cover/browser_webcam/uploaded)")
     timings = {}
     t = time.perf_counter()
-    cov = cover_mod.acquire(req.get("cover"), limits, store)
+    cov = cover_mod.acquire(spec, limits, store)
     timings["capture"] = _ms(t)
 
     t = time.perf_counter()
-    # With an explicit algorithm (the core always sends the one chosen at analyze time) only that
-    # candidate is re-validated (capacity, trial encode, hard limits); the full ten-candidate
-    # report was already produced by /analyze.
-    selection = selector.select(cov.array, len(frame), req.get("priority"), req.get("policy"), forced=algorithm, cover_source=cov.source,
-                                forced_param=param, max_frame_bytes=limits.max_frame_bytes,
-                                candidates=None if algorithm is None else [algorithm])
-    timings["select"] = _ms(t)
-    alg = BY_NAME[selection["selected"]]
-    eff_param = selection["selected_param"]
-
-    t = time.perf_counter()
-    stego, outcome = codec.embed_frame(cov.array, alg, eff_param, frame)
+    stego, man, per_patch = codec.embed_frame(cov.array, frame, limits)
     timings["embed"] = _ms(t)
 
     t = time.perf_counter()
-    got, bs, _ = codec.extract_frame(stego, limits)
-    if got != frame or bs.alg_id != alg.id or bs.param != eff_param or bs.frame_len != len(frame):
-        raise StegoError("EMBED_VERIFY_FAILED", "in-process extract did not match embedded frame")
+    got, _, _, _ = codec.extract_frame(stego, limits)
+    if got != frame:
+        raise StegoError("EMBED_VERIFY_FAILED", "in-process extract did not match the frame")
     m = metrics.compute(cov.array, stego)
     png = images.encode_png(stego)
     timings["verify"] = _ms(t)
 
     t = time.perf_counter()
     aid = artifacts.new_id()
-    wrote_cover = cov.artifact_id is None
-    cover_png = None
+    cover_id = cov.artifact_id
+    cover_png = store.read(cover_id, "cover")
     try:
-        if wrote_cover:
-            cover_png = images.encode_png(cov.array)
-            store.write(aid, "cover", cover_png)
-            cover_id = aid
-        else:
-            cover_id = cov.artifact_id
-            cover_png = store.read(cover_id, "cover")
         store.write(aid, "stego", png)
         timings["save"] = _ms(t)
         t = time.perf_counter()
         reread, _tr = images.decode_png(store.read(aid, "stego"), limits)
-        got2, _, _ = codec.extract_frame(reread, limits)
+        got2, _, _, ext = codec.extract_frame(reread, limits)   # the saved file, re-opened from disk
         if got2 != frame or not np.array_equal(reread, stego):
             raise StegoError("EMBED_VERIFY_FAILED", "saved PNG did not round-trip")
+        status = {e["patch_id"]: e["status"] for e in ext}
+        for p in per_patch:
+            if p["used"]:
+                p["extraction"] = "verified_from_saved_png" if status.get(p["patch_id"]) == "extracted" else "missing"
+        diff = np.abs(stego.astype(np.int16) - cov.array.astype(np.int16))
+        dmap = diff if diff.ndim == 2 else diff.max(axis=2)
+        store.write(aid, "diff", images.encode_png(np.clip(dmap * 64, 0, 255).astype(np.uint8)))
         timings["verify"] = round(timings["verify"] + _ms(t), 3)
     except Exception:
-        store.delete(aid, ("stego", "cover") if wrote_cover else ("stego",))
+        store.delete(aid, ("stego", "diff"))
         raise
     store.enforce_retention(keep_id=aid)
-    log.info("encode ok alg=%s frame_bytes=%d size=%d", alg.name, len(frame), len(png))
+    used = [p for p in per_patch if p["used"]]
+    log.info("encode ok frame_bytes=%d patches_used=%d size=%d", len(frame), len(used), len(png))
     return {
-        "ok": True, "artifact_id": aid,
+        "ok": True, "artifact_id": aid, "format_version": FORMAT_VERSION,
         "stego": {"path_name": f"{aid}.png", "sha256": _sha(png), "size": len(png),
                   "width": int(stego.shape[1]), "height": int(stego.shape[0]),
                   "mode": images.mode_of(stego), "channels": images.channels_of(stego), "format": "PNG"},
         "cover": cover_descriptor(cov, cover_id, cover_png),
-        "selection": selection,
-        "embed": {"algorithm": alg.name, "alg_id": alg.id, "param": eff_param,
-                  "params": {"requested": eff_param, "effective": outcome.param, **outcome.detail},
-                  "capacity_bytes": outcome.capacity_bits // 8, "frame_len": len(frame),
-                  "used_fraction": round(len(frame) * 8 / outcome.capacity_bits, 8),
-                  "metrics": m},
+        "embed": {"frame_len": len(frame), "manifest_len": len(frame) - M.FRAME_HEADER_LEN - man.payload_len,
+                  "payload_len": man.payload_len, "patch_count": len(man.patches), "used_patches": len(used),
+                  "reserved_rows": man.reserved_rows, "patches": per_patch, "metrics": m,
+                  "exact_frame_recovery_from_saved_png": True},
         "timings_ms": timings,
     }
 
@@ -201,16 +213,21 @@ def extract_artifact(req, store=None):
     arr, _ = images.decode_png(data, limits)
     t_read = _ms(t)
     t = time.perf_counter()
-    frame, bs, alg = codec.extract_frame(arr, limits)
+    frame, man, pre, per_patch = codec.extract_frame(arr, limits)
     t_ext = _ms(t)
     return {
-        "ok": True, "frame_b64": base64.b64encode(frame).decode("ascii"),
-        "bootstrap": {"version": bs.version, "alg_id": bs.alg_id, "algorithm": alg.name,
-                      "param": bs.param, "frame_len": bs.frame_len},
+        "ok": True, "frame_b64": base64.b64encode(frame).decode("ascii"), "format_version": FORMAT_VERSION,
+        "bootstrap": {"version": pre.version, "manifest_len": pre.manifest_len, "frame_len": pre.frame_len},
+        "manifest": manifest_summary(man), "patches": per_patch, "resegmented": False,
         "image": {"width": int(arr.shape[1]), "height": int(arr.shape[0]), "mode": images.mode_of(arr),
                   "channels": images.channels_of(arr), "format": "PNG", "size": len(data), "sha256": _sha(data)},
         "timings_ms": {"read": t_read, "extract": t_ext},
     }
+
+
+def knowledge_base():
+    return dict(KB.public_view(), ok=True, format_version=FORMAT_VERSION, segmentation_version=SEGMENTATION_VERSION,
+                segmentation_defaults=S.SegConfig().to_dict())
 
 
 def health(store=None):
@@ -219,11 +236,14 @@ def health(store=None):
     store = store or get_store()
     adapter = cover_mod.get_camera_adapter()
     lim = config.Limits()
+    kb = KB.load()
     return {
-        "ok": True, "service": "python-stego", "version": SERVICE_VERSION,
+        "ok": True, "service": "python-stego", "version": SERVICE_VERSION, "format_version": FORMAT_VERSION,
+        "segmentation_version": SEGMENTATION_VERSION, "selector_version": SELECTOR_VERSION, "kb_version": kb["kb_version"],
         "algorithms": [a.describe() for a in sorted(BY_NAME.values(), key=lambda a: a.id)],
         "limits": {"max_width": lim.max_width, "max_height": lim.max_height,
-                   "max_frame_bytes": lim.max_frame_bytes, "min_dim": lim.min_dim},
+                   "max_frame_bytes": lim.max_frame_bytes, "min_dim": lim.min_dim,
+                   "max_patches": M.MAX_PATCHES, "max_manifest_bytes": M.MAX_MANIFEST_BYTES},
         "artifact_dir_writable": store.writable(),
         "camera": {"backend": adapter.backend, "opencv_available": adapter.opencv_available(),
                    "mode": config.camera_mode()},

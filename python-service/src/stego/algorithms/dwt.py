@@ -27,7 +27,7 @@ import numpy as np
 
 from ..errors import StegoError
 from . import blocks as B
-from .base import Algorithm, EmbedOutcome, from_bits
+from .base import Algorithm, from_bits
 
 BLOCK = 2
 CANDIDATES = 8
@@ -73,26 +73,27 @@ def read_bits(blk, delta):
 class Dwt(Algorithm):
     id = 6
     name = "dwt"
-    variant = "haar-l1-hh-qim-v1"
+    variant = "haar-l1-hh-qim-v1 (complete 2x2 blocks inside the patch)"
     domain = "transform (Haar DWT)"
     default_param = 4
     param_range = (4, 64)
+    block = 2
+    mask_support = "needs complete 2x2 blocks of the global grid inside the patch"
     reference = ("Blockwise 1-level Haar DWT with QIM (Chen & Wornell 2001, doi:10.1109/18.923725); "
                  "one documented variant of the DWT family, e.g. doi:10.1080/09720529.2019.1698801")
 
-    def capacity_bits(self, img, param=0):
+    def capacity_bits(self, img, region, param=0):
         self.resolve_param(param)
-        return B.block_count(img, BLOCK)
+        return int(region.blocks(BLOCK)[0].size)
 
-    def embed(self, img, payload, param=0):
-        p, bits, cap = self._need(img, payload, param)
-        out = img.copy()
+    def embed(self, ctx, region, out, payload, param=0):
+        p, bits, cap = self._need(ctx.cover, region, payload, param, out)
         n = int(bits.size)
         if n == 0:
-            return EmbedOutcome(out, 0, cap, p, {"blocks_used": 0})
+            return {"blocks_used": 0}
         delta = float(p)
-        br, bc = B.block_coords(img, BLOCK, n)
-        blk = B.gather(B.plane(img), BLOCK, br, bc)
+        br, bc = (x[:n] for x in region.blocks(BLOCK))
+        blk = B.gather(B.plane(ctx.cover), BLOCK, br, bc)
         cands = B.qim_candidates(haar_hh(blk), delta, bits.astype(np.int64), CANDIDATES)
         result = np.empty_like(blk)
         pending = np.arange(n)
@@ -111,15 +112,15 @@ class Dwt(Algorithm):
                 break
         if pending.size:
             raise StegoError("ENCODE_VERIFY_FAILED", "dwt: blocks failed round-trip verification",
-                             {"failed_blocks": int(pending.size), "blocks_used": n})
+                             {"failed_blocks": int(pending.size), "blocks_used": n, "patch": region.id})
         B.scatter(B.plane(out), BLOCK, br, bc, result)
-        return EmbedOutcome(out, n, cap, p, {"blocks_used": n, "blocks_retried": retried, "subband": "HH"})
+        return {"blocks_used": n, "blocks_retried": retried, "subband": "HH", "delta": p}
 
-    def extract(self, img, nbytes, param=0):
+    def extract(self, img, region, nbytes, param=0):
         p = self.resolve_param(param)
-        self._check_extract(img, nbytes, p)
+        self._check_extract(img, region, nbytes, p)
         if nbytes == 0:
             return b""
         n = nbytes * 8
-        br, bc = B.block_coords(img, BLOCK, n)
+        br, bc = (x[:n] for x in region.blocks(BLOCK))
         return from_bits(read_bits(B.gather(B.plane(img), BLOCK, br, bc), float(p)), nbytes)

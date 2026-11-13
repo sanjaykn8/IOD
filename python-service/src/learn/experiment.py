@@ -1,11 +1,15 @@
-"""Isolated execution experiments for the Algorithm Learning workbench (EDUCATIONAL).
+"""Patch-level experiments for the Algorithm Learning workbench (EDUCATIONAL).
 
-* Runs the real operational algorithm implementations (stego.algorithms + stego.codec) on a
-  sample or uploaded cover with caller-supplied payload bytes; nothing is written to the
-  operational artifact store, no event is logged there, no protocol state is touched.
-* "Saved image": the stego array is PNG-encoded and the extraction runs on the decoded PNG
-  bytes (lossless round trip), not on the in-memory array.
-* Every algorithm in one comparison gets the SAME cover array and the SAME payload bytes.
+* Uses the SAME segmentation, feature, knowledge-base and algorithm code as the operational
+  transport, but in isolation: nothing is written to the operational artifact store, no event
+  is logged, no protocol state is touched, and the static knowledge base / selector policy are
+  only READ (an experiment can never change what production selects).
+* One experiment = one cover + one payload + one chosen irregular patch; every algorithm
+  embeds the same bytes into that same patch mask (no bootstrap carrier in experiments).
+* "Saved image": the stego array is PNG-encoded and extraction runs on the decoded PNG.
+* `survey` lists, for every patch of the segmentation, each algorithm's geometry support,
+  measured capacity and the ranking the knowledge-base selector would produce for this payload.
+* Results describe this repository's implemented variants, not canonical paper implementations.
 """
 
 import base64
@@ -18,11 +22,15 @@ import uuid
 import numpy as np
 from PIL import Image
 
-from stego import codec, images, metrics
+from stego import images, metrics
 from stego.algorithms import BY_NAME, NAMES
 from stego.algorithms.adaptive import AdaptiveStc
 from stego.config import Limits
 from stego.errors import StegoError
+from stego.patch import SEGMENTATION_VERSION, SELECTOR_VERSION, features as PF, kb as KB, segment as S
+from stego.patch.planner import _patch_tables
+from stego.patch.region import CoverCtx, Region
+from stego.patch.render import overlay_png, palette
 
 from . import LABEL, LEARN_VERSION, fixtures as F
 from .walkthrough import clean
@@ -30,24 +38,24 @@ from .walkthrough import clean
 MAX_UPLOAD_DIM = 512
 PARTIAL_BER = 0.1  # oracle BER above this is reported as failed (0.5 = random guessing)
 MAX_PAYLOAD = 16384
-BOOTSTRAP_BITS = 128
+PATCH_CHOICES = ("most_textured", "smoothest", "largest", "smallest")
 
 METRIC_DEFINITIONS = {
-    "mse": "mean over all samples (pixels x channels) of (cover - stego)^2",
-    "psnr_db": "10 log10(255^2 / MSE); null when MSE = 0 (identical images, infinite PSNR)",
-    "ssim": "mean SSIM, uniform 7x7 window, K1=0.01, K2=0.03, L=255, data range 0..255, averaged over all windows and channels",
-    "capacity_bits_raw": "algorithm capacity for this cover excluding the 128 bootstrap samples (estimated from the cover)",
-    "capacity_bits_verified": "largest payload actually embedded AND extracted exactly in a verification run (bytes x 8)",
-    "payload_bits": "payload bytes x 8 (the complete payload: AEAD test envelope or synthetic fixture)",
-    "bits_per_pixel": "payload_bits / (width x height)",
-    "embed_ms": "sender-side codec.embed_frame duration (monotonic perf_counter); setup_ms = cost-map time inside it (STC methods)",
-    "extract_ms": "receiver-side PNG decode + bootstrap validation + extraction (perf_counter)",
+    "mse": "mean over all samples of the IMAGE of (cover - stego)^2",
+    "patch_mse": "mean over the samples of the chosen PATCH only of (cover - stego)^2",
+    "psnr_db": "10 log10(255^2 / MSE) over the image; null when MSE = 0 (identical images)",
+    "patch_psnr_db": "10 log10(255^2 / patch_mse); null when the patch is unchanged",
+    "ssim": "mean SSIM over the image, uniform 7x7 window, K1=0.01, K2=0.03, L=255",
+    "capacity_bits": "capacity measured by the algorithm implementation on this patch mask (not a knowledge-base estimate)",
+    "payload_bits": "payload bytes x 8",
+    "bits_per_patch_sample": "payload_bits / (patch pixels x channels)",
+    "embed_ms": "patch embedding duration (perf_counter); setup_ms = cost evaluation inside it (STC methods)",
+    "extract_ms": "PNG decode + patch extraction",
     "bit_accuracy": "matching bits / expected payload bits",
     "ber": "(wrong bits + missing bits) / expected payload bits; 1.0 if extraction failed entirely",
-    "robustness": "per attack: 'recovered' = full pipeline (bootstrap + payload) returned the exact payload; "
-                  "'recovered_oracle_only' = only a direct extraction with the known algorithm/length/parameter was exact; "
-                  "'partial' = oracle BER in (0, 0.1]; 'failed' = otherwise (BER ~0.5 is chance level). "
-                  "oracle_ber = BER of that direct extraction",
+    "outside_patch_changes": "samples changed outside the patch mask (must be 0)",
+    "robustness": "per attack: extraction from the attacked image with the known patch mask and parameters "
+                  "(oracle); outcome recovered (BER 0) / partial (BER <= 0.1) / failed (BER ~0.5 is chance level)",
 }
 
 ATTACKS = [
@@ -140,48 +148,6 @@ def _norm8(x):
     return np.clip((y - lo) / (hi - lo) * 255, 0, 255).astype(np.uint8)
 
 
-def _gray(a):
-    return a if a.ndim == 2 else a.max(axis=2) if a.dtype == bool else a.mean(axis=2)
-
-
-def visualisations(name, cover, stego):
-    """Algorithm-specific maps as PNG data URIs (amplified so they are visible)."""
-    diff = np.abs(stego.astype(np.int16) - cover.astype(np.int16))
-    dmap = diff.max(axis=2) if diff.ndim == 3 else diff
-    out = {
-        "difference_x64": {"title": "|stego - cover| x 64 (max over channels)", "png": _png_data_uri(np.clip(dmap * 64, 0, 255).astype(np.uint8))},
-        "changed_locations": {"title": "Changed locations (white)", "png": _png_data_uri(((dmap > 0) * 255).astype(np.uint8))},
-    }
-    alg = BY_NAME[name]
-    g = cover if cover.ndim == 2 else cover[:, :, 2]
-    if name in ("lsb_replacement", "lsb_matching"):
-        out["specific"] = {"title": "Cover LSB plane", "png": _png_data_uri(((cover if cover.ndim == 2 else cover[:, :, 0]) & 1) * 255)}
-    elif name == "pvd":
-        flat = g.astype(np.int16)
-        d = np.abs(flat[:, 0::2][:, : flat.shape[1] // 2] - flat[:, 1::2][:, : flat.shape[1] // 2])
-        out["specific"] = {"title": "Pair difference |a-b| (row pairs, larger = more bits)", "png": _png_data_uri(_norm8(np.repeat(d, 2, axis=1)))}
-    elif name == "edge_adaptive_lsb":
-        from stego.algorithms.edge_adaptive import edge_mask
-        out["specific"] = {"title": "Edge mask (eligible pixels, T=6)", "png": _png_data_uri(edge_mask(cover, 6).astype(np.uint8) * 255)}
-    elif name == "dwt":
-        h2, w2 = (g.shape[0] // 2) * 2, (g.shape[1] // 2) * 2
-        x = g[:h2, :w2].astype(np.float64)
-        hh = (x[0::2, 0::2] - x[0::2, 1::2] - x[1::2, 0::2] + x[1::2, 1::2]) / 2
-        out["specific"] = {"title": "Haar HH sub-band |HH| of the embedding plane", "png": _png_data_uri(_norm8(np.abs(hh)))}
-    elif name in ("dct", "dct_svd"):
-        from stego.algorithms import dct_svd as DS
-        nbr, nbc = g.shape[0] // 8, g.shape[1] // 8
-        blk = g[:nbr * 8, :nbc * 8].reshape(nbr, 8, nbc, 8).transpose(0, 2, 1, 3).reshape(-1, 8, 8).astype(np.float64)
-        s1 = DS.read_s1(blk).reshape(nbr, nbc)
-        title = "Largest singular value s1 per 8x8 block (embedding plane)" if name == "dct_svd" else "Block energy proxy s1 per 8x8 block"
-        out["specific"] = {"title": title, "png": _png_data_uri(np.kron(_norm8(s1), np.ones((8, 8), np.uint8)))}
-    elif isinstance(alg, AdaptiveStc):
-        cmap = alg.cost_map(cover)
-        cm = cmap if cmap.ndim == 2 else np.fmin.reduce(cmap, axis=2)  # NaN-ignoring, no warning
-        out["specific"] = {"title": "Embedding cost map, log scale (dark = cheap)", "png": _png_data_uri(_norm8(np.log10(np.maximum(cm, 1e-6))))}
-    return out
-
-
 def _cover_from(req):
     c = req.get("cover") or {"sample": "natural_rgb_256"}
     if not isinstance(c, dict):
@@ -215,93 +181,115 @@ def _payload_from(req):
     return raw, req.get("payload_kind", "custom")
 
 
-def _one(name, cover, payload, attacks, verify_capacity, include_images):
+
+def _choose_patch(req, feats):
+    want = req.get("patch", "most_textured")
+    n = len(feats)
+    if isinstance(want, bool):
+        raise StegoError("INVALID_REQUEST", "patch must be a patch id or a selection keyword")
+    if isinstance(want, int):
+        if not 0 <= want < n:
+            raise StegoError("INVALID_REQUEST", "patch id out of range", {"patch_count": n})
+        return want, "explicit"
+    if want not in PATCH_CHOICES:
+        raise StegoError("INVALID_REQUEST", "unknown patch selection", {"allowed": list(PATCH_CHOICES)})
+    key = {"most_textured": lambda f: (-f["gradient_mean"], f["patch_id"]), "smoothest": lambda f: (f["gradient_mean"], f["patch_id"]),
+           "largest": lambda f: (-f["pixels"], f["patch_id"]), "smallest": lambda f: (f["pixels"], f["patch_id"])}[want]
+    return sorted(feats, key=key)[0]["patch_id"], want
+
+
+def _highlight_png(cover, labels, pid):
+    gray = S.luma_of(cover)
+    out = np.repeat(gray[:, :, None], 3, axis=2) * 0.45
+    m = labels == pid
+    src = cover if cover.ndim == 3 else np.repeat(cover[:, :, None], 3, axis=2)
+    out[m] = src[m]
+    edge = np.zeros(m.shape, dtype=bool)
+    edge[:, 1:] |= m[:, 1:] != m[:, :-1]
+    edge[1:, :] |= m[1:, :] != m[:-1, :]
+    out[edge] = (255, 200, 0)
+    return _png_data_uri(np.clip(out, 0, 255).astype(np.uint8))
+
+
+def _one(name, cover, ctx, region, feat, caps, sups, payload, attacks, include_images):
     alg = BY_NAME[name]
-    h, w = cover.shape[:2]
-    cap = int(alg.capacity_bits(cover))
+    ch = ctx.channels
     pbits = len(payload) * 8
+    ok, why = sups[name]
+    cap = int(caps[name])
+    structural = KB.structural(feat, sups)[name]
     row = {"algorithm": name, "alg_id": alg.id, "variant": alg.variant, "domain": alg.domain, "coding": alg.coding,
-           "reference": alg.reference, "capacity_bits_raw": cap, "capacity_bytes_raw": cap // 8,
-           "bootstrap_bits": BOOTSTRAP_BITS, "payload_bytes": len(payload), "payload_bits": pbits,
-           "bits_per_pixel": round(pbits / (h * w), 8), "utilisation": round(pbits / cap, 6) if cap else None}
+           "reference": alg.reference, "mask_support": alg.mask_support, "block": alg.block,
+           "geometry_supported": bool(ok), "geometry_reason": why, "kb_structural_filters_pass": bool(structural),
+           "capacity_bits": cap, "capacity_bytes": cap // 8, "payload_bytes": len(payload), "payload_bits": pbits,
+           "bits_per_patch_sample": round(pbits / max(1, region.n_pixels * ch), 8),
+           "utilisation": round(pbits / cap, 6) if cap else None}
+    if not ok:
+        row.update(status="unsupported_geometry", error={"code": "PATCH_UNSUPPORTED", "message": f"patch geometry not supported: {why}"})
+        return row
     if pbits > cap:
         row.update(status="rejected_capacity", error={"code": alg.capacity_code,
-                   "message": f"payload ({pbits} bits) exceeds capacity ({cap} bits); not shortened"})
+                   "message": f"payload ({pbits} bits) exceeds the measured patch capacity ({cap} bits); not shortened"})
         return row
+    param = alg.choose_w(cover, region, len(payload)) if isinstance(alg, AdaptiveStc) else alg.resolve_param(0)
+    row["param"] = param
+    stego = cover.copy()
     t0 = time.perf_counter()
     try:
-        stego, outcome = codec.embed_frame(cover, alg, 0, payload)
+        detail = alg.embed(ctx, region, stego, payload, param)
     except StegoError as exc:
-        row.update(status="embed_failed", error={"code": exc.code, "message": str(exc)},
-                   embed_ms=round((time.perf_counter() - t0) * 1000, 3))
+        row.update(status="embed_failed", error={"code": exc.code, "message": str(exc)}, embed_ms=round((time.perf_counter() - t0) * 1000, 3))
         return row
     embed_ms = (time.perf_counter() - t0) * 1000
     png = images.encode_png(stego)
     t1 = time.perf_counter()
     try:
         decoded, _ = images.decode_png(png, Limits())
-        got, bs, _ = codec.extract_frame(decoded, Limits())
-        ext_err = None
+        got, ext_err = alg.extract(decoded, region, len(payload), param), None
     except StegoError as exc:
         got, ext_err = b"", {"code": exc.code, "message": str(exc)}
     extract_ms = (time.perf_counter() - t1) * 1000
     match, wrong, missing, ber, bytes_ok = bit_compare(payload, got)
     m = metrics.compute(cover, stego)
-    row.update(status="ok" if (got == payload) else "extract_mismatch",
-               embed_ms=round(embed_ms, 3), setup_ms=outcome.detail.get("cost_ms"), extract_ms=round(extract_ms, 3),
-               mse=m["mse"], psnr_db=m["psnr"], psnr_defined=m["psnr_defined"], ssim=m["ssim"],
-               changed_samples=m["changed_samples"], max_abs_diff=m["max_abs_diff"],
+    mask3 = region.mask if cover.ndim == 2 else region.mask[:, :, None]
+    diff = stego.astype(np.int16) - cover.astype(np.int16)
+    outside = int(np.count_nonzero(diff * (~mask3)))
+    pd = diff[region.mask].astype(np.float64)
+    pmse = float(np.mean(pd ** 2)) if pd.size else 0.0
+    row.update(status="ok" if got == payload else "extract_mismatch",
+               embed_ms=round(embed_ms, 3), setup_ms=detail.get("cost_ms"), extract_ms=round(extract_ms, 3),
+               mse=m["mse"], psnr_db=m["psnr"], ssim=m["ssim"], patch_mse=round(pmse, 6),
+               patch_psnr_db=None if pmse == 0 else round(10 * np.log10(255.0 ** 2 / pmse), 4),
+               changed_samples=m["changed_samples"], max_abs_diff=m["max_abs_diff"], outside_patch_changes=outside,
                bit_accuracy=round(match / pbits, 8), byte_accuracy=round(bytes_ok / len(payload), 8), ber=round(ber, 8),
-               exact_recovery=(got == payload), extract_error=ext_err,
-               stego_png_bytes=len(png), stego_sha256=hashlib.sha256(png).hexdigest(),
-               extracted_b64=base64.b64encode(got).decode(),
-               detail=clean(outcome.detail))
-    if verify_capacity:
-        nb = cap // 8
-        vrow = {"tested_bytes": nb}
-        try:
-            test = np.random.default_rng(7).integers(0, 256, nb, dtype=np.uint8).tobytes()
-            st2, _ = codec.embed_frame(cover, alg, 0, test)
-            ok = codec.extract_frame(images.decode_png(images.encode_png(st2), Limits())[0], Limits())[0] == test
-            vrow["passed"] = bool(ok)
-        except StegoError as exc:
-            vrow.update(passed=False, error=exc.code)
-        row["capacity_bits_verified"] = nb * 8 if vrow.get("passed") else None
-        row["capacity_verification"] = vrow
+               exact_recovery=(got == payload), extract_error=ext_err, stego_sha256=hashlib.sha256(png).hexdigest(),
+               extracted_b64=base64.b64encode(got).decode(), detail=clean(detail))
     if attacks:
         rob = []
         for at in ATTACKS:
             attacked = apply_attack(stego, at)
             r = {"attack": at["id"], "label": at["label"], "params": at["params"]}
             try:
-                full = codec.extract_frame(attacked, Limits())[0]
-                r["full_pipeline"] = "recovered" if full == payload else "wrong_payload"
-            except StegoError as exc:
-                r["full_pipeline"] = "failed"
-                r["full_error"] = exc.code
-            try:
                 if attacked.shape != stego.shape:
                     raise StegoError("DESYNCHRONISED", "image geometry changed")
-                ob = alg.extract(attacked, len(payload), 0)
-                _, _, _, ober, _ = bit_compare(payload, ob)
+                _, _, _, ober, _ = bit_compare(payload, alg.extract(attacked, region, len(payload), param))
                 r["oracle_ber"] = round(ober, 6)
             except StegoError as exc:
                 r["oracle_ber"] = 1.0
                 r["oracle_error"] = exc.code
-            # BER near 0.5 is chance level (no information), so it counts as failed, not partial
-            r["outcome"] = ("recovered" if r["full_pipeline"] == "recovered" else
-                            "recovered_oracle_only" if r["oracle_ber"] == 0 else
-                            "partial" if r["oracle_ber"] <= PARTIAL_BER else "failed")
+            r["outcome"] = "recovered" if r["oracle_ber"] == 0 else "partial" if r["oracle_ber"] <= PARTIAL_BER else "failed"
             rob.append(r)
         row["robustness"] = rob
     if include_images:
-        row["images"] = {"stego": _png_data_uri(stego), **visualisations(name, cover, stego)}
+        dmap = np.abs(diff) if diff.ndim == 2 else np.abs(diff).max(axis=2)
+        row["images"] = {"stego": _png_data_uri(stego),
+                         "difference_x64": {"title": "|stego - cover| x 64 (changes stay inside the patch)", "png": _png_data_uri(np.clip(dmap * 64, 0, 255).astype(np.uint8))}}
     return row
 
 
 def run(req):
-    """Run one experiment. req: {algorithms: [...] | 'all', cover: {...}, payload_b64, payload_kind,
-    robustness: bool, verify_capacity: bool, include_images: bool}."""
+    """Patch-level experiment. req: {algorithms: [...]|'all', cover, payload_b64, payload_kind,
+    patch: id | keyword, robustness, include_images, survey, segmentation}."""
     if not isinstance(req, dict):
         raise StegoError("INVALID_REQUEST", "JSON object required")
     algs = req.get("algorithms", "all")
@@ -311,37 +299,69 @@ def run(req):
         raise StegoError("INVALID_REQUEST", "algorithms must be 'all' or a list of distinct algorithm names")
     cover, cinfo = _cover_from(req)
     payload, kind = _payload_from(req)
+    seg_cfg = S.parse_config(req.get("segmentation"))
     rob = bool(req.get("robustness", False))
-    verify = bool(req.get("verify_capacity", True))
     imgs = bool(req.get("include_images", True))
     t0 = time.perf_counter()
-    results = [_one(a, cover, payload, rob, verify, imgs) for a in sorted(algs, key=lambda n: BY_NAME[n].id)]
+    seg = S.segment(cover, seg_cfg, 0)
+    feats = PF.compute(cover, seg.labels, seg.n_regions, 0)
+    regions, caps, sups = _patch_tables(cover, seg.labels, feats, seg.n_regions)
+    pid, how = _choose_patch(req, feats)
+    ctx = CoverCtx(cover)
+    results = [_one(a, cover, ctx, regions[pid], feats[pid], caps[pid], sups[pid], payload, rob, imgs)
+               for a in sorted(algs, key=lambda n: BY_NAME[n].id)]
+    ch = ctx.channels
+    q = dict(feats[pid])
+    q["bits_per_sample"] = round(8.0 * len(payload) / max(1, feats[pid]["usable_pixels"] * ch), 8)
+    retrieval = KB.retrieve(q, len(payload), caps[pid], sups[pid])
+    survey = None
+    if req.get("survey", True):
+        survey = []
+        for i, f in enumerate(feats):
+            qq = dict(f)
+            qq["bits_per_sample"] = round(8.0 * len(payload) / max(1, f["usable_pixels"] * ch), 8)
+            r = KB.retrieve(qq, len(payload), caps[i], sups[i])
+            survey.append({"patch_id": i, "pixels": f["pixels"], "gradient_mean": f["gradient_mean"], "variance": f["variance"],
+                           "entropy": f["entropy"], "saturation": f["saturation"], "compactness": f["compactness"],
+                           "blocks8": f["blocks8"], "blocks2": f["blocks2"], "query_terms": r["query_terms"],
+                           "capacity_bits": caps[i], "supported": {k: v[0] for k, v in sups[i].items()},
+                           "unsupported_reasons": {k: v[1] for k, v in sups[i].items() if not v[0]},
+                           "kb_ranking": r["ranking"], "kb_selected": r["selected"],
+                           "bm25": {c["algorithm"]: c["bm25"] for c in r["candidates"]}})
     h, w = cover.shape[:2]
-    cinfo.update(width=w, height=h, channels=1 if cover.ndim == 2 else 3, mode="L" if cover.ndim == 2 else "RGB",
+    cinfo.update(width=w, height=h, channels=ch, mode="L" if cover.ndim == 2 else "RGB",
                  sha256=hashlib.sha256(cover.tobytes()).hexdigest())
     out = {
         "experiment_id": uuid.uuid4().hex, "learn_version": LEARN_VERSION, "mode": "educational", "label": LABEL,
-        "operational": False, "cover": cinfo,
+        "operational": False, "production_kb_modified": False, "cover": cinfo,
+        "segmentation": dict(seg.info, patch_count=seg.n_regions, palette=palette(seg.n_regions).tolist()),
+        "selector_version": SELECTOR_VERSION, "kb_version": KB.load()["kb_version"],
+        "patch": {"patch_id": pid, "chosen_by": how, "features": feats[pid], "kb_retrieval_readonly": retrieval,
+                  "note": "kb_retrieval_readonly shows what the production selector would rank for this patch and payload; "
+                          "the experiment runs every requested algorithm regardless and changes nothing in production."},
         "payload": {"kind": kind, "bytes": len(payload), "bits": len(payload) * 8, "sha256": hashlib.sha256(payload).hexdigest(),
                     "hex_preview": payload[:64].hex(" ").upper() + (" ..." if len(payload) > 64 else ""),
                     "bit_order": F.BIT_ORDER},
-        "same_inputs_for_all_algorithms": True, "results": results, "attacks": ATTACKS if rob else [],
+        "same_inputs_for_all_algorithms": True, "results": results, "survey": survey, "attacks": ATTACKS if rob else [],
         "metric_definitions": METRIC_DEFINITIONS, "duration_ms": round((time.perf_counter() - t0) * 1000, 3),
+        "variant_notice": "Results describe this repository's implemented variants (see each row's 'variant'), not canonical paper implementations.",
         "interpretation": [
             "High PSNR/SSIM means the stego image looks like the cover; it does not prove resistance to steganalysis.",
-            "Low MSE is not a proof of security.",
+            "Capacity depends on the patch: block methods need complete 8x8 / 2x2 blocks inside the mask, edge-adaptive LSB needs edges.",
             "Exact extraction from an unmodified PNG does not establish robustness to lossy transforms.",
-            "Robustness, imperceptibility, capacity, speed and statistical undetectability are different objectives and trade off.",
             "HUGO/WOW/S-UNIWARD minimise a distortion model; that is not a proof that no steganalyst can detect the message.",
         ],
     }
     if imgs:
         out["cover"]["png"] = _png_data_uri(cover)
+        out["segmentation"]["overlay_png"] = "data:image/png;base64," + base64.b64encode(overlay_png(cover, seg.labels, seg.n_regions)).decode()
+        out["patch"]["highlight_png"] = _highlight_png(cover, seg.labels, pid)
     return clean(out)
 
 
 def registry():
-    return clean({"algorithms": [BY_NAME[n].describe() for n in NAMES], "samples": F.SAMPLES,
+    return clean({"algorithms": [BY_NAME[n].describe() for n in NAMES], "samples": F.SAMPLES, "patch_choices": list(PATCH_CHOICES),
                   "attacks": ATTACKS, "metric_definitions": METRIC_DEFINITIONS, "label": LABEL,
+                  "segmentation_version": SEGMENTATION_VERSION, "selector_version": SELECTOR_VERSION,
                   "synthetic_ciphertext_hex": F.SYNTHETIC_CIPHERTEXT.hex().upper(), "synthetic_label": F.SYNTHETIC_LABEL,
                   "sample_message": F.SAMPLE_MESSAGE})

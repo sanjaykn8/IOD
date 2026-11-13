@@ -24,6 +24,15 @@ _HTTP = {
     # algorithm-level capacity codes (surface to clients only inside
     # candidate tables / ALGORITHM_NOT_ELIGIBLE details)
     "CAPACITY_INSUFFICIENT": 422,
+    # patch-wise transport (v2)
+    "MANIFEST_INVALID": 422,
+    "MANIFEST_TOO_LARGE": 422,
+    "FRAME_MALFORMED": 422,
+    "SEGMENTATION_FAILED": 422,
+    "PATCH_CAPACITY_INSUFFICIENT": 422,
+    "PATCH_EMBED_FAILED": 422,
+    "PATCH_UNSUPPORTED": 422,
+    "KB_INVALID": 500,
     "EDGE_CAPACITY_INSUFFICIENT": 422,
 }
 
