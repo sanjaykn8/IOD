@@ -59,7 +59,7 @@ Invoke-DemoStep "j. Send a secure message"
 Invoke-DemoCall POST "/secure-message" '{"from_id":"drone-1","to_id":"drone-2","plaintext":"Perimeter clear, proceeding to waypoint 2."}'
 
 Invoke-DemoStep "k. Patch-wise plan preview (segmentation + per-patch knowledge-base selection; nothing is sent)"
-Invoke-DemoCall POST "/stego/plan" '{"payload_bytes":300,"cover":{"source":"procedural"}}'
+Invoke-DemoCall POST "/stego/plan" '{"payload_bytes":300,"cover_generation":{"max_candidates":2}}'
 
 Invoke-DemoStep "l. Revoke D1"
 Invoke-DemoCall POST "/drones/drone-1/revoke" $null

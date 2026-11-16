@@ -32,7 +32,7 @@ step "j. Send a secure message"
 call POST /secure-message '{"from_id":"drone-1","to_id":"drone-2","plaintext":"Perimeter clear, proceeding to waypoint 2."}'
 
 step "k. Patch-wise plan preview (segmentation + per-patch knowledge-base selection; nothing is sent)"
-call POST /stego/plan '{"payload_bytes":300,"cover":{"source":"procedural"}}'
+call POST /stego/plan '{"payload_bytes":300,"cover_generation":{"max_candidates":2}}'
 
 step "l. Revoke D1"
 call POST /drones/drone-1/revoke

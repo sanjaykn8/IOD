@@ -1,7 +1,7 @@
 // Patch-wise Steganography Lab + Knowledge Base client. Talks ONLY to the Node gateway (`/api/stego/*`),
 // which relays 1:1 to the Rust core. No keys, no selection logic, no crypto here.
 import type {
-  KnowledgeBase, StegoBenchmarkRequest, StegoCoverUploadResult, StegoBenchmarkResult, StegoCameraProbe, StegoCoverRequest, StegoErrorBody, StegoEvent,
+  CoverGenerationRequest, KnowledgeBase, StegoBenchmarkRequest, StegoBenchmarkResult, StegoErrorBody, StegoEvent,
   StegoEventFilter, StegoFailure, StegoMessageResult, StegoPlanPreview, StegoReport, StegoStage, StegoStatus,
 } from "../types/api";
 
@@ -46,16 +46,14 @@ function qs(f: StegoEventFilter): string {
 
 export interface StegoMessageRequest {
   session_id?: string; d1_id?: string; d2_id?: string; from_id: string; plaintext: string;
-  cover?: StegoCoverRequest;
+  /** Optional tightening of the active cover-generation profile. A fresh cover is generated for every message. */
+  cover_generation?: CoverGenerationRequest;
 }
 
 export const stegoApi = {
   status: () => call<StegoStatus>("GET", "/status"),
-  probeCamera: (camera_index?: number) => call<StegoCameraProbe>("POST", "/camera/probe", camera_index === undefined ? {} : { camera_index }),
-  /** Store a PNG (browser webcam frame or user file) as a cover; the service re-validates and re-encodes it. */
-  uploadCover: (image_b64: string, origin: "browser_webcam" | "uploaded") => call<StegoCoverUploadResult>("POST", "/cover/upload", { image_b64, origin }),
-  /** Plan preview: segmentation + per-patch knowledge-base retrieval + allocation for a payload LENGTH. Nothing is sealed or embedded. */
-  plan: (body: { payload_bytes?: number; cover?: StegoCoverRequest; min_level?: number }) => call<StegoPlanPreview>("POST", "/plan", body),
+  /** Plan preview: fresh generated cover + segmentation + per-patch knowledge-base retrieval + allocation for a payload LENGTH. Nothing is sealed or embedded. */
+  plan: (body: { payload_bytes?: number; cover_generation?: CoverGenerationRequest; min_level?: number }) => call<StegoPlanPreview>("POST", "/plan", body),
   /** The static algorithm knowledge base and selector settings (read-only). */
   kb: () => call<KnowledgeBase>("GET", "/kb"),
   /** Full send -> save -> receive -> verify transaction. Failures keep `stages` and `error.stage`. */

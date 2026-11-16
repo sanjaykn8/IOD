@@ -3,7 +3,6 @@
 //! Validation happens here; security decisions live in `transport::pipeline`.
 
 use crate::api::state::SimulationState;
-use crate::transport::backend::is_artifact_id;
 use crate::transport::error::{stage, StegoError};
 use crate::transport::pipeline::{self, MessageRequest, TxFailure};
 use crate::transport::report;
@@ -83,40 +82,22 @@ pub(crate) fn read_body_strict(request: &mut tiny_http::Request, max: usize) -> 
 }
 use std::io::Read as _;
 
-fn cover_from(body: &Value) -> Result<Value, StegoError> {
-    let c = match body.get("cover") {
-        None | Some(Value::Null) => return Ok(json!({"source": "webcam"})),
-        Some(c) => c,
-    };
-    let src = c.get("source").and_then(|s| s.as_str()).unwrap_or("webcam");
-    let mut out = json!({"source": src});
-    match src {
-        "webcam" | "procedural" => {}
-        "test_cover" => {
-            let id = c.get("test_cover_id").and_then(|s| s.as_str()).unwrap_or("");
-            if !is_artifact_id(id) {
-                return Err(bad("test_cover requires test_cover_id (32 lowercase hex characters)"));
-            }
-            out["test_cover_id"] = json!(id);
+/// Top-level fields of the removed cover-acquisition paths (camera, browser webcam, upload, client-selected
+/// or seeded covers). Rejected loudly: an old client must not believe it is choosing the cover.
+const REMOVED_COVER_FIELDS: [&str; 9] = ["cover", "source", "seed", "cover_id", "test_cover_id", "image_b64", "camera_index", "cover_source", "replan_cover_id"];
+
+/// The request's `cover_generation` object, validated against the process configuration (tighten-only).
+/// Returns the raw object (or Null); the pipeline resolves it again against the same configuration.
+fn generation_from(state: &Mutex<SimulationState>, body: &Value) -> Result<Value, StegoError> {
+    for k in REMOVED_COVER_FIELDS {
+        if body.get(k).map(|v| !v.is_null()).unwrap_or(false) {
+            return Err(bad(&format!("'{k}' is not accepted: every transmission uses a fresh cover generated locally; cameras, uploads, seeds and client-selected covers were removed (use the optional 'cover_generation' settings)")));
         }
-        "browser_webcam" | "uploaded" => {
-            let id = c.get("cover_id").and_then(|s| s.as_str()).unwrap_or("");
-            if !is_artifact_id(id) {
-                return Err(bad("browser_webcam/uploaded covers require cover_id (32 lowercase hex characters)"));
-            }
-            out["cover_id"] = json!(id);
-        }
-        _ => return Err(bad("cover.source must be webcam, procedural, test_cover, browser_webcam or uploaded")),
     }
-    if let Some(i) = c.get("camera_index") {
-        let i = i.as_i64().filter(|i| (0..=16).contains(i)).ok_or_else(|| bad("camera_index must be an integer within 0..=16"))?;
-        out["camera_index"] = json!(i);
-    }
-    if let Some(s) = c.get("seed") {
-        let s = s.as_str().filter(|s| s.len() <= 64).ok_or_else(|| bad("seed must be a string of at most 64 characters"))?;
-        out["seed"] = json!(s);
-    }
-    Ok(out)
+    let g = body.get("cover_generation").cloned().unwrap_or(Value::Null);
+    let cfg = state.lock().unwrap().stego_cfg.generator.clone();
+    cfg.resolve(Some(&g))?;
+    Ok(g)
 }
 
 /// Fields of the removed whole-image selector. Rejected loudly instead of being silently ignored,
@@ -157,7 +138,7 @@ fn message_request(state: &Mutex<SimulationState>, body: &Value, origin: &'stati
         session_id: resolve_session(state, body, from)?,
         from_id: from.to_string(),
         plaintext: text.as_bytes().to_vec(),
-        cover: cover_from(body)?,
+        cover_generation: generation_from(state, body)?,
         origin,
     })
 }
@@ -206,38 +187,8 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
                 Err(e) => json!({"reachable": false, "error": e.to_json()}),
             };
             json_resp(200, json!({"backend": b, "config": cfg.public_view(), "counts": {"events": ok + failed, "ok": ok, "failed": failed},
-                "transport": {"format_version": pipeline::TRANSPORT_FORMAT_VERSION, "passthrough_fallback": false}}))
-        }
-        (Method::Post, ["camera", "probe"]) => {
-            let body = match read_body_strict(request, 4096) { Ok(b) => b, Err(e) => return err_resp(&e) };
-            let (backend, cfg) = {
-                let s = state.lock().unwrap();
-                (s.backend.clone(), s.stego_cfg.clone())
-            };
-            let idx = body.get("camera_index").and_then(|i| i.as_i64()).filter(|i| (0..=16).contains(i)).unwrap_or(cfg.camera_index);
-            match backend.camera_probe(idx, cfg.capture_timeout_ms) {
-                Ok(v) => json_resp(200, v),
-                Err(e) => err_resp(&e),
-            }
-        }
-        (Method::Post, ["cover", "upload"]) => {
-            // ~12 MiB of base64 (<= 8 MiB PNG). Python re-validates and fully re-encodes the image.
-            let body = match read_body_strict(request, 12 * 1024 * 1024 + 4096) { Ok(b) => b, Err(e) => return err_resp(&e) };
-            let origin = body.get("origin").and_then(|v| v.as_str()).unwrap_or("browser_webcam");
-            if origin != "browser_webcam" && origin != "uploaded" {
-                return err_resp(&bad("origin must be browser_webcam or uploaded"));
-            }
-            let Some(img) = body.get("image_b64").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) else {
-                return err_resp(&bad("image_b64 is required"));
-            };
-            let (backend, cfg) = {
-                let s = state.lock().unwrap();
-                (s.backend.clone(), s.stego_cfg.clone())
-            };
-            match backend.cover_upload(img, origin, &cfg.limits()) {
-                Ok(v) => json_resp(200, v),
-                Err(e) => err_resp(&e),
-            }
+                "transport": {"format_version": pipeline::TRANSPORT_FORMAT_VERSION, "passthrough_fallback": false,
+                              "cover": "generated locally, fresh per transmission; no camera, upload or client-selected cover"}}))
         }
         (Method::Get, ["kb"]) => {
             let backend = state.lock().unwrap().backend.clone();
@@ -258,7 +209,7 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
                     None | Some(Value::Null) => 0,
                     Some(v) => v.as_u64().filter(|l| *l <= 6).ok_or_else(|| bad("min_level must be an integer within 0..=6"))? as u32,
                 };
-                pipeline::run_plan_preview(state, n, &cover_from(&body)?, lvl)
+                pipeline::run_plan_preview(state, n, &generation_from(state, &body)?, lvl)
             })();
             match run {
                 Ok(v) => json_resp(200, v),
@@ -317,8 +268,10 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
                 Ok(e) => e,
                 Err(e) => return json_resp(500, json!({"ok": false, "error": {"code": "DB_ERROR", "message": e.to_string()}})),
             };
-            let py = backend.health().ok().map(|h| json!({"version": h["version"], "numpy": h["numpy"], "pillow": h["pillow"], "camera_mode": h["camera"]["mode"]}));
-            let env = json!({"os": std::env::consts::OS, "arch": std::env::consts::ARCH, "rust_core_version": env!("CARGO_PKG_VERSION"), "python_service": py});
+            let py = backend.health().ok().map(|h| json!({"version": h["version"], "numpy": h["numpy"], "pillow": h["pillow"], "cover_generator": h["cover_generator"]}));
+            let gen = state.lock().unwrap().stego_cfg.generator.clone();
+            let env = json!({"os": std::env::consts::OS, "arch": std::env::consts::ARCH, "rust_core_version": env!("CARGO_PKG_VERSION"), "python_service": py,
+                             "host": report::host_metadata(), "generator_profile": gen.profile, "generator_config": gen.to_json()});
             if qparam(query, "format").as_deref() == Some("patches_csv") {
                 let mut chrono = events.clone();
                 chrono.reverse();
@@ -348,7 +301,7 @@ pub fn handle(request: &mut tiny_http::Request, method: &Method, segs: &[&str], 
                 if body.get("algorithms").map(|v| !v.is_null()).unwrap_or(false) {
                     return Err(bad("'algorithms' is not accepted: the benchmark measures the patch-wise transport as it runs"));
                 }
-                pipeline::run_benchmark(state, sid, iterations, &sizes, &cover_from(&body)?)
+                pipeline::run_benchmark(state, sid, iterations, &sizes, &generation_from(state, &body)?)
             })();
             match run {
                 Ok(v) => json_resp(200, v),

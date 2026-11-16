@@ -197,14 +197,23 @@ else:
         if not done:
             sys.exit("no relabelable run")
         write_manifest(flat, man)
-    elif mode == "flip-patch":            # patch_id [count]: flip LSBs of pixels inside one patch (payload area)
+    elif mode == "flip-patch":            # patch_id [count]: damage pixels inside one patch (payload area). Bit 0 AND bit 7 are
+        # toggled so that both LSB-plane and transform-domain embeddings are disturbed whatever the patch algorithm is
         pre, man, mlen, flen = read_carrier(flat)
         m = parse_manifest(man)
         lab = m["pixel_labels"]
         lab[: m["reserved_rows"]] = 255
         ys, xs = np.nonzero(lab == int(args[0]))
         k = int(args[1]) if len(args) > 1 else ys.size
-        arr[ys[:k], xs[:k]] ^= 1
+        if len(args) > 2:
+            # partial damage: only pixels the embedding actually modified (stego != cover), i.e. pixels
+            # that certainly carry payload, whatever algorithm the patch uses
+            cov = np.asarray(Image.open(args[2]))
+            ch = (cov != arr).reshape(arr.shape[0], arr.shape[1], -1).any(axis=2)[ys, xs]
+            ys, xs = ys[ch], xs[ch]
+            if ys.size == 0:
+                sys.exit("patch has no modified pixel")
+        arr[ys[:k], xs[:k]] ^= 0x81
     else:
         sys.exit("unknown mode")
     save(arr)

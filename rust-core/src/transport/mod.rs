@@ -12,6 +12,7 @@ pub mod config;
 pub mod error;
 pub mod fake;
 pub mod frame;
+pub mod generator;
 pub mod http;
 pub mod manifest;
 pub mod pipeline;

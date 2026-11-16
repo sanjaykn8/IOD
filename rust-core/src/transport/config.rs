@@ -1,6 +1,7 @@
 //! Validated configuration for the image transport (environment-driven,
 //! conservative defaults). See docs/patchwise-transport.md and docs/development.md.
 
+use crate::transport::generator::GeneratorConfig;
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
@@ -8,8 +9,6 @@ pub struct StegoConfig {
     pub python_url: String,
     pub allow_nonloopback: bool,
     pub artifact_dir: String,
-    pub camera_index: i64,
-    pub capture_timeout_ms: u64,
     pub max_width: u32,
     pub max_height: u32,
     pub max_frame_bytes: usize,
@@ -21,6 +20,8 @@ pub struct StegoConfig {
     pub target_chunk_bytes: usize,
     /// How many times the sender may re-plan with a coarser segmentation after a patch failed to embed.
     pub max_replans: u32,
+    /// Process-level cover-generation configuration (profile + IOD_STEGO_GENERATOR_*). Requests may only tighten it.
+    pub generator: GeneratorConfig,
 }
 
 impl Default for StegoConfig {
@@ -29,8 +30,6 @@ impl Default for StegoConfig {
             python_url: "http://127.0.0.1:5001".into(),
             allow_nonloopback: false,
             artifact_dir: "./data/stego-artifacts".into(),
-            camera_index: 0,
-            capture_timeout_ms: 3000,
             max_width: 1920,
             max_height: 1080,
             max_frame_bytes: 65_536,
@@ -39,6 +38,7 @@ impl Default for StegoConfig {
             segmentation: json!({}),
             target_chunk_bytes: 48,
             max_replans: 2,
+            generator: GeneratorConfig::profile(crate::transport::generator::DEFAULT_PROFILE).expect("default profile exists"),
         }
     }
 }
@@ -77,8 +77,6 @@ impl StegoConfig {
             python_url: std::env::var("IOD_PYTHON_URL").ok().filter(|s| !s.trim().is_empty()).unwrap_or(d.python_url.clone()),
             allow_nonloopback: std::env::var("IOD_STEGO_ALLOW_NONLOOPBACK").map(|v| v == "1").unwrap_or(false),
             artifact_dir: std::env::var("IOD_STEGO_ARTIFACT_DIR").ok().filter(|s| !s.trim().is_empty()).unwrap_or(d.artifact_dir.clone()),
-            camera_index: env_parse("IOD_STEGO_CAMERA_INDEX", d.camera_index)?,
-            capture_timeout_ms: env_parse("IOD_STEGO_CAPTURE_TIMEOUT_MS", d.capture_timeout_ms)?,
             max_width: env_parse("IOD_STEGO_MAX_WIDTH", d.max_width)?,
             max_height: env_parse("IOD_STEGO_MAX_HEIGHT", d.max_height)?,
             max_frame_bytes: env_parse("IOD_STEGO_MAX_FRAME_BYTES", d.max_frame_bytes)?,
@@ -100,6 +98,7 @@ impl StegoConfig {
             },
             target_chunk_bytes: env_parse("IOD_STEGO_TARGET_CHUNK_BYTES", d.target_chunk_bytes)?,
             max_replans: env_parse("IOD_STEGO_MAX_REPLANS", d.max_replans)?,
+            generator: GeneratorConfig::from_env()?,
         };
         c.validate()?;
         Ok(c)
@@ -112,11 +111,12 @@ impl StegoConfig {
         if !(64..=1_048_576).contains(&self.max_frame_bytes) {
             return Err("IOD_STEGO_MAX_FRAME_BYTES must be within 64..=1048576".into());
         }
-        if !(100..=120_000).contains(&self.capture_timeout_ms) || !(500..=300_000).contains(&self.http_timeout_ms) {
+        if !(500..=300_000).contains(&self.http_timeout_ms) {
             return Err("timeouts out of range".into());
         }
-        if !(0..=16).contains(&self.camera_index) {
-            return Err("IOD_STEGO_CAMERA_INDEX must be within 0..=16".into());
+        self.generator.validate().map_err(|e| format!("generator configuration: {}", e.message))?;
+        if self.generator.max_width > self.max_width || self.generator.max_height > self.max_height {
+            return Err("generator max dimensions exceed IOD_STEGO_MAX_WIDTH / IOD_STEGO_MAX_HEIGHT".into());
         }
         if !(8..=65_536).contains(&self.target_chunk_bytes) {
             return Err("IOD_STEGO_TARGET_CHUNK_BYTES must be within 8..=65536".into());
@@ -142,7 +142,6 @@ impl StegoConfig {
     pub fn limits(&self) -> Value {
         json!({
             "max_width": self.max_width, "max_height": self.max_height, "max_frame_bytes": self.max_frame_bytes,
-            "capture_timeout_ms": self.capture_timeout_ms, "camera_index": self.camera_index,
         })
     }
 
@@ -150,7 +149,8 @@ impl StegoConfig {
     pub fn public_view(&self) -> Value {
         let name = std::path::Path::new(&self.artifact_dir).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         json!({"limits": self.limits(), "segmentation_overrides": self.segmentation, "target_chunk_bytes": self.target_chunk_bytes,
-               "max_replans": self.max_replans, "artifact_dir_name": name, "http_timeout_ms": self.http_timeout_ms})
+               "max_replans": self.max_replans, "artifact_dir_name": name, "http_timeout_ms": self.http_timeout_ms,
+               "cover_generation": self.generator.public_view()})
     }
 }
 

@@ -57,7 +57,7 @@ blocks inside every patch, while a 4-pixel grid (images below 64 px) can leave `
 * Sub-band: **HH** (diagonal detail). One bit per block.
 * Modulation: target `HH' = qΔ`, `q ≡ b (mod 2)`, `|qΔ − HH|` minimal (Δ = 4 default, range 4–64).
 * Inverse with only HH changed: `e = (HH' − HH)/2; a'=a+e, b'=b−e, c'=c−e, d'=d+e`, round half to even, clip [0,255].
-* Exactness: rounding moves HH by at most `(4 × 0.5)/2 = 1 < Δ/2`. Near 0/255 each block is re-analysed; the same HH change is retried with alternative pixel patterns (pairs, single pixels; 11 patterns) and then the next-nearest index (up to 8). Extraction reads HH only and needs no side information. With these patterns `dwt` works even on the black-and-white fallback cover.
+* Exactness: rounding moves HH by at most `(4 × 0.5)/2 = 1 < Δ/2`. Near 0/255 each block is re-analysed; the same HH change is retried with alternative pixel patterns (pairs, single pixels; 11 patterns) and then the next-nearest index (up to 8). Extraction reads HH only and needs no side information. With these patterns `dwt` works even on a saturated black-and-white image (such images are no longer produced operationally: generated covers are kept inside [4, 251] and saturated candidates are rejected).
 
 ### 3.2 DCT-SVD — `dct8-svd-s1-qim-v1`
 DCT-SVD is a family; this is one concrete variant (the cited family paper is a watermarking scheme and differs).

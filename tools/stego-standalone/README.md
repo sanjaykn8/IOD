@@ -80,7 +80,7 @@ IOD simulator's Python service (`python-service/src/stego/`).
   (`embed_bytes`, `extract_bytes`). `latent_image.py` is a thin wrapper that imports them
   (it adds `../../python-service/src` to `sys.path`) and keeps the `generate` / `extract`
   CLI and the legacy file format unchanged. The procedural B/W image is also the
-  fallback cover of the service when no webcam is available.
+  cover of the service. It no longer is: the service generates its covers with `stego/generator/` (see `docs/cover-generation.md`); this tool is standalone.
 - **Not shared (stays standalone):** `app.py` (Tkinter GUI, unchanged) and
   `text_vector.py` (FastEmbed text embeddings). Neither is a dependency of the service.
 - The service's transport (bootstrap + five algorithms) is a different, independent format

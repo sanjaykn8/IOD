@@ -1,19 +1,21 @@
-//! Report export (schema `stego-report-2`, patch-wise transport): aggregates computed ONLY
+//! Report export (schema `stego-report-3`, patch-wise transport over generated covers): aggregates computed ONLY
 //! from persisted events. Percentiles are reported as null when n < 20.
 
 use serde_json::{json, Map, Value};
 use std::collections::BTreeMap;
 
-pub const SCHEMA: &str = "stego-report-2";
+pub const SCHEMA: &str = "stego-report-3";
 pub const MIN_N_FOR_PERCENTILES: usize = 20;
 
 pub const CSV_COLUMNS: &[&str] = &[
     "event_id", "ts_ms", "kind", "origin", "session_id", "direction", "seq", "from_role", "to_role", "transport_format_version",
     "segmentation_version", "selector_version", "kb_version", "refinement_level", "patch_count", "used_patches", "algorithms_used",
-    "algorithm", "cover_source", "cover_fallback_reason", "width", "height", "mode", "channels", "output_format",
+    "algorithm", "cover_source", "generator_version", "generator_profile", "cover_family", "seed_fingerprint", "cover_quality_score",
+    "generation_candidates", "generation_budget_ms", "generation_used_ms", "generation_budget_exceeded", "requested_width", "requested_height",
+    "cover_resized", "width", "height", "mode", "channels", "output_format",
     "wire_bytes", "payload_bytes", "manifest_bytes", "frame_bytes", "image_bytes", "mse", "psnr", "ssim", "success", "error_code",
     "error_stage", "artifact_id", "stego_sha256", "frame_sha256_prefix", "frame_match", "header_mac_ok", "aead_ok", "t_aead_seal_ms",
-    "t_capture_ms", "t_plan_ms", "t_embed_ms", "t_save_ms", "t_read_ms", "t_extract_ms", "t_verify_ms", "t_aead_open_ms", "t_total_ms",
+    "t_cover_generate_ms", "t_cover_prescreen_ms", "t_cover_selection_total_ms", "t_plan_ms", "t_load_cover_ms", "t_embed_ms", "t_save_ms", "t_read_ms", "t_extract_ms", "t_verify_ms", "t_aead_open_ms", "t_total_ms",
 ];
 
 /// One CSV row per patch of every event that recorded a plan.
@@ -57,14 +59,39 @@ pub fn build_report(events: &[Value], environment: Value, now_ms: i64) -> Value 
     let total = events.len();
     let ok = events.iter().filter(|e| e["success"].as_bool() == Some(true)).count();
     let mut error_counts: BTreeMap<String, u64> = BTreeMap::new();
-    let mut fallback_cover = 0u64;
+    let mut families: BTreeMap<String, u64> = BTreeMap::new();
+    let mut profiles: BTreeMap<String, u64> = BTreeMap::new();
+    let mut gen_failures: BTreeMap<String, u64> = BTreeMap::new();
+    let mut rejections: BTreeMap<String, u64> = BTreeMap::new();
+    let (mut budget_exceeded, mut resized, mut covers_generated) = (0u64, 0u64, 0u64);
     let mut cover_sources: BTreeMap<String, u64> = BTreeMap::new();
     for e in events {
         if let Some(c) = e["error_code"].as_str() {
             *error_counts.entry(c.to_string()).or_default() += 1;
         }
-        if e["cover_fallback_reason"].as_str().is_some() {
-            fallback_cover += 1;
+        if let Some(f) = e["cover_family"].as_str() {
+            *families.entry(f.to_string()).or_default() += 1;
+        }
+        if let Some(p) = e["generator_profile"].as_str() {
+            *profiles.entry(p.to_string()).or_default() += 1;
+        }
+        if e["generation_budget_exceeded"].as_bool() == Some(true) {
+            budget_exceeded += 1;
+        }
+        if e["cover_resized"].as_bool() == Some(true) {
+            resized += 1;
+        }
+        covers_generated += e["covers_generated"].as_u64().unwrap_or(0);
+        if let Some(c) = e["error_code"].as_str().filter(|c| GENERATION_ERRORS.contains(c)) {
+            *gen_failures.entry(c.to_string()).or_default() += 1;
+        }
+        // why candidates were rejected by the quality pre-screen (successful and failed transmissions)
+        for c in e["generation"]["candidates"].as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
+            for r in c["rejection_reasons"].as_array().map(|a| a.as_slice()).unwrap_or(&[]) {
+                if let Some(r) = r.as_str() {
+                    *rejections.entry(r.to_string()).or_default() += 1;
+                }
+            }
         }
         if let Some(s) = e["cover_source"].as_str() {
             *cover_sources.entry(s.to_string()).or_default() += 1;
@@ -86,7 +113,7 @@ pub fn build_report(events: &[Value], environment: Value, now_ms: i64) -> Value 
     let succ: Vec<&Value> = events.iter().filter(|e| e["success"].as_bool() == Some(true)).collect();
     let col = |path: &[&str]| -> Vec<f64> { succ.iter().filter_map(|e| num(e, path)).collect() };
     let mut timings = Map::new();
-    for stage in ["aead_seal", "capture", "plan", "embed", "save", "read", "extract", "verify", "aead_open", "total"] {
+    for stage in ["aead_seal", "cover_generate", "cover_prescreen", "cover_selection_total", "plan", "load_cover", "embed", "save", "read", "extract", "verify", "aead_open", "total"] {
         timings.insert(stage.to_string(), stats(&col(&["timings_ms", stage])));
     }
     let overall = json!({
@@ -97,16 +124,31 @@ pub fn build_report(events: &[Value], environment: Value, now_ms: i64) -> Value 
         "mse": stats(&col(&["mse"])), "psnr": stats(&col(&["psnr"])), "ssim": stats(&col(&["ssim"])),
         "timings_ms": Value::Object(timings),
     });
+    // Three different kinds of number that must not be confused:
+    //  - cover_quality_score: heuristic coherence score of the generated cover BEFORE embedding;
+    //  - mse / psnr / ssim: distortion between that cover and the stego image;
+    //  - detector AUC: offline steganalysis evaluation (scripts/eval_detectability.py), never part of this report.
+    let generation = json!({
+        "covers_generated": covers_generated, "families": families, "profiles": profiles,
+        "cover_quality_score": stats(&col(&["cover_quality_score"])),
+        "candidates_per_transmission": stats(&col(&["generation_candidates"])),
+        "generation_used_ms": stats(&col(&["generation_used_ms"])),
+        "budget_exceeded_count": budget_exceeded, "payload_driven_resize_count": resized,
+        "failures": gen_failures, "candidate_rejection_reasons": rejections,
+        "metric_kinds": {"cover_quality_score": "heuristic coherence of the cover before embedding (not a steganalysis detector)",
+                         "mse_psnr_ssim": "cover-versus-stego distortion", "detector_auc": "offline evaluation only; not measured here"},
+    });
     json!({
         "schema": SCHEMA,
         "generated_ms": now_ms,
         "environment": environment,
-        "totals": {"events": total, "ok": ok, "failed": total - ok, "fallback_cover_count": fallback_cover,
-                   "cover_sources": cover_sources, "error_counts": error_counts},
+        "totals": {"events": total, "ok": ok, "failed": total - ok, "cover_sources": cover_sources, "error_counts": error_counts},
         "overall": overall,
+        "cover_generation": generation,
         "per_algorithm": per_alg,
         "limitations": [
-            "Host-simulation measurements on one machine; not representative of drone hardware.",
+            "Host-simulation measurements on one machine; not representative of drone hardware. A resource profile such as raspberry_pi_5_cpu enforces that device's LIMITS on this host; it does not reproduce its speed, and these figures are not Raspberry Pi measurements.",
+            "Covers are procedurally generated images (no pretrained model). The cover quality score is a documented heuristic, not a steganalysis detector, and no generated cover or embedding is claimed to be undetectable.",
             "Percentiles are null when fewer than 20 successful samples exist for the series.",
             "PSNR/SSIM are null when undefined (e.g. identical images); they are never imputed.",
             "Lossless PNG handoff only; no robustness to JPEG/resizing/filtering is claimed.",
@@ -115,6 +157,25 @@ pub fn build_report(events: &[Value], environment: Value, now_ms: i64) -> Value 
             "Algorithm names denote this repository's variants (e.g. additive HUGO approximation, custom STC matrices)."
         ],
     })
+}
+
+pub const GENERATION_ERRORS: [&str; 6] = ["COVER_GENERATION_FAILED", "COVER_QUALITY_REJECTED", "GENERATION_BUDGET_EXCEEDED",
+                                           "PATCH_CAPACITY_INSUFFICIENT", "GENERATOR_CONFIG_INVALID", "GENERATOR_MEMORY_LIMIT"];
+
+/// Where a measurement was taken (benchmarks and reports). Hardware model is read from the device
+/// tree when present (Raspberry Pi OS), otherwise from /proc/cpuinfo; nothing is guessed.
+pub fn host_metadata() -> Value {
+    let read = |p: &str| std::fs::read_to_string(p).ok();
+    let model = read("/proc/device-tree/model").map(|s| s.trim_matches(char::from(0)).trim().to_string()).filter(|s| !s.is_empty());
+    let cpu = read("/proc/cpuinfo").and_then(|s| {
+        s.lines().find(|l| l.starts_with("model name") || l.starts_with("Model") || l.starts_with("Hardware"))
+            .and_then(|l| l.split(':').nth(1)).map(|v| v.trim().to_string())
+    });
+    let mem_kb = read("/proc/meminfo").and_then(|s| s.lines().find(|l| l.starts_with("MemTotal")).and_then(|l| l.split_whitespace().nth(1).and_then(|v| v.parse::<u64>().ok())));
+    let is_pi5 = model.as_deref().map(|m| m.contains("Raspberry Pi 5")).unwrap_or(false);
+    json!({"os": std::env::consts::OS, "arch": std::env::consts::ARCH, "device_model": model, "cpu_model": cpu,
+           "logical_cpus": std::thread::available_parallelism().map(|n| n.get()).ok(), "mem_total_mb": mem_kb.map(|k| k / 1024),
+           "is_raspberry_pi_5": is_pi5})
 }
 
 pub fn csv_cell(v: &Value) -> String {
@@ -195,16 +256,21 @@ mod tests {
     fn report_counts_and_csv_safety() {
         let evs = vec![
             json!({"event_id":1,"success":true,"algorithm":"pvd","algorithms_used":{"pvd":{"patches":2,"payload_bytes":90},"dwt":{"patches":1,"payload_bytes":10}},
-                   "patch_count":5,"used_patches":3,"frame_bytes":10,"psnr":60.0,"timings_ms":{"embed":2.0,"plan":4.0},"cover_source":"procedural_fallback","cover_fallback_reason":"CAMERA_ABSENT",
+                   "patch_count":5,"used_patches":3,"frame_bytes":10,"psnr":60.0,"timings_ms":{"embed":2.0,"plan":4.0},"cover_source":"generated","cover_family":"terrain","generator_profile":"raspberry_pi_5_cpu","cover_quality_score":0.9,"covers_generated":1,"generation_candidates":2,
+                   "generation":{"candidates":[{"rejection_reasons":["flat_block_fraction_above_0.25"]},{"rejection_reasons":[]}]},
                    "patches":[{"patch_id":0,"used":false},{"patch_id":1,"used":true,"algorithm":"pvd","payload_offset":0,"payload_length":50,"bm25":1.5,"query_terms":["textured","edge-rich"]}]}),
             json!({"success":false,"algorithm":"pvd","error_code":"FRAME_AUTH_FAILED"}),
             json!({"success":false,"error_code":"NO_ELIGIBLE_ALGORITHM","session_id":"=cmd|' /C calc'!A0"}),
         ];
         let r = build_report(&evs, json!({}), 1);
-        assert_eq!(r["schema"], "stego-report-2");
+        assert_eq!(r["schema"], "stego-report-3");
         assert_eq!(r["totals"]["events"], 3);
         assert_eq!(r["totals"]["failed"], 2);
-        assert_eq!(r["totals"]["fallback_cover_count"], 1);
+        assert_eq!(r["totals"]["cover_sources"]["generated"], 1);
+        assert_eq!(r["cover_generation"]["families"]["terrain"], 1);
+        assert_eq!(r["cover_generation"]["covers_generated"], 1);
+        assert_eq!(r["cover_generation"]["candidate_rejection_reasons"]["flat_block_fraction_above_0.25"], 1);
+        assert!(r.to_string().contains("not Raspberry Pi measurements") && !r.to_string().contains("fallback_cover"));
         assert_eq!(r["totals"]["error_counts"]["FRAME_AUTH_FAILED"], 1);
         assert_eq!(r["per_algorithm"][0]["algorithm"], "dwt");
         assert_eq!(r["per_algorithm"][1]["patches"], 2);

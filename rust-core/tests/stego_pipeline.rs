@@ -64,7 +64,7 @@ fn world(tag: &str) -> World {
 }
 
 fn req(w: &World, from: &str, text: &str) -> MessageRequest {
-    MessageRequest { session_id: w.sid.clone(), from_id: from.into(), plaintext: text.as_bytes().to_vec(), cover: json!({"source": "webcam"}), origin: "test" }
+    MessageRequest { session_id: w.sid.clone(), from_id: from.into(), plaintext: text.as_bytes().to_vec(), cover_generation: Value::Null, origin: "test" }
 }
 
 fn art_path(w: &World, id: &str) -> PathBuf {
@@ -146,6 +146,11 @@ fn both_directions_round_trip_through_saved_files_with_all_stages() {
         assert_eq!(v["transport"]["format_version"], "frame-v2/appwire-v1/bootstrap-v2/manifest-v1");
         assert_eq!(v["transport"]["frame_bytes"].as_u64().unwrap(), 16 + v["transport"]["manifest_bytes"].as_u64().unwrap() + off);
         assert!(v["artifact"]["segmentation_overlay_url"].as_str().unwrap().ends_with("/seg"));
+        // the cover is a locally generated one, described by fingerprint only
+        assert_eq!(v["cover"]["source"], "generated");
+        assert_eq!(v["generation"]["profile"], "raspberry_pi_5_cpu");
+        assert_eq!(v["generation"]["config"]["width"], 320);
+        assert!(v["cover"]["seed_fingerprint"].is_string() && v["cover"].get("seed").is_none() && v["generation"].get("seed").is_none());
     }
     let evs = events(&w);
     assert_eq!(evs.len(), 2);
@@ -159,8 +164,15 @@ fn both_directions_round_trip_through_saved_files_with_all_stages() {
         assert_eq!(e["patches"][1]["bm25"], 1.25);
         assert_eq!(e["segmentation_version"], "arg-cells-1");
         assert_eq!(e["selector_version"], "kb-bm25-1");
+        assert_eq!(e["cover_source"], "generated");
+        assert_eq!(e["generator_profile"], "raspberry_pi_5_cpu");
+        assert_eq!(e["covers_generated"], 1);
+        assert_eq!(e["cover_family"], "terrain");
+        assert_eq!(e["generation"]["candidates"][0]["outcome"], "selected");
+        assert!(e["timings_ms"]["cover_generate"].is_number() && e["timings_ms"]["cover_selection_total"].is_number());
+        assert!(e.get("cover_fallback_reason").is_none());
         let text = e.to_string().to_lowercase();
-        for banned in ["priority", "explanation", "urgent", "selection_mode"] {
+        for banned in ["priority", "explanation", "urgent", "selection_mode", "webcam", "camera", "upload", "fallback", "\"seed\""] {
             assert!(!text.contains(banned), "event mentions removed concept '{banned}'");
         }
     }
@@ -174,7 +186,18 @@ fn the_image_service_receives_lengths_only_for_planning() {
     assert_eq!(reqs.len(), 1);
     let mut keys: Vec<&str> = reqs[0].as_object().unwrap().keys().map(|k| k.as_str()).collect();
     keys.sort();
-    assert_eq!(keys, ["cover", "limits", "min_level", "payload_bytes", "segmentation", "target_chunk_bytes"]);
+    assert_eq!(keys, ["cover_generation", "limits", "min_level", "payload_bytes", "segmentation", "target_chunk_bytes"]);
+    // the generation settings are the validated profile -- no seed, file, artifact, source or algorithm
+    let mut gk: Vec<&str> = reqs[0]["cover_generation"].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    gk.sort();
+    let mut want = iod_core::transport::generator::REQUEST_FIELDS.to_vec();
+    want.sort();
+    assert_eq!(gk, want);
+    let ereqs = w.fake.encode_requests.lock().unwrap().clone();
+    let mut ek: Vec<&str> = ereqs[0].as_object().unwrap().keys().map(|k| k.as_str()).collect();
+    ek.sort();
+    assert_eq!(ek, ["cover_id", "frame_b64", "limits"], "encode names the stored cover by id; it carries no generation settings");
+    assert!(!ereqs[0].to_string().contains(SECRET));
     // AppWire (28-byte header + plaintext + 16-byte AEAD tag) + 32-byte frame tag
     assert_eq!(reqs[0]["payload_bytes"].as_u64().unwrap() as usize, iod_core::transport::wire::WIRE_HEADER_LEN + SECRET.len() + 16 + 32);
     assert!(!reqs[0].to_string().contains(SECRET));
@@ -398,11 +421,20 @@ fn a_failed_patch_embedding_triggers_a_bounded_coarser_replan_not_an_algorithm_f
     assert_eq!(ev["refinement_level"], 1);
     assert_eq!(ev["replans"].as_array().unwrap().len(), 1);
     assert_eq!(ev["replans"][0]["error_code"], "PATCH_EMBED_FAILED");
-    // the re-plan reuses the SAME stored cover, and keeps the original acquisition label
+    // the re-plan reuses the SAME stored cover: one generation for the whole transmission
     let reqs = w.fake.plan_requests.lock().unwrap().clone();
-    assert_eq!(reqs[1]["cover"]["source"], "test_cover");
-    assert_eq!(reqs[1]["cover"]["test_cover_id"], v["cover"]["artifact_id"]);
-    assert_eq!(v["cover"]["source"], "procedural_fallback");
+    assert_eq!(w.fake.count("plan"), 2);
+    assert_eq!(w.fake.count("generate"), 1, "a re-plan must not generate a new cover");
+    assert!(reqs[0]["cover_generation"].is_object() && reqs[0].get("replan_cover_id").is_none());
+    assert_eq!(reqs[1]["replan_cover_id"], v["cover"]["artifact_id"]);
+    assert!(reqs[1].get("cover_generation").is_none(), "a re-plan carries no generation settings");
+    let ereqs = w.fake.encode_requests.lock().unwrap().clone();
+    assert_eq!(ereqs.len(), 2);
+    assert!(ereqs.iter().all(|r| r["cover_id"] == v["cover"]["artifact_id"]), "both encodes load the exact cover that was generated");
+    assert_eq!(v["cover"]["source"], "generated");
+    assert_eq!(ev["cover_artifact_id"], v["cover"]["artifact_id"]);
+    assert_eq!(ev["covers_generated"], 1);
+    assert_eq!(v["generation"]["candidates"][0]["outcome"], "selected", "generation diagnostics come from the generating plan");
     // bounded: max_replans = 2 -> three attempts in total, then a structured failure and no saved image
     let before = stego_files(&w);
     *w.fake.fail_encode_times.lock().unwrap() = 10;
@@ -411,6 +443,7 @@ fn a_failed_patch_embedding_triggers_a_bounded_coarser_replan_not_an_algorithm_f
     assert_eq!(e.error.code, "PATCH_EMBED_FAILED");
     assert_eq!(e.error.stage, "embed");
     assert_eq!(*w.fake.plan_levels.lock().unwrap(), vec![0, 1, 2]);
+    assert_eq!(w.fake.count("generate"), 2, "three plans of the failing transmission share one generated cover");
     assert_eq!(stego_files(&w), before);
     assert_eq!(events(&w)[0]["replans"].as_array().unwrap().len(), 2);
 }
@@ -440,7 +473,12 @@ fn rust_validates_the_planned_manifest_before_authenticating_it() {
 #[test]
 fn plan_preview_is_validated_and_bounded() {
     let w = world("preview-plan");
-    let v = pipeline::run_plan_preview(&w.state, 300, &json!({"source": "procedural"}), 0).unwrap();
+    let v = pipeline::run_plan_preview(&w.state, 300, &json!({"width": 400, "height": 304, "max_candidates": 1}), 0).unwrap();
+    assert_eq!(v["generation"]["config"]["width"], 400);
+    assert_eq!(v["cover"]["source"], "generated");
+    for bad in [json!({"seed": "s"}), json!({"source": "webcam"}), json!({"max_candidates": 3}), json!({"width": 2000}), json!("procedural")] {
+        assert_eq!(pipeline::run_plan_preview(&w.state, 300, &bad, 0).unwrap_err().code, "GENERATOR_CONFIG_INVALID", "{bad}");
+    }
     assert_eq!(v["manifest"]["payload_len"], 300);
     assert_eq!(v["plan"]["patches"].as_array().unwrap().len(), 4);
     assert!(v["note"].as_str().unwrap().contains("no message sealed"));
@@ -468,7 +506,7 @@ fn unreachable_backend_fails_closed_without_passthrough() {
     let (sid, _) = s.authenticate("drone-1", "drone-2").unwrap();
     s.establish_group_key(&sid, "m").unwrap();
     let st = Mutex::new(s);
-    let r = MessageRequest { session_id: sid, from_id: "drone-1".into(), plaintext: b"hi".to_vec(), cover: json!({"source":"webcam"}), origin: "test" };
+    let r = MessageRequest { session_id: sid, from_id: "drone-1".into(), plaintext: b"hi".to_vec(), cover_generation: Value::Null, origin: "test" };
     let f = pipeline::run_message(&st, r).err().expect("must fail closed");
     assert_eq!(f.error.code, "STEGO_BACKEND_UNAVAILABLE");
     assert_eq!(f.error.http_status, 503);
@@ -490,7 +528,7 @@ fn key_and_session_preconditions() {
     }
     let (sid, _) = s.authenticate("drone-1", "drone-2").unwrap();
     let st = Mutex::new(s);
-    let mk = |sid: &str, from: &str| MessageRequest { session_id: sid.into(), from_id: from.into(), plaintext: b"x".to_vec(), cover: json!({"source":"webcam"}), origin: "test" };
+    let mk = |sid: &str, from: &str| MessageRequest { session_id: sid.into(), from_id: from.into(), plaintext: b"x".to_vec(), cover_generation: Value::Null, origin: "test" };
     // authenticated but no K1-K3 yet
     assert_eq!(pipeline::run_message(&st, mk(&sid, "drone-1")).err().unwrap().error.code, "NO_GROUP_KEY");
     st.lock().unwrap().establish_group_key(&sid, "m").unwrap();
@@ -568,8 +606,16 @@ fn history_survives_restart_and_filters_work() {
 #[test]
 fn report_csv_and_benchmark_use_real_events() {
     let w = world("report");
-    let b = pipeline::run_benchmark(&w.state, &w.sid, 2, &[32, 200], &json!({"source":"webcam"})).unwrap();
+    let b = pipeline::run_benchmark(&w.state, &w.sid, 2, &[32, 200], &Value::Null).unwrap();
     assert_eq!(b["samples"], 4);
+    // one fresh cover per benchmark transaction, labelled as a profile-constrained host measurement
+    assert_eq!(w.fake.count("generate"), 4);
+    let covers: std::collections::BTreeSet<String> = b["runs"].as_array().unwrap().iter().map(|r| r["cover"]["cover_id"].as_str().unwrap().to_string()).collect();
+    assert_eq!(covers.len(), 4);
+    assert_eq!(b["cover_generation"]["profile"], "raspberry_pi_5_cpu");
+    assert!(b["measurement_label"].as_str().unwrap().contains("not measurements from the profile's target hardware"));
+    assert!(b["host"]["arch"].is_string() && b["host"]["is_raspberry_pi_5"].is_boolean());
+    assert_eq!(pipeline::run_benchmark(&w.state, &w.sid, 1, &[32], &json!({"seed": "x"})).unwrap_err().code, "GENERATOR_CONFIG_INVALID");
     assert!(b["runs"].as_array().unwrap().iter().all(|r| r["ok"] == true));
     let evs = events(&w);
     let rep = iod_core::transport::report::build_report(&evs, json!({}), 1);
@@ -579,6 +625,9 @@ fn report_csv_and_benchmark_use_real_events() {
     assert_eq!(rep["per_algorithm"][0]["events"], 4);
     assert_eq!(rep["overall"]["timings_ms"]["total"]["p95"], Value::Null, "n<20 => no percentile");
     assert_eq!(rep["overall"]["used_patches"]["mean"], 3.0);
+    assert_eq!(rep["cover_generation"]["covers_generated"], 4);
+    assert_eq!(rep["cover_generation"]["families"]["terrain"], 4);
+    assert_eq!(rep["cover_generation"]["cover_quality_score"]["mean"], 0.9);
     let pcsv = iod_core::transport::report::patches_to_csv(&evs);
     assert_eq!(pcsv.lines().count(), 1 + 4 * 4, "one row per patch of every event");
     let csv = iod_core::transport::report::events_to_csv(&evs);
@@ -603,4 +652,64 @@ fn artifact_preview_access_is_confined_to_valid_ids() {
         assert!(pipeline::artifact_png(&cfg, bad, "stego").is_err(), "accepted {bad:?}");
     }
     assert!(pipeline::artifact_png(&cfg, id, "../x").is_err());
+}
+
+#[test]
+fn every_transmission_generates_its_own_fresh_cover() {
+    let w = world("fresh");
+    let mut ids = std::collections::BTreeSet::new();
+    let mut hashes = std::collections::BTreeSet::new();
+    for i in 0..4 {
+        let from = if i % 2 == 0 { "drone-1" } else { "drone-2" };
+        let v = pipeline::run_message(&w.state, req(&w, from, "same text every time")).unwrap_or_else(|f| panic!("{}", f.error));
+        ids.insert(v["cover"]["artifact_id"].as_str().unwrap().to_string());
+        hashes.insert(v["cover"]["sha256"].as_str().unwrap().to_string());
+    }
+    assert_eq!((ids.len(), hashes.len()), (4, 4), "identical messages still get distinct covers");
+    assert_eq!(w.fake.count("generate"), 4);
+    assert_eq!(w.fake.count("plan"), 4);
+    // the receiver never asks for a plan or a cover
+    let s = send(&w, "drone-1", "send only");
+    let before = (w.fake.count("generate"), w.fake.count("plan"), w.fake.count("encode"));
+    pipeline::run_receive(&w.state, &w.sid, "drone-2", s["artifact"]["id"].as_str().unwrap()).unwrap_or_else(|f| panic!("{}", f.error));
+    assert_eq!((w.fake.count("generate"), w.fake.count("plan"), w.fake.count("encode")), before);
+}
+
+#[test]
+fn invalid_generation_settings_fail_before_any_backend_call_or_sequence_use() {
+    let w = world("gencfg");
+    for bad in [json!({"seed": "0011"}), json!({"source": "webcam"}), json!({"cover_id": "a".repeat(32)}), json!({"max_candidates": 9}),
+                json!({"width": 648}), json!({"processing_budget_ms": 9999}), json!({"profile": "development_host"}), json!({"algorithm": "pvd"})] {
+        let mut r = req(&w, "drone-1", "x");
+        r.cover_generation = bad.clone();
+        let f = pipeline::run_message(&w.state, r).err().unwrap();
+        assert_eq!(f.error.code, "GENERATOR_CONFIG_INVALID", "{bad}");
+        assert_eq!(f.error.http_status, 400);
+    }
+    assert_eq!(w.fake.count("plan") + w.fake.count("generate") + w.fake.count("encode"), 0);
+    // tightened settings reach the image service exactly as resolved
+    let mut r = req(&w, "drone-1", "tight");
+    r.cover_generation = json!({"max_candidates": 1, "processing_budget_ms": 1200, "families": ["strata"]});
+    let v = pipeline::run_message(&w.state, r).unwrap_or_else(|f| panic!("{}", f.error));
+    assert_eq!(v["seq"], 1, "rejected requests did not consume sequence numbers");
+    let sent = w.fake.plan_requests.lock().unwrap()[0]["cover_generation"].clone();
+    assert_eq!((sent["max_candidates"].as_u64(), sent["processing_budget_ms"].as_u64()), (Some(1), Some(1200)));
+    assert_eq!(sent["families"], json!(["strata"]));
+    assert_eq!(sent["profile"], "raspberry_pi_5_cpu");
+    assert_eq!(events(&w)[0]["generation_config"]["max_candidates"], 1);
+}
+
+#[test]
+fn generation_failures_are_structured_and_never_fall_back_to_another_cover() {
+    let w = world("genfail");
+    for code in ["COVER_QUALITY_REJECTED", "GENERATION_BUDGET_EXCEEDED", "COVER_GENERATION_FAILED", "GENERATOR_MEMORY_LIMIT"] {
+        *w.fake.fail_plan.lock().unwrap() = Some(code.into());
+        let f = pipeline::run_message(&w.state, req(&w, "drone-1", "x")).err().unwrap();
+        assert_eq!(f.error.code, code);
+        assert_eq!(f.error.stage, "plan");
+    }
+    assert_eq!(w.fake.count("plan"), 4, "exactly one plan call per failed transmission: no retry with another source");
+    assert_eq!(w.fake.count("encode"), 0);
+    assert_eq!(stego_files(&w), 0);
+    assert!(events(&w).iter().all(|e| e["success"] == false && e["generator_profile"] == "raspberry_pi_5_cpu"));
 }

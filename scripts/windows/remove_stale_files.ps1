@@ -33,6 +33,12 @@ $Stale = @(
   "python-service\tests\test_stego_service_api.py",
   "python-service\tests\test_validation.py",
   "rust-core\src\transport\explain.rs",
+  # cameras / uploads were replaced by the local cover generator
+  "python-service\src\stego\cover.py",
+  "python-service\tests\test_stego_cover.py",
+  "python-service\tests\test_stego_webcam.py",
+  "python-service\requirements-camera.txt",
+  "web-ui\src\components\command\stego-webcam.tsx",
   "web-ui\src\pages\RagPage.tsx",
   "web-ui\src\routes\rag.tsx",
   # stale build state that still refers to the removed modules

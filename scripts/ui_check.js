@@ -17,14 +17,29 @@ const out = process.argv[2];
   await p.selectOption('select[aria-label="Drone D1"]', 'smoke-1');
   await p.selectOption('select[aria-label="Drone D2"]', 'smoke-2');
   await p.fill('textarea[aria-label="Message payload"]', 'UI check: patch-wise transport, both directions verified. ' + 'x'.repeat(260));
+  // generated-cover configuration: profile shown, no camera / upload / seed / source controls anywhere on the page
+  await p.waitForSelector('[data-testid="cover-generation-config"]');
+  await p.waitForFunction(() => /raspberry_pi_5_cpu|development_host/.test(document.querySelector('[data-testid="gen-profile"]')?.textContent || ''), null, { timeout: 15000 });
+  console.log('profile:', await p.locator('[data-testid="gen-profile"]').innerText(), '| fresh-cover note:', (await p.locator('[data-testid="fresh-cover-note"]').innerText()).slice(0, 70));
+  console.log('removed controls -> cover source select:', await p.locator('select[aria-label="Cover source"]').count(), 'file inputs:', await p.locator('input[type="file"]').count(),
+    'video:', await p.locator('video').count(), 'webcam buttons:', await p.getByRole('button', { name: /webcam|camera|upload/i }).count(), 'seed inputs:', await p.locator('input[aria-label*="seed" i]').count());
+  // invalid setting is flagged client-side and blocks the buttons; the core would reject it as well
+  await p.fill('input[aria-label="Candidate covers"]', '7');
+  console.log('invalid candidates -> send disabled:', await p.getByRole('button', { name: /Send as image/ }).isDisabled(), 'preview disabled:', await p.getByRole('button', { name: /Preview plan/ }).isDisabled());
+  await p.fill('input[aria-label="Candidate covers"]', '');
+  await p.fill('input[aria-label="Cover width"]', '400');
+  await p.fill('input[aria-label="Cover height"]', '304');
   // plan preview
   await p.getByRole('button', { name: /Preview plan/ }).click();
   await p.waitForSelector('[data-testid^="patch-row-"]', { timeout: 60000 });
+  await p.waitForSelector('[data-testid="generation-diagnostics"]');
+  console.log('preview candidates', await p.locator('[data-testid="gen-candidate"]').count(), '| diagnostics:', (await p.locator('[data-testid="generation-diagnostics"] dl, [data-testid="generation-diagnostics"]').first().innerText()).replace(/\n/g, ' | ').slice(0, 260));
   console.log('preview rows', await p.locator('[data-testid^="patch-row-"]').count(), 'markers', await p.locator('[data-testid^="patch-marker-"]').count());
   // send
   await p.getByRole('button', { name: /Send as image/ }).click();
   await p.waitForSelector('[data-testid="delivered"]', { timeout: 90000 });
   console.log('delivered:', (await p.locator('[data-testid="delivered"] pre').innerText()).slice(0, 60));
+  console.log('send candidates', await p.locator('[data-testid="gen-candidate"]').count());
   console.log('stages ok', await p.locator('[data-testid="stage-ok"]').count(), 'failed', await p.locator('[data-testid="stage-failed"]').count(), 'none', await p.locator('[data-testid="stage-none"]').count());
   const rows = await p.locator('[data-testid^="patch-row-"]').count();
   console.log('patch rows', rows, 'kb cands', await p.locator('[data-testid^="kb-cand-"]').count());
@@ -35,8 +50,18 @@ const out = process.argv[2];
   const body = (await p.locator('main').innerText()).toLowerCase();
   for (const w of ['priority class', 'rag', 'manual override (controlled', 'explanation (simulated']) console.log('contains "' + w + '":', body.includes(w));
   await p.screenshot({ path: out + '/lab.png', fullPage: true });
+  // a message above the embedding-rate limit with resize off: structured failure with the generation details
+  await p.fill('input[aria-label="Cover width"]', '');
+  await p.fill('input[aria-label="Cover height"]', '');
+  const keep = await p.locator('textarea[aria-label="Message payload"]').inputValue();
+  await p.fill('textarea[aria-label="Message payload"]', 'y'.repeat(7000));
+  await p.getByRole('button', { name: /Send as image/ }).click();
+  await p.waitForSelector('[data-testid="generation-failure"]', { timeout: 60000 });
+  console.log('too-large failure:', (await p.locator('[data-testid="error-notice"]').innerText()).replace(/\n/g, ' | ').slice(0, 200));
+  await p.screenshot({ path: out + '/lab-failure.png', fullPage: true });
+  await p.fill('textarea[aria-label="Message payload"]', keep);
   // events
-  await p.locator('[data-testid="event-row"]').first().click();
+  await p.locator('[data-testid="event-row"]').nth(1).click(); // newest successful transmission (row 0 is the refused oversize message)
   console.log('event detail rows', await p.locator('[data-testid="event-detail"] tbody tr').count());
   // D2->D1
   await p.selectOption('select[aria-label="Direction"]', 'D2_D1');
@@ -52,6 +77,7 @@ const out = process.argv[2];
   console.log('monitor rows', await p.locator('[data-testid="monitor-row"]').count());
   await p.getByRole('button', { name: /Run retrieval/ }).click();
   await p.waitForSelector('[data-testid^="patch-row-"]', { timeout: 60000 });
+  console.log('kb monitor cover:', (await p.locator('[data-testid="kb-cover-line"]').innerText()).slice(0, 140), '| seed inputs:', await p.locator('input[aria-label*="seed" i]').count());
   await p.screenshot({ path: out + '/kb.png', fullPage: true });
   console.log('nav:', (await p.locator('nav.side-nav').innerText()).replace(/\n/g, ' | '));
   // old route gone

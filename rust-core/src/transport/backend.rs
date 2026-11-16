@@ -1,6 +1,8 @@
 //! The boundary to the image-processing service. Rust never sends keys or
-//! plaintext through it: only the payload LENGTH (for planning), the already
-//! encrypted + MACed frame bytes (for embedding), cover parameters and artifact ids.
+//! plaintext through it: only the payload LENGTH and the validated cover-generation
+//! configuration (for planning), the already encrypted + MACed frame bytes (for embedding)
+//! and artifact ids. There is no camera and no cover upload: every cover is generated locally
+//! by the image service.
 
 use crate::transport::config::StegoConfig;
 use crate::transport::error::StegoError;
@@ -16,11 +18,10 @@ pub const ALGS: [&str; 10] = [
 
 pub trait StegoBackend: Send + Sync {
     fn health(&self) -> Result<Value, StegoError>;
-    fn camera_probe(&self, camera_index: i64, timeout_ms: u64) -> Result<Value, StegoError>;
-    /// Validate and store a client-supplied PNG (browser webcam frame / uploaded image) as a cover artifact.
-    fn cover_upload(&self, image_b64: &str, origin: &str, limits: &Value) -> Result<Value, StegoError>;
-    /// Acquire + persist the cover, segment it, select one algorithm per patch from the static
-    /// knowledge base (structured filters + BM25) and allocate the payload. Returns the manifest.
+    /// New transmission (`cover_generation` present): generate a fresh payload-aware cover, persist
+    /// it, segment it, select one algorithm per patch from the static knowledge base (structured
+    /// filters + BM25) and allocate the payload. Re-plan (`replan_cover_id` present): plan again on
+    /// that stored cover WITHOUT generating. Returns the manifest.
     fn plan(&self, req: &Value) -> Result<Value, StegoError>;
     /// Embed the authenticated Frame v2 into the planned cover exactly as its manifest says; save the PNG.
     fn encode(&self, req: &Value) -> Result<Value, StegoError>;
@@ -61,12 +62,6 @@ impl HttpBackend {
 impl StegoBackend for HttpBackend {
     fn health(&self) -> Result<Value, StegoError> {
         http::call_json(&self.base, "GET", "/stego/health", None, Duration::from_millis(3000).min(self.timeout), self.max_resp)
-    }
-    fn camera_probe(&self, camera_index: i64, timeout_ms: u64) -> Result<Value, StegoError> {
-        self.post("/stego/camera/probe", &serde_json::json!({"camera_index": camera_index, "timeout_s": timeout_ms as f64 / 1000.0}))
-    }
-    fn cover_upload(&self, image_b64: &str, origin: &str, limits: &Value) -> Result<Value, StegoError> {
-        self.post("/stego/cover/upload", &serde_json::json!({"image_b64": image_b64, "origin": origin, "limits": limits}))
     }
     fn plan(&self, req: &Value) -> Result<Value, StegoError> {
         self.post("/stego/plan", req)

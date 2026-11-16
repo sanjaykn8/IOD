@@ -1,6 +1,7 @@
 //! In-process stand-in for the Python image service, used by Rust tests (no Python needed).
-//! It implements the same JSON contract (plan / encode / extract / kb): `plan` returns a real,
-//! strictly valid patch manifest; `encode` stores the frame in a small container file
+//! It implements the same JSON contract (plan / encode / extract / kb): `plan` "generates" a fresh
+//! cover for a new transmission (counted as a `generate` call) or reuses the stored one for a
+//! re-plan, and returns a real, strictly valid patch manifest; `encode` stores the frame in a small container file
 //! (`FAKEIMG2 | frame`) in the artifact directory so tests can tamper with the *saved file*
 //! exactly as they would a PNG, and the receiver still has to read that file.
 //! It is NOT a steganography implementation and never runs in the live application.
@@ -24,7 +25,8 @@ pub struct FakeStegoBackend {
     pub fail_encode_times: Mutex<u32>,
     /// Replace the manifest returned by `plan` (to test Rust-side manifest validation).
     pub manifest_override: Mutex<Option<Vec<u8>>>,
-    pub fallback_reason: Mutex<Option<String>>,
+    /// Every encode request body, in call order.
+    pub encode_requests: Mutex<Vec<Value>>,
     /// `min_level` of every plan request, in call order.
     pub plan_levels: Mutex<Vec<u64>>,
     /// Every plan request body, in call order (tests assert that no payload bytes or keys are sent).
@@ -58,7 +60,7 @@ impl FakeStegoBackend {
             fail_plan: Mutex::new(None),
             fail_encode_times: Mutex::new(0),
             manifest_override: Mutex::new(None),
-            fallback_reason: Mutex::new(Some("CAMERA_ABSENT".into())),
+            encode_requests: Mutex::new(vec![]),
             plan_levels: Mutex::new(vec![]),
             plan_requests: Mutex::new(vec![]),
             lenient_extract: Mutex::new(false),
@@ -84,20 +86,8 @@ impl StegoBackend for FakeStegoBackend {
         Ok(json!({"ok": true, "service": "fake-stego", "version": "test", "format_version": "frame-v2/appwire-v1/bootstrap-v2/manifest-v1",
                   "segmentation_version": manifest::SEG_VERSION_NAME, "selector_version": manifest::SEL_VERSION_NAME, "kb_version": "fake-kb",
                   "algorithms": ALGS.iter().enumerate().map(|(i,a)| json!({"id": i+1, "name": a})).collect::<Vec<_>>(),
-                  "camera": {"backend": "fake", "opencv_available": false, "mode": "fake"}}))
-    }
-    fn camera_probe(&self, _i: i64, _t: u64) -> Result<Value, StegoError> {
-        Ok(json!({"available": false, "reason": "CAMERA_ABSENT"}))
-    }
-    fn cover_upload(&self, image_b64: &str, origin: &str, _limits: &Value) -> Result<Value, StegoError> {
-        let raw = b64::decode(image_b64, 1 << 24).map_err(|e| StegoError::new("INVALID_REQUEST", "prepare", 400, e))?;
-        if !raw.starts_with(b"\x89PNG") {
-            return Err(StegoError::new("IMAGE_DECODE_ERROR", "prepare", 422, "only PNG images are accepted"));
-        }
-        let id = rand_id(&self.counter);
-        std::fs::write(self.dir.join(format!("{id}.cover.png")), &raw).map_err(|e| StegoError::new("IMAGE_WRITE_FAILED", "prepare", 500, e.to_string()))?;
-        Ok(json!({"ok": true, "cover": {"artifact_id": id, "source": origin, "fallback_reason": Value::Null, "width": 64, "height": 64, "mode": "L",
-                  "channels": 1, "transforms": [], "sha256": sha(&raw)}, "timings_ms": {"store": 1.0}}))
+                  "cover_generator": {"generator_version": "fake-gen", "quality_version": "fake-quality", "active_profile": "raspberry_pi_5_cpu",
+                                      "families": ["terrain", "clouds", "strata", "cells"], "seeding": "os-random", "pretrained_models": false, "network": false}}))
     }
     fn learn_get(&self, path: &str) -> Result<Value, StegoError> {
         if !crate::transport::backend::learn_path_allowed(path) {
@@ -139,18 +129,31 @@ impl StegoBackend for FakeStegoBackend {
             return Err(StegoError::new("PATCH_CAPACITY_INSUFFICIENT", "plan", 422, "the cover cannot carry this frame patch-wise within the refinement limit")
                 .with_details(json!({"attempts": [{"level": 0, "outcome": "CAPACITY_INSUFFICIENT"}, {"level": 1, "outcome": "CAPACITY_INSUFFICIENT"}], "payload_bytes": payload})));
         }
-        // a planned cover is reused as-is on a re-plan (same id) -- as the real service does
-        let (cover_id, source) = match (req["cover"]["source"].as_str(), req["cover"]["test_cover_id"].as_str().or(req["cover"]["cover_id"].as_str())) {
-            (Some(src @ ("test_cover" | "browser_webcam" | "uploaded")), Some(id)) if is_artifact_id(id) => (id.to_string(), src.to_string()),
-            _ => {
-                let id = rand_id(&self.counter);
-                let fb = self.fallback_reason.lock().unwrap().is_some();
-                (id, if fb { "procedural_fallback".to_string() } else { "webcam".to_string() })
+        // same request contract as the real service: a new transmission carries `cover_generation`
+        // (fresh cover), a re-plan carries `replan_cover_id` (stored cover, NO generation)
+        let obj = req.as_object().cloned().unwrap_or_default();
+        if let Some(k) = obj.keys().find(|k| !["payload_bytes", "cover_generation", "replan_cover_id", "limits", "segmentation", "min_level", "target_chunk_bytes"].contains(&k.as_str())) {
+            return Err(StegoError::new("INVALID_REQUEST", "plan", 400, format!("unknown or removed field '{k}'")));
+        }
+        let gen_cfg = req["cover_generation"].clone();
+        let (cover_id, generated_now) = match req["replan_cover_id"].as_str() {
+            Some(id) => {
+                if !is_artifact_id(id) || !self.dir.join(format!("{id}.cover.png")).exists() || !gen_cfg.is_null() {
+                    return Err(StegoError::new("INVALID_REQUEST", "plan", 400, "re-plan needs the stored generated cover of this transmission"));
+                }
+                (id.to_string(), false)
+            }
+            None => {
+                if !gen_cfg.is_object() {
+                    return Err(StegoError::new("GENERATOR_CONFIG_INVALID", "plan", 400, "cover_generation must be an object"));
+                }
+                self.note("generate");
+                (rand_id(&self.counter), true)
             }
         };
         let cover_path = self.dir.join(format!("{cover_id}.cover.png"));
-        if !cover_path.exists() {
-            std::fs::write(&cover_path, format!("FAKECOVER{cover_id}")).map_err(|e| StegoError::new("IMAGE_WRITE_FAILED", "plan", 500, e.to_string()))?;
+        if generated_now {
+            std::fs::write(&cover_path, format!("FAKECOVER{cover_id}{:032x}", rand::random::<u128>())).map_err(|e| StegoError::new("IMAGE_WRITE_FAILED", "plan", 500, e.to_string()))?;
         }
         let cover_bytes = std::fs::read(&cover_path).unwrap_or_default();
         for kind in ["seg", "labels"] {
@@ -176,20 +179,40 @@ impl StegoBackend for FakeStegoBackend {
                                  "candidates": [{"algorithm": name, "alg_id": p.alg_id, "kb_entry": format!("fake-kb#{}", p.alg_id), "eligible": true, "filters": [],
                                                  "exclusion_reason": Value::Null, "bm25": 1.25, "matched_terms": ["textured"], "capacity_bits": cap * 8 / 3, "rank": 1}]}})
         }).collect();
-        let fb = self.fallback_reason.lock().unwrap().clone();
+        let fp = &sha(&cover_bytes)[..16];
+        let generation = if generated_now {
+            json!({"generator_version": "fake-gen", "quality_version": "fake-quality", "profile": gen_cfg["profile"], "payload_bytes": payload,
+                   "requested": {"width": gen_cfg["width"], "height": gen_cfg["height"]}, "actual": {"width": 64, "height": 64}, "resized": false, "mode": "L",
+                   "family": "terrain", "seed_fingerprint": fp, "quality_score": 0.9, "selected": 0, "candidate_count": 1, "max_candidates": gen_cfg["max_candidates"],
+                   "planner_invocations": 1, "seeding": "os-random", "config": gen_cfg,
+                   "candidates": [{"index": 0, "round": 0, "family": "terrain", "width": 64, "height": 64, "mode": "L", "seed_fingerprint": fp, "generate_ms": 1.0,
+                                   "prescreen_ms": 0.5, "plan_ms": 2.0, "quality_score": 0.9, "gates_passed": true, "rejection_reasons": [], "outcome": "selected",
+                                   "capacity_bytes": cap, "planned": true}],
+                   "timings_ms": {"generate": 1.0, "prescreen": 0.5, "plan": 2.0, "total": 3.5},
+                   "budget": {"limit_ms": gen_cfg["processing_budget_ms"], "used_ms": 3.5, "exceeded": false, "approached": false, "stopped_early": false}})
+        } else {
+            json!({"reused_for_replan": true, "generator_version": "fake-gen", "profile": "raspberry_pi_5_cpu", "family": "terrain", "seed_fingerprint": fp,
+                   "quality_score": 0.9, "candidate_count": 0, "candidates": [], "note": "re-plan on the stored cover of this transmission; nothing was generated"})
+        };
         Ok(json!({"ok": true, "format_version": "frame-v2/appwire-v1/bootstrap-v2/manifest-v1", "manifest_b64": b64::encode(&bytes), "manifest_sha256": sha(&bytes),
             "plan": {"selector_version": manifest::SEL_VERSION_NAME, "kb_version": "fake-kb",
                      "segmentation": {"version": manifest::SEG_VERSION_NAME, "level": level, "regions": man.patches.len(), "cell_size": 8, "settings": req["segmentation"]},
                      "refinement_level": level, "attempts": [{"level": level, "regions": man.patches.len(), "outcome": "OK"}], "payload_bytes": payload,
                      "manifest_bytes": bytes.len(), "reserved_rows": man.reserved_rows, "patch_count": man.patches.len(), "used_patches": algs.len(),
                      "algorithms_used": counts, "target_chunk_bytes": req["target_chunk_bytes"], "patches": patches, "plan_ms": 1.0},
-            "cover": {"artifact_id": cover_id, "source": source, "fallback_reason": if source == "procedural_fallback" { json!(fb) } else { Value::Null },
-                      "width": 64, "height": 64, "mode": "L", "channels": 1, "transforms": [], "sha256": sha(&cover_bytes)},
+            "cover": {"artifact_id": cover_id, "source": "generated", "width": 64, "height": 64, "mode": "L", "channels": 1, "sha256": sha(&cover_bytes),
+                      "generator_version": "fake-gen", "profile": "raspberry_pi_5_cpu", "family": "terrain", "seed_fingerprint": fp, "quality_score": 0.9},
+            "generation": generation,
             "inspection": {"segmentation_overlay": format!("{cover_id}.seg.png"), "label_map": format!("{cover_id}.labels.png"), "palette": [[1, 2, 3]]},
-            "timings_ms": {"capture": 1.0, "plan": 2.0, "save": 0.5}}))
+            "timings_ms": if generated_now { json!({"generate": 1.0, "prescreen": 0.5, "plan": 2.0, "selection_total": 3.5, "save": 0.5}) }
+                          else { json!({"generate": 0.0, "prescreen": 0.0, "plan": 2.0, "selection_total": 2.0, "save": 0.5}) }}))
     }
     fn encode(&self, req: &Value) -> Result<Value, StegoError> {
         self.note("encode");
+        self.encode_requests.lock().unwrap().push(req.clone());
+        if let Some(k) = req.as_object().and_then(|o| o.keys().find(|k| !["frame_b64", "cover_id", "limits"].contains(&k.as_str())).cloned()) {
+            return Err(StegoError::new("INVALID_REQUEST", "embed", 400, format!("unknown or removed field '{k}'")));
+        }
         {
             let mut n = self.fail_encode_times.lock().unwrap();
             if *n > 0 {
@@ -204,9 +227,9 @@ impl StegoBackend for FakeStegoBackend {
         }
         let mlen = u32::from_be_bytes(frame[8..12].try_into().unwrap()) as usize;
         let man = manifest::parse(frame.get(16..16 + mlen).unwrap_or(&[]), 4096)?;
-        let cover_id = req["cover"]["test_cover_id"].as_str().or(req["cover"]["cover_id"].as_str()).unwrap_or("").to_string();
+        let cover_id = req["cover_id"].as_str().unwrap_or("").to_string();
         if !is_artifact_id(&cover_id) || !self.dir.join(format!("{cover_id}.cover.png")).exists() {
-            return Err(StegoError::new("INVALID_REQUEST", "embed", 400, "encode needs the stored cover that was planned"));
+            return Err(StegoError::new("INVALID_REQUEST", "embed", 400, "encode needs the stored generated cover that was planned"));
         }
         let id = rand_id(&self.counter);
         let mut file = MAGIC.to_vec();
@@ -219,11 +242,11 @@ impl StegoBackend for FakeStegoBackend {
         }).collect();
         Ok(json!({"ok": true, "artifact_id": id, "format_version": "frame-v2/appwire-v1/bootstrap-v2/manifest-v1",
             "stego": {"path_name": format!("{id}.png"), "sha256": sha(&file), "size": file.len(), "width": 64, "height": 64, "mode": "L", "channels": 1, "format": "PNG"},
-            "cover": {"artifact_id": cover_id, "source": "test_cover", "width": 64, "height": 64, "mode": "L", "channels": 1},
+            "cover": {"artifact_id": cover_id, "source": "generated", "width": 64, "height": 64, "mode": "L", "channels": 1},
             "embed": {"frame_len": frame.len(), "manifest_len": mlen, "payload_len": man.payload_len, "patch_count": man.patches.len(), "used_patches": man.used().count(),
                       "reserved_rows": man.reserved_rows, "patches": per, "exact_frame_recovery_from_saved_png": true,
                       "metrics": {"mse": 0.25, "psnr": 54.2, "ssim": 0.9995, "changed_samples": 10, "changed_fraction": 0.001, "max_abs_diff": 1}},
-            "timings_ms": {"capture": 0.2, "embed": 1.5, "verify": 0.5, "save": 0.7}}))
+            "timings_ms": {"load_cover": 0.2, "embed": 1.5, "verify": 0.5, "save": 0.7}}))
     }
     fn extract(&self, artifact_id: &str, _limits: &Value) -> Result<Value, StegoError> {
         self.note("extract");

@@ -14,6 +14,7 @@ services:
       IOD_PYTHON_URL: http://python-image:5001
       IOD_STEGO_ALLOW_NONLOOPBACK: "1"
       IOD_STEGO_ARTIFACT_DIR: /artifacts
+      IOD_STEGO_GENERATOR_PROFILE: raspberry_pi_5_cpu
     volumes:
       - iod-data:/data
       - iod-artifacts:/artifacts
@@ -26,8 +27,9 @@ services:
       - "5001:5001"
     environment:
       IOD_STEGO_ARTIFACT_DIR: /artifacts
-      # No webcam inside the container by default: procedural fallback is used.
-      IOD_STEGO_CAMERA: auto
+      # Covers are generated locally by the image service (no camera, no upload). Keep the profile
+      # identical for rust-core and python-image.
+      IOD_STEGO_GENERATOR_PROFILE: raspberry_pi_5_cpu
     volumes:
       - iod-artifacts:/artifacts
 

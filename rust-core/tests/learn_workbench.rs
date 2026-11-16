@@ -46,7 +46,7 @@ fn learning_experiments_never_touch_operational_state() {
     let (st, sid) = state_in(fake.clone(), d);
     // one real operational message first
     let r = MessageRequest { session_id: sid.clone(), from_id: "drone-1".into(), plaintext: b"op".to_vec(),
-                             cover: json!({"source": "webcam"}), origin: "test" };
+                             cover_generation: serde_json::Value::Null, origin: "test" };
     pipeline::run_message(&st, r).unwrap_or_else(|f| panic!("{}", f.error));
     let (seq_before, seen_before, ev_before) = {
         let s = st.lock().unwrap();

@@ -29,28 +29,39 @@ on success) plaintext. Bodies are size-limited and unknown/removed fields are re
 
 | Method & path | Body | Result |
 |---|---|---|
-| `GET /api/stego/status` | — | backend health (versions, ten algorithms, camera mode), limits, segmentation overrides, counts |
+| `GET /api/stego/status` | — | backend health (versions, ten algorithms, `cover_generator`: version, active profile, families, seeding, `pretrained_models: false`), limits, segmentation overrides, `config.cover_generation` (active profile, effective settings, hard ceilings, accepted request fields), counts |
 | `GET /api/stego/kb` | — | the static knowledge base: `kb_version`, `selector` (BM25 `k1`, `b`, field weights, tie break), `query_terms` rules, `entries[10]`, `references`, `bm25_stats`, `registry`, `segmentation_defaults` |
-| `POST /api/stego/plan` | `{payload_bytes? (33..max frame, default 256), cover?, min_level? (0..6)}` | plan preview, nothing sealed or embedded: `plan` (segmentation info, attempts, `patches[]` with `features`, `retrieval`, `selected`, `payload_offset`, `payload_length`, `dry_run`), validated `manifest` summary, `cover`, `inspection.palette`, `artifact.cover_id` |
-| `POST /api/stego/message` | `{session_id \| (d1_id, d2_id), from_id, plaintext, cover?}` | full transaction: `delivered_message`, `artifact`, `cover`, `plan`, `manifest`, `received_manifest`, `embed` (per-patch results, whole-image `metrics`, `exact_frame_recovery_from_saved_png`), `extraction[]`, `verification`, `transport` (byte counts), `timings_ms`, `stages[]` |
+| `POST /api/stego/plan` | `{payload_bytes? (33..max frame, default 256), cover_generation?, min_level? (0..6)}` | plan preview on a **fresh generated cover**, nothing sealed or embedded: `generation` (candidates, scores, rejection reasons, timings, budget), `plan` (segmentation info, attempts, `patches[]` with `features`, `retrieval`, `selected`, `payload_offset`, `payload_length`, `dry_run`), validated `manifest` summary, `cover`, `inspection.palette`, `artifact.cover_id` |
+| `POST /api/stego/message` | `{session_id \| (d1_id, d2_id), from_id, plaintext, cover_generation?}` | full transaction on a fresh generated cover: `delivered_message`, `artifact`, `cover`, `generation`, `plan`, `manifest`, `received_manifest`, `embed` (per-patch results, whole-image `metrics`, `exact_frame_recovery_from_saved_png`), `extraction[]`, `verification`, `transport` (byte counts), `timings_ms`, `stages[]` |
 | `POST /api/stego/send` | same as `message` | sender half; returns `artifact.id` |
 | `POST /api/stego/receive` | `{session_id, recipient_id, artifact_id}` | receiver half from the saved file only |
-| `GET /api/stego/events[?session_id&direction&algorithm&outcome&since_ms&until_ms&limit]`, `GET /api/stego/events/{id}` | — | persisted events incl. compact per-patch records (`patches[]`: algorithm, KB entry, BM25, query terms, ranking, offset, length), `algorithms_used`, `plan_attempts`, `replans`; `algorithm` filters by the dominant algorithm |
-| `GET /api/stego/report[?format=json\|csv\|patches_csv]` | — | schema `stego-report-2`: totals, `overall` statistics, `per_algorithm` usage (events, patches, payload bytes); CSV of events; CSV with one row per patch |
-| `POST /api/stego/benchmark` | `{session_id, iterations (≤50), frame_sizes[] (message bytes, ≤8), cover?}` | real transactions through the whole pipeline + a report over them |
-| `POST /api/stego/camera/probe` | `{camera_index?}` | `{available, reason?}` |
+| `GET /api/stego/events[?session_id&direction&algorithm&outcome&since_ms&until_ms&limit]`, `GET /api/stego/events/{id}` | — | persisted events incl. compact per-patch records (`patches[]`: algorithm, KB entry, BM25, query terms, ranking, offset, length), `algorithms_used`, `plan_attempts`, `replans`, and the generation record (`generator_profile`, `generator_version`, `cover_family`, `seed_fingerprint`, `cover_quality_score`, `generation` with the candidate table, requested/actual size, budget use); `algorithm` filters by the dominant algorithm |
+| `GET /api/stego/report[?format=json\|csv\|patches_csv]` | — | schema `stego-report-3`: totals, `overall` statistics, `cover_generation` statistics (families, quality score, candidates per transmission, budget overruns, resizes, failures, candidate rejection reasons), `environment.host`, `per_algorithm` usage (events, patches, payload bytes); CSV of events; CSV with one row per patch |
+| `POST /api/stego/benchmark` | `{session_id, iterations (≤50), frame_sizes[] (message bytes, ≤8), cover_generation?}` | real transactions through the whole pipeline, **a fresh cover per run**, + a report over them; `host`, `cover_generation.profile` and a `measurement_label` that says the figures are a profile-constrained host benchmark unless the host is the profile's target device |
 | `GET /api/stego/artifacts/{id}/{stego\|cover\|seg\|labels\|diff}` | — | PNG (id must match `^[0-9a-f]{32}$`): stego image, cover, segmentation overlay, label map (pixel value = patch id), difference ×64 |
 
-`cover`: `{"source": "webcam" \| "procedural" \| "test_cover" \| "browser_webcam" \| "uploaded", "test_cover_id"?/"cover_id"?, "seed"?, "camera_index"?}`.
+`cover_generation` (optional, every field optional): `{"profile"?, "width"?, "height"?, "max_width"?, "max_height"?, "max_pixels"?, "max_candidates"?,
+"processing_budget_ms"?, "max_working_memory_mb"?, "min_quality_score"?, "max_embedding_rate"?, "allow_payload_driven_resize"?, "families"?, "workers"?, "mode"?}`.
+It can only tighten the active resource profile (default `raspberry_pi_5_cpu`: 320×240 RGB, ceiling 640×480, 2 candidates, 2500 ms, 96 MB); see
+`cover-generation.md` §6 for bounds. Any other field in it — `seed`, `cover_id`, `source`, `file`, `image_b64`, `family`, `algorithm`, … — is
+`400 GENERATOR_CONFIG_INVALID`. There is no public way to choose a seed, a file, a stored cover or an algorithm.
+
+`cover` in responses: `{artifact_id, source: "generated", width, height, mode, channels, sha256, generator_version, profile, family, seed_fingerprint, quality_score}`.
+`generation`: `{generator_version, quality_version, profile, config, requested, actual, resized, family, seed_fingerprint, quality_score, candidate_count,
+planner_invocations, candidates[{index, family, width, height, seed_fingerprint, quality_score, gates_passed, rejection_reasons[], outcome, capacity_bytes,
+generate_ms, prescreen_ms, plan_ms}], timings_ms{generate, prescreen, plan, total}, budget{limit_ms, used_ms, exceeded, approached}, memory, embedding_rate, seeding}`.
+A generation failure returns the same structure (with `reason`) as `error.details`.
+
+Removed cover acquisition (cameras, uploads, client-selected covers): `POST /api/stego/camera/probe` and `POST /api/stego/cover/upload` return 404;
+the top-level request fields `cover`, `source`, `seed`, `cover_id`, `test_cover_id`, `image_b64`, `camera_index` are `400 INVALID_REQUEST`.
 Removed: `POST /api/stego/analyze`, the `priority`, `algorithm`, `param` and `policy` request fields (now `400 INVALID_REQUEST`), the
 `explanation` and `selection` response objects, and all `/api/rag/*` routes. `POST /api/secure-message` routes through the same transport.
 
-Internal Rust → Python contract (loopback, never exposed by Node): `POST /stego/plan`, `POST /stego/encode {frame_b64, cover}`,
-`POST /stego/extract {artifact_id}`, `GET /stego/kb`, `POST /stego/cover/upload`, `POST /stego/capture`, `POST /stego/camera/probe`,
-`GET /stego/health`. Requests containing `key`, `mac_key`, `plaintext`, `path` or `artifact_dir` are rejected by the Python service.
-
-### `POST /api/stego/cover/upload`
-Body `{"image_b64": "<base64 PNG, <= 8 MiB>", "origin": "browser_webcam" | "uploaded"}`. Python accepts PNG only, enforces the size limits, re-encodes the image and stores it as a cover. Returns `{"ok": true, "cover": {"artifact_id", "source": origin, "width", "height", "mode", "sha256", "transforms"}}`. Use it afterwards as `"cover": {"source": "browser_webcam" | "uploaded", "cover_id": "<artifact_id>"}` in `plan`, `message`, `send` and `benchmark`. Errors: `IMAGE_DECODE_ERROR` (not PNG/corrupt), `IMAGE_TOO_SMALL`/`IMAGE_TOO_LARGE`, `INVALID_REQUEST`, `FRAME_TOO_LARGE`. Node accepts up to 14 MB on this route only; everything else keeps the small default.
+Internal Rust → Python contract (loopback, never exposed by Node): `POST /stego/plan {payload_bytes, cover_generation, limits, segmentation, min_level, target_chunk_bytes}`
+for a new transmission or `{payload_bytes, replan_cover_id, …}` for a re-plan on the stored cover (no generation), `POST /stego/encode {frame_b64, cover_id, limits}`,
+`POST /stego/extract {artifact_id}`, `GET /stego/kb`, `GET /stego/health`. Requests containing `key`, `mac_key`, `plaintext`, `payload`, `payload_b64`, `wire`,
+`wire_b64`, `ciphertext`, `message`, `path` or `artifact_dir` are rejected by the Python service, as are the removed fields `cover`, `seed`, `cover_id` (in plan),
+`test_cover_id`, `image_b64`, `algorithm(s)`, `priority`, `source`. `/stego/camera/probe`, `/stego/cover/upload` and `/stego/capture` no longer exist (404).
 
 ## Algorithm Learning workbench (EDUCATIONAL; `/api/learn/*`, never reaches the UAV transport)
 * `GET /api/learn/registry` - ten algorithms with variant/domain/reference/coding, sample covers, attacks, metric definitions.

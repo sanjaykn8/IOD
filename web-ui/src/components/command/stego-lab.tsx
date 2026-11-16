@@ -1,13 +1,13 @@
-// Patch-wise Stego Lab (operational flow). The core seals the message, the image service segments
-// the cover and selects one algorithm per patch from the static knowledge base, the core authenticates
+// Patch-wise Stego Lab (operational flow). The core seals the message, the image service generates a
+// fresh payload-aware cover, segments it and selects one algorithm per patch from the static knowledge base, the core authenticates
 // the manifest + payload, and the saved PNG is re-read and verified. This page only renders results.
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ArrowRight, Camera, Play, RefreshCw, Send, Download } from "lucide-react";
+import { ArrowRight, Play, RefreshCw, Send, Download } from "lucide-react";
 import { api } from "@/lib/api";
 import { stegoApi, downloadStegoReport, downloadBlob, toCsv, type StegoResult } from "@/lib/stego-api";
-import { CAMERA_REASONS, describeStegoError } from "@/lib/stego-errors";
+import { describeStegoError } from "@/lib/stego-errors";
 import { usePolling } from "@/hooks/use-polling";
-import { BrowserWebcam, CoverFileUpload } from "./stego-webcam";
+import { CandidateTable, EMPTY_COVER_FORM, GeneratedCoverConfig, GenerationDiagnostics, coverFormProblems, coverGenerationRequest, type CoverGenForm } from "./stego-generation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -16,14 +16,13 @@ import { ALGORITHMS, Bar, Flag, KV, Notice, Preview, fmtMetric, fmtMs, fmtNum, f
 import { PatchInspector, PatchOverlay, PatchTable, type PatchContext } from "./stego-patches";
 import type { ProtocolEvent } from "@/lib/api";
 import type {
-  PlanAttempt, StegoBenchmarkResult, StegoCameraProbe, StegoCoverRequest, StegoErrorBody, StegoEvent, StegoMessageResult, StegoPlanPreview,
-  StegoReport, StegoStage, StegoUploadedCover,
+  GenerationInfo, PlanAttempt, StegoBenchmarkResult, StegoErrorBody, StegoEvent, StegoMessageResult, StegoPlanPreview, StegoReport, StegoStage,
 } from "@/types/api";
 
 /* ------------------------------------------------------------------ stages */
 const CANON: { key: string; label: string }[] = [
   { key: "aead_seal", label: "AEAD seal (core)" },
-  { key: "plan", label: "Segmentation, per-patch KB selection, allocation; manifest validated; Frame v2 MAC (core)" },
+  { key: "plan", label: "Fresh cover generated and pre-screened; segmentation, per-patch KB selection, allocation; manifest validated; Frame v2 MAC (core)" },
   { key: "embed", label: "Patch-wise embedding + saved-PNG verification" },
   { key: "save", label: "Saved file confirmed by the core" },
   { key: "read", label: "Local read of the saved PNG" },
@@ -101,16 +100,12 @@ export function SteganographyLabPage() {
   const [d1, setD1] = useState(""), [d2, setD2] = useState("");
   const [sessionSel, setSessionSel] = useState("auto");
   const [dir, setDir] = useState<keyof typeof DIRS>("D1_D2");
-  const [coverSrc, setCoverSrc] = useState<"webcam" | "procedural" | "test_cover" | "browser_webcam" | "uploaded">("webcam");
+  const [coverForm, setCoverForm] = useState<CoverGenForm>(EMPTY_COVER_FORM);
   const [message, setMessage] = useState("Perimeter clear, proceeding to waypoint 2.");
-  const [busy, setBusy] = useState<"" | "send" | "plan" | "probe" | "bench">("");
+  const [busy, setBusy] = useState<"" | "send" | "plan" | "bench">("");
   const [outcome, setOutcome] = useState<Outcome | null>(null);
   const [preview, setPreview] = useState<StegoPlanPreview | null>(null);
   const [selPatch, setSelPatch] = useState<number | null>(null);
-  const [probe, setProbe] = useState<StegoResult<StegoCameraProbe> | null>(null);
-  const [reuseCoverId, setReuseCoverId] = useState<string | null>(null);
-  const [captured, setCaptured] = useState<{ cover: StegoUploadedCover; preview: string; origin: "browser_webcam" | "uploaded" } | null>(null);
-  const onCaptured = (origin: "browser_webcam" | "uploaded") => (cover: StegoUploadedCover, previewUrl: string) => { setCaptured({ cover, preview: previewUrl, origin }); setCoverSrc(origin); };
 
   /* ---- readiness (derived from the existing protocol event history) */
   const sessions = useMemo(() => {
@@ -138,20 +133,15 @@ export function SteganographyLabPage() {
 
   const st = statusRes && statusRes.ok ? statusRes.data : null;
   const backendUp = !!st?.backend.reachable;
-  const cam = st?.backend.health?.camera;
-  const camMode = cam?.mode ?? "unknown";
-  const camLikely = !!cam?.opencv_available && !/disabled|absent|none|procedural|unavailable/i.test(camMode);
-  const probed = probe && probe.ok ? probe.data : null;
-  const webcamAvailable = probed ? probed.available : null; // null = not probed
+  const genView = st?.config?.cover_generation;
+  const genHealth = st?.backend.health?.cover_generator;
+  const coverProblems = coverFormProblems(coverForm, genView?.effective);
 
   const needsPair = !d1 || !d2 || d1 === d2;
   const fromId = dir === "D1_D2" ? d1 : d2;
 
-  function coverReq(): StegoCoverRequest {
-    if ((coverSrc === "browser_webcam" || coverSrc === "uploaded") && captured && captured.origin === coverSrc) return { source: coverSrc, cover_id: captured.cover.artifact_id };
-    if (coverSrc === "test_cover" && reuseCoverId) return { source: "test_cover", test_cover_id: reuseCoverId };
-    return { source: coverSrc === "test_cover" || coverSrc === "browser_webcam" || coverSrc === "uploaded" ? "procedural" : coverSrc };
-  }
+  /** Only tightening settings; never a seed, file, source or stored cover. */
+  const coverGen = () => coverGenerationRequest(coverForm, genView?.effective);
 
   /* ---- events + report */
   const [filters, setFilters] = useState({ session_id: "", direction: "", algorithm: "", outcome: "", range: "all" });
@@ -171,13 +161,12 @@ export function SteganographyLabPage() {
   /* ---- actions */
   async function send() {
     setBusy("send"); setOutcome(null); setPreview(null); setSelPatch(null);
-    const base = { from_id: fromId, plaintext: message, cover: coverReq() };
+    const base = { from_id: fromId, plaintext: message, cover_generation: coverGen() };
     const r = await stegoApi.message(sessionSel === "auto" ? { ...base, d1_id: d1, d2_id: d2 } : { ...base, session_id: sessionSel });
     if (r.ok) {
       setOutcome({ ok: true, data: r.data });
       const first = r.data.plan?.patches?.find((p) => p.used);
       setSelPatch(first ? first.patch_id : null);
-      if (r.data.cover?.artifact_id) setReuseCoverId(r.data.cover.artifact_id);
     } else {
       setOutcome({ ok: false, error: r.error, stages: r.stages ?? [] });
     }
@@ -188,17 +177,13 @@ export function SteganographyLabPage() {
     setBusy("plan"); setOutcome(null); setPreview(null); setSelPatch(null);
     // The core decides the real size when it seals: AppWire = 28-byte header + plaintext + 16-byte AEAD tag, plus the 32-byte frame tag.
     const payload_bytes = new TextEncoder().encode(message).length + 28 + 16 + 32;
-    const r = await stegoApi.plan({ payload_bytes, cover: coverReq() });
+    const r = await stegoApi.plan({ payload_bytes, cover_generation: coverGen() });
     if (r.ok) {
       setPreview(r.data);
       const first = r.data.plan?.patches?.find((p) => p.used);
       setSelPatch(first ? first.patch_id : null);
-      if (r.data.cover?.artifact_id) setReuseCoverId(r.data.cover.artifact_id);
     } else setOutcome({ ok: false, error: r.error, stages: r.stages ?? [] });
     setBusy("");
-  }
-  async function runProbe() {
-    setBusy("probe"); setProbe(await stegoApi.probeCamera()); setBusy("");
   }
 
   /* ---- benchmark */
@@ -208,8 +193,7 @@ export function SteganographyLabPage() {
     if (!benchSession) return;
     setBusy("bench");
     const frame_sizes = sizes.split(",").map((s) => parseInt(s.trim(), 10)).filter((n) => Number.isFinite(n) && n > 0);
-    const c = coverReq();
-    setBench(await stegoApi.benchmark({ session_id: benchSession.id, iterations: Math.max(1, Math.min(50, iters || 1)), ...(frame_sizes.length ? { frame_sizes } : {}), ...(c.source === "test_cover" ? {} : { cover: c }) }));
+    setBench(await stegoApi.benchmark({ session_id: benchSession.id, iterations: Math.max(1, Math.min(50, iters || 1)), ...(frame_sizes.length ? { frame_sizes } : {}), cover_generation: coverGen() }));
     setBusy(""); void loadReport(); void loadEvents(); void refreshStatus();
   }
 
@@ -219,10 +203,12 @@ export function SteganographyLabPage() {
   const plan = result?.plan ?? preview?.plan ?? null;
   const cover = result?.cover ?? preview?.cover;
   const inspection = result?.inspection ?? preview?.inspection;
-  const fallbackReason = cover?.fallback_reason;
+  const generation = result?.generation ?? preview?.generation ?? null;
   const rep = report && report.ok ? report.data : null;
   const errView = failure ? describeStegoError(failure.error.code, failure.error.message) : null;
   const failAttempts = (failure?.error.details as { attempts?: PlanAttempt[] } | null | undefined)?.attempts;
+  // generation failures carry the candidate table (scores, gates, rejection reasons, budget) in `details`
+  const failGen = failure?.error.details && Array.isArray((failure.error.details as GenerationInfo).candidates) ? (failure.error.details as GenerationInfo) : null;
   const e = result?.embed;
   const art = result?.artifact;
   const tr = result?.transport;
@@ -254,7 +240,7 @@ export function SteganographyLabPage() {
   }
 
   return <>
-    <PageHeader eyebrow="STEGANOGRAPHY LAB / K4 TRANSPORT" title="UAV Simulation — Patch-wise Operational Flow" description="After M1–M8 and K1–K3, each sealed message is split over irregular patches of the cover. Every patch gets its own algorithm from the static knowledge base (structured filters, then BM25, top-1). The core authenticates the patch manifest together with the payload; the saved PNG is re-read and verified." actions={<Button variant="outline" size="sm" onClick={() => { void refreshStatus(); void refreshHist(); }}><RefreshCw />Refresh status</Button>} />
+    <PageHeader eyebrow="STEGANOGRAPHY LAB / K4 TRANSPORT" title="UAV Simulation — Patch-wise Operational Flow" description="After M1–M8 and K1–K3, a fresh cover is generated locally for each sealed message, which is then split over irregular patches of that cover. Every patch gets its own algorithm from the static knowledge base (structured filters, then BM25, top-1). The core authenticates the patch manifest together with the payload; the saved PNG is re-read and verified." actions={<Button variant="outline" size="sm" onClick={() => { void refreshStatus(); void refreshHist(); }}><RefreshCw />Refresh status</Button>} />
 
     {/* 1 readiness */}
     <Panel title="1 / Readiness" meta={<Status tone={backendUp && dronesOk && effective?.authOk && effective?.keyOk ? "success" : "warning"}>{backendUp && dronesOk && effective?.authOk && effective?.keyOk ? "READY" : "CHECK PREREQUISITES"}</Status>}>
@@ -266,7 +252,7 @@ export function SteganographyLabPage() {
           <option value="auto">Auto: latest session of this pair</option>
           {authSessions.map((s) => <option key={s.id} value={s.id}>{short(s.id, 12)} {"·"} M1–M8 {s.authOk ? "✓" : "✗"} K1–K3 {s.keyOk ? "✓" : "✗"}</option>)}
         </select></Field>
-        <div className="field"><span>Camera</span><Button variant="outline" onClick={() => void runProbe()} disabled={busy === "probe" || !backendUp}><Camera /><BusyLabel busy={busy === "probe"} idle="Probe webcam" busyText="Probing" /></Button></div>
+        <div className="field"><span>Cover source</span><strong>Generated locally</strong><small>{genHealth ? `${genHealth.generator_version ?? "generator"} · profile ${genHealth.active_profile ?? "n/a"} · seeding ${genHealth.seeding ?? "n/a"}` : "generator status unknown"}</small></div>
       </div>
       <div className="stego-ready-grid">
         <ReadyItem label="M1–M8 mutual authentication" ok={effective ? effective.authOk : null} detail={effective ? `session ${short(effective.id, 12)}` : "no session found in event history"} />
@@ -276,16 +262,7 @@ export function SteganographyLabPage() {
       </div>
       {sessionSel === "auto" ? <p className="stego-muted">Auto mode: protocol events do not name the drone pair, so M/K readiness above reflects the newest session overall. The core is authoritative and will answer NO_AUTH_SESSION / NO_GROUP_KEY if the selected pair is not ready.</p> : null}
       {!statusRes ? null : !backendUp ? <Notice tone="danger" title="STEGO_BACKEND_UNAVAILABLE">{describeStegoError("STEGO_BACKEND_UNAVAILABLE").text}</Notice> : null}
-      {backendUp ? (
-        webcamAvailable === true
-          ? <Notice tone="info" title="Webcam available">{`Probe succeeded${probed?.width ? ` (${probed.width}×${probed.height})` : ""}. "Webcam with fallback" will use it and fall back to a procedural cover if a capture fails.`}</Notice>
-          : <Notice tone="info" title={webcamAvailable === false || !camLikely ? "No server-side webcam: the default source falls back to a procedural cover (use the browser webcam below)" : "Webcam backend present (not probed)"}>
-              {webcamAvailable === false
-                ? `Probe result: ${probed?.reason ?? "unavailable"}${probed?.reason && CAMERA_REASONS[probed.reason] ? ` (${CAMERA_REASONS[probed.reason]})` : ""}. A procedural cover image will be generated instead; this is a fallback, not an error.`
-                : !camLikely ? `Camera mode "${camMode}", OpenCV ${cam?.opencv_available ? "present" : "not available"}. The procedural cover generator will be used. Use "Probe webcam" to confirm.`
-                : `Camera mode "${camMode}". Not probed yet; if a capture fails the procedural fallback is used automatically.`}
-            </Notice>
-      ) : null}
+      {backendUp && genHealth?.seeding && genHealth.seeding !== "os-random" ? <Notice tone="warning" title="Test seeding is active">The image service was started with a fixed test seed sequence ({genHealth.seeding}). Covers are reproducible in this mode; do not use it operationally.</Notice> : null}
       {st ? <p className="stego-muted">Stored events: {st.counts?.events ?? "n/a"} ({st.counts?.ok ?? "n/a"} ok / {st.counts?.failed ?? "n/a"} failed){st.backend.health?.kb_version ? ` · knowledge base ${st.backend.health.kb_version} · selector ${st.backend.health.selector_version ?? "n/a"} · segmentation ${st.backend.health.segmentation_version ?? "n/a"}` : ""}{st.transport?.format_version ? ` · ${st.transport.format_version}` : ""}</p> : null}
     </Panel>
 
@@ -295,24 +272,14 @@ export function SteganographyLabPage() {
       <div className="comm-heading"><div><strong>{(dir === "D1_D2" ? d1 : d2) || (dir === "D1_D2" ? "D1" : "D2")}</strong><span>SENDER</span></div><ArrowRight /><div><strong>{(dir === "D1_D2" ? d2 : d1) || (dir === "D1_D2" ? "D2" : "D1")}</strong><span>RECEIVER</span></div></div>
       <div className="form-grid stego-grid-4">
         <Field label="Direction"><select className={selectClass} value={dir} onChange={(ev) => setDir(ev.target.value as keyof typeof DIRS)} aria-label="Direction"><option value="D1_D2">{DIRS.D1_D2}</option><option value="D2_D1">{DIRS.D2_D1}</option></select></Field>
-        <Field label="Cover source"><select className={selectClass} value={coverSrc} onChange={(ev) => setCoverSrc(ev.target.value as typeof coverSrc)} aria-label="Cover source">
-          <option value="webcam">Server webcam (OpenCV) with procedural fallback (default)</option><option value="procedural">Procedural (force generator)</option>
-          <option value="test_cover" disabled={!reuseCoverId}>Reuse cover of last plan / result{reuseCoverId ? "" : " (plan or send once first)"}</option>
-          <option value="browser_webcam" disabled={captured?.origin !== "browser_webcam"}>Browser webcam frame{captured?.origin === "browser_webcam" ? " (captured)" : " (capture one below)"}</option>
-          <option value="uploaded" disabled={captured?.origin !== "uploaded"}>Uploaded PNG{captured?.origin === "uploaded" ? "" : " (upload one below)"}</option>
-        </select></Field>
         <div className="field"><span>Algorithm selection</span><small>Per patch, by the knowledge base (structured filters, BM25, top-1). No manual override.</small></div>
         <div className="field"><span>Segmentation settings</span><small>{st?.config?.segmentation_overrides && Object.keys(st.config.segmentation_overrides).length ? Object.entries(st.config.segmentation_overrides).map(([k, v]) => `${k}=${v}`).join(", ") : "service defaults"} · target chunk {st?.config?.target_chunk_bytes ?? "n/a"} B · re-plans ≤ {st?.config?.max_replans ?? "n/a"} (set by environment)</small></div>
       </div>
-      <div className="stego-cover-tools">
-        <BrowserWebcam disabled={!backendUp || !!busy} onCover={onCaptured("browser_webcam")} />
-        <CoverFileUpload disabled={!backendUp || !!busy} onCover={onCaptured("uploaded")} />
-        {captured ? <figure className="stego-cover-thumb"><img src={captured.preview} alt="Selected cover" style={{ maxWidth: 160, borderRadius: 4 }} /><figcaption className="stego-muted">{captured.origin === "browser_webcam" ? "Browser webcam frame" : "Uploaded PNG"} · {captured.cover.width}×{captured.cover.height} · {short(captured.cover.artifact_id, 10)}</figcaption></figure> : null}
-      </div>
+      <GeneratedCoverConfig view={genView} form={coverForm} onChange={setCoverForm} disabled={!!busy} />
       <Field label="Message payload"><Textarea value={message} onChange={(ev) => setMessage(ev.target.value)} rows={3} aria-label="Message payload" /></Field>
       <div className="button-row">
-        <Button disabled={!!busy || needsPair || !message || (sessionSel !== "auto" && !effective)} onClick={() => void send()}><Send /><BusyLabel busy={busy === "send"} idle="Send as image" busyText="Planning, embedding, verifying" /></Button>
-        <Button variant="outline" disabled={!!busy || !backendUp || !message} onClick={() => void planOnly()}><Play /><BusyLabel busy={busy === "plan"} idle="Preview plan (nothing is sent)" busyText="Segmenting and selecting" /></Button>
+        <Button disabled={!!busy || needsPair || !message || coverProblems.length > 0 || (sessionSel !== "auto" && !effective)} onClick={() => void send()}><Send /><BusyLabel busy={busy === "send"} idle="Send as image" busyText="Planning, embedding, verifying" /></Button>
+        <Button variant="outline" disabled={!!busy || !backendUp || !message || coverProblems.length > 0} onClick={() => void planOnly()}><Play /><BusyLabel busy={busy === "plan"} idle="Preview plan (nothing is sent)" busyText="Segmenting and selecting" /></Button>
         {needsPair ? <span className="stego-muted">Choose two different drones above to send. A plan preview needs no session.</span> : null}
       </div>
     </Panel>
@@ -320,10 +287,18 @@ export function SteganographyLabPage() {
     {/* errors / notices */}
     {failure && errView ? (
       <div data-testid="error-notice"><Notice tone={errView.tone} title={`${errView.title} (${failure.error.code})`}>{errView.text}{failure.error.stage ? ` Failed at stage: ${failure.error.stage}.` : ""}{errView.title === "Operation failed" ? ` Message: ${failure.error.message}` : ""}</Notice>
+        {failGen ? <div data-testid="generation-failure"><h3 className="stego-h3">Cover candidates of the failed attempt{failGen.reason ? ` (${failGen.reason})` : ""}</h3>
+          {failGen.candidates?.length ? <CandidateTable candidates={failGen.candidates} /> : <p className="stego-muted">No candidate was generated{failGen.embedding_rate?.limit_bytes_at_requested_size ? `: the payload is above the embedding-rate limit of ${failGen.embedding_rate.limit_bytes_at_requested_size} bytes for the requested cover size` : ""}{failGen.allow_payload_driven_resize === false ? " and payload-driven resize is off" : ""}.</p>}
+          {failGen.budget ? <p className="stego-muted">Budget: {fmtMs(failGen.budget.used_ms)} used of {fmtNum(failGen.budget.limit_ms)} ms{failGen.budget.exceeded ? " (exceeded)" : ""}. No other cover source was tried.</p> : null}</div> : null}
         {failAttempts?.length ? <Attempts attempts={failAttempts} /> : null}</div>
     ) : null}
     {preview ? <Notice tone="info" title="Plan preview only">{preview.note ?? "No message was sealed and no stego image was saved."}</Notice> : null}
-    {fallbackReason ? <Notice tone="info" title={`Webcam not used (${fallbackReason})`}>{CAMERA_REASONS[fallbackReason] ? `${CAMERA_REASONS[fallbackReason]}. ` : ""}A procedural cover was used instead.</Notice> : null}
+
+    {/* generated cover */}
+    <Panel title="Generated cover" meta={generation ? <Status tone={generation.budget?.exceeded ? "warning" : "success"}>{(generation.family ?? "cover").toUpperCase()} · {cover?.width ?? "?"}×{cover?.height ?? "?"} · QUALITY {fmtNum(generation.quality_score ?? cover?.quality_score, 3)}</Status> : <Status tone="neutral">NO COVER YET</Status>}>
+      {generation ? <><div className="patch-layout"><Preview id={cover?.artifact_id} kind="cover" label="Cover generated for this transmission" /><GenerationDiagnostics g={generation} table={false} /></div>{generation.candidates?.length ? <CandidateTable candidates={generation.candidates} /> : null}</>
+        : <Empty title="No cover generated yet" description="Send a message or preview a plan. A new cover is generated each time; the candidates, their quality scores and the reasons for any rejection appear here." />}
+    </Panel>
 
     {/* 3 segmentation */}
     <Panel title="3 / Segmentation and patches" meta={plan ? <Status tone="neutral">{plan.patch_count ?? "?"} PATCHES · {plan.used_patches ?? "?"} USED · LEVEL {plan.refinement_level ?? "?"}</Status> : <Status tone="neutral">NO PLAN YET</Status>}>
@@ -376,7 +351,7 @@ export function SteganographyLabPage() {
             <KV rows={[["DIRECTION", (result.direction === 1 ? "D1 → D2" : result.direction === 2 ? "D2 → D1" : String(result.direction ?? "n/a"))], ["SEQ", fmtNum(result.seq)], ["SESSION", <TechnicalId key="s">{result.session_id}</TechnicalId>],
               ["FORMAT", tr?.format_version ?? "n/a"], ["FRAME", `${fmtNum(tr?.frame_bytes)} B`], ["= HEADER 16 + MANIFEST", `${fmtNum(tr?.manifest_bytes)} B`], ["+ APPWIRE", `${fmtNum(tr?.wire_bytes)} B`], ["+ TAG", "32 B"],
               ["IN PATCHES (APPWIRE + TAG)", `${fmtNum(tr?.payload_section_bytes)} B`], ["IMAGE", `${art?.width ?? cover?.width ?? "n/a"} × ${art?.height ?? cover?.height ?? "n/a"} · ${art?.mode ?? cover?.mode ?? "n/a"} · ${art?.format ?? "PNG"}`],
-              ["PNG SIZE", isNil(art?.size) ? "n/a" : `${art?.size} B`], ["COVER SOURCE", cover?.source ?? "n/a"]]} />
+              ["PNG SIZE", isNil(art?.size) ? "n/a" : `${art?.size} B`], ["COVER", `${cover?.source ?? "n/a"}${cover?.family ? ` · ${cover.family}` : ""}`]]} />
           </div>
           <div className="output-block"><span>DISTORTION METRICS (cover vs stego, whole image)</span>
             <KV rows={[["MSE", fmtMetric(e?.metrics?.mse)], ["PSNR", fmtMetric(e?.metrics?.psnr, 2, " dB")], ["SSIM", fmtMetric(e?.metrics?.ssim, 4)], ["CHANGED SAMPLES", fmtNum(e?.metrics?.changed_samples)], ["CHANGED FRACTION", fmtPct(e?.metrics?.changed_fraction)], ["MAX |DIFF|", fmtNum(e?.metrics?.max_abs_diff)]]} />
@@ -409,14 +384,14 @@ export function SteganographyLabPage() {
       {events && events.ok && events.data.events.length === 0 ? <Empty title="No events match" description="Adjust the filters or send a message." /> : null}
       {events && events.ok && events.data.events.length > 0 ? (
         <DataTable label="Steganography events">
-          <thead><tr><th>Time</th><th>Session</th><th>Dir</th><th>Seq</th><th>Patches (used)</th><th>Algorithms</th><th>Outcome</th><th>Cover</th><th>Image</th><th>PSNR</th><th>Error</th></tr></thead>
+          <thead><tr><th>Time</th><th>Session</th><th>Dir</th><th>Seq</th><th>Patches (used)</th><th>Algorithms</th><th>Outcome</th><th>Cover (family, quality)</th><th>Image</th><th>PSNR</th><th>Error</th></tr></thead>
           <tbody>{events.data.events.map((ev, i) => {
             const ok = ev.outcome ? ev.outcome === "ok" : ev.success;
             return <tr key={`${ev.event_id ?? i}`} className="stego-row" onClick={() => setSelectedEvent(ev)} data-testid="event-row" tabIndex={0} onKeyDown={(k) => { if (k.key === "Enter") setSelectedEvent(ev); }}>
               <td>{fmtTime(ev.ts_ms)}</td><td><TechnicalId>{ev.session_id}</TechnicalId></td><td>{ev.direction_label ?? ev.direction ?? "n/a"}</td><td>{fmtNum(ev.seq)}</td>
               <td>{isNil(ev.patch_count) ? "—" : `${ev.patch_count} (${ev.used_patches ?? "?"})`}{ev.refinement_level ? <small>level {ev.refinement_level}</small> : null}</td>
               <td>{ev.algorithms_used ? Object.entries(ev.algorithms_used).map(([a, v]) => `${a}×${v.patches}`).join(", ") : "—"}</td>
-              <td><Status tone={ok ? "success" : "danger"}>{ok ? "OK" : "FAILED"}</Status></td><td>{ev.cover_source ?? "n/a"}{ev.cover_fallback_reason ? <small>{ev.cover_fallback_reason}</small> : null}</td>
+              <td><Status tone={ok ? "success" : "danger"}>{ok ? "OK" : "FAILED"}</Status></td><td>{ev.cover_family ?? ev.cover_source ?? "—"}{!isNil(ev.cover_quality_score) ? <small>q {fmtNum(ev.cover_quality_score, 3)}</small> : null}</td>
               <td>{isNil(ev.width) ? "n/a" : `${ev.width}×${ev.height}`}</td><td>{fmtMetric(ev.psnr, 1)}</td><td>{ev.error_code ?? "—"}{ev.error_stage ? <small>{ev.error_stage}</small> : null}</td></tr>;
           })}</tbody>
         </DataTable>
@@ -424,9 +399,15 @@ export function SteganographyLabPage() {
       {selectedEvent ? <div className="output-block" data-testid="event-detail"><span>EVENT DETAIL {String(selectedEvent.event_id ?? "")} <button className="stego-link" onClick={() => setSelectedEvent(null)}>close</button></span>
         <KV rows={[["KIND", selectedEvent.kind ?? "n/a"], ["VERSIONS", `${selectedEvent.segmentation_version ?? "n/a"} / ${selectedEvent.selector_version ?? "n/a"} / ${selectedEvent.kb_version ?? "n/a"}`],
           ["WIRE / MANIFEST / FRAME / IMAGE", `${fmtNum(selectedEvent.wire_bytes)} / ${fmtNum(selectedEvent.manifest_bytes)} / ${fmtNum(selectedEvent.frame_bytes)} / ${fmtNum(selectedEvent.image_bytes)} B`],
-          ["MSE / PSNR / SSIM", `${fmtMetric(selectedEvent.mse)} / ${fmtMetric(selectedEvent.psnr, 2)} / ${fmtMetric(selectedEvent.ssim, 4)}`], ["RE-PLANS", fmtNum(selectedEvent.replans?.length)],
+          ["MSE / PSNR / SSIM", `${fmtMetric(selectedEvent.mse)} / ${fmtMetric(selectedEvent.psnr, 2)} / ${fmtMetric(selectedEvent.ssim, 4)}`], ["RE-PLANS (SAME COVER)", fmtNum(selectedEvent.replans?.length)],
+          ["COVER", `${selectedEvent.cover_source ?? "n/a"} · ${selectedEvent.generator_version ?? "n/a"} · ${selectedEvent.generator_profile ?? "n/a"} · ${selectedEvent.cover_family ?? "n/a"}`],
+          ["COVER QUALITY / CANDIDATES", `${fmtNum(selectedEvent.cover_quality_score, 4)} / ${fmtNum(selectedEvent.generation_candidates)}`],
+          ["GENERATION TIME / BUDGET", `${fmtMs(selectedEvent.generation_used_ms)} / ${fmtNum(selectedEvent.generation_budget_ms)} ms${selectedEvent.generation_budget_exceeded ? " (exceeded)" : ""}`],
+          ["REQUESTED → ACTUAL SIZE", `${selectedEvent.requested_width ?? "?"}×${selectedEvent.requested_height ?? "?"} → ${selectedEvent.width ?? "?"}×${selectedEvent.height ?? "?"}${selectedEvent.cover_resized ? " (resized)" : ""}`],
+          ["SEED FINGERPRINT", selectedEvent.seed_fingerprint ?? "n/a"],
           ["FRAME MAC / AEAD", `${selectedEvent.header_mac_ok === true ? "ok" : selectedEvent.header_mac_ok === false ? "FAILED" : "n/a"} / ${selectedEvent.aead_ok === true ? "ok" : selectedEvent.aead_ok === false ? "FAILED" : "n/a"}`],
           ["ERROR", selectedEvent.error_code ? `${selectedEvent.error_code} at ${selectedEvent.error_stage ?? "?"}: ${selectedEvent.error_message ?? ""}` : "none"]]} />
+        {selectedEvent.generation?.candidates?.length ? <CandidateTable candidates={selectedEvent.generation.candidates} /> : null}
         {selectedEvent.patches?.length ? <DataTable label="Patches recorded for this event">
           <thead><tr><th>Patch</th><th>Pixels</th><th>Algorithm</th><th>KB entry</th><th>BM25</th><th>Query terms</th><th>Offset</th><th>Length</th><th>Capacity</th></tr></thead>
           <tbody>{selectedEvent.patches.map((p) => <tr key={p.patch_id} className={p.used ? "" : "stego-excluded"}><td>#{p.patch_id}</td><td>{fmtNum(p.pixels)}</td><td>{p.algorithm ?? "not used"}{p.param ? <small>param {p.param}</small> : null}</td><td>{p.kb_entry ?? "—"}</td>
@@ -445,8 +426,17 @@ export function SteganographyLabPage() {
           <Metric label="TOTAL EVENTS" value={rep.totals?.events ?? "n/a"} detail={rep.schema} />
           <Metric label="SUCCESS" value={rep.totals?.ok ?? "n/a"} detail="completed transactions" tone="success" />
           <Metric label="FAILURE" value={rep.totals?.failed ?? "n/a"} detail="persisted failure events" tone={rep.totals?.failed ? "danger" : "neutral"} />
-          <Metric label="FALLBACK COVERS" value={rep.totals?.fallback_cover_count ?? "n/a"} detail="procedural instead of webcam" tone="info" />
+          <Metric label="COVERS GENERATED" value={rep.cover_generation?.covers_generated ?? "n/a"} detail="one fresh cover per transmission" tone="info" />
         </div>
+        {rep.cover_generation ? <KV rows={[
+          ["COVER FAMILIES", Object.entries(rep.cover_generation.families ?? {}).map(([f, n]) => `${f}: ${n}`).join(", ") || "n/a"],
+          ["COVER QUALITY SCORE (mean, n)", `${fmtNum(rep.cover_generation.cover_quality_score?.mean, 4)} (n=${rep.cover_generation.cover_quality_score?.n ?? 0})`],
+          ["CANDIDATES / TRANSMISSION (mean)", fmtNum(rep.cover_generation.candidates_per_transmission?.mean, 2)], ["GENERATION + SELECTION (mean)", fmtMs(rep.cover_generation.generation_used_ms?.mean)],
+          ["BUDGET EXCEEDED", fmtNum(rep.cover_generation.budget_exceeded_count)], ["PAYLOAD-DRIVEN RESIZES", fmtNum(rep.cover_generation.payload_driven_resize_count)],
+          ["CANDIDATE REJECTION REASONS", Object.entries(rep.cover_generation.candidate_rejection_reasons ?? {}).map(([r, n]) => `${r}: ${n}`).join(", ") || "none"],
+          ["HOST", `${rep.environment?.host?.device_model ?? rep.environment?.host?.cpu_model ?? "n/a"} · ${rep.environment?.host?.arch ?? "?"} · profile ${rep.environment?.generator_profile ?? "n/a"}`],
+        ]} /> : null}
+        <p className="stego-muted">Cover quality score (heuristic coherence before embedding), distortion metrics (MSE / PSNR / SSIM between cover and stego) and detector AUC (offline evaluation script only) are three different things; none of them shows undetectability.</p>
         {rep.totals?.error_counts && Object.keys(rep.totals.error_counts).length ? <div className="stego-chips">{Object.entries(rep.totals.error_counts).map(([c, n]) => <Status key={c} tone="danger">{c}: {n}</Status>)}</div> : null}
         <KV rows={[["PATCHES / IMAGE (mean)", fmtNum(rep.overall?.patch_count?.mean, 1)], ["USED PATCHES (mean)", fmtNum(rep.overall?.used_patches?.mean, 1)], ["MANIFEST (mean)", fmtNum(rep.overall?.manifest_bytes?.mean, 0, " B")],
           ["FRAME (mean)", fmtNum(rep.overall?.frame_bytes?.mean, 0, " B")], ["PSNR (mean, n)", `${fmtMetric(rep.overall?.psnr?.mean ?? null, 2, " dB")} (n=${rep.overall?.psnr?.n ?? 0})`],
@@ -464,7 +454,7 @@ export function SteganographyLabPage() {
         {rep.limitations?.length ? <details className="stego-details"><summary>Report limitations ({rep.limitations.length})</summary><ul className="stego-list">{rep.limitations.map((l) => <li key={l}>{l}</li>)}</ul></details> : null}
       </> : null}
       <h3 className="stego-h3">Run benchmark</h3>
-      <p className="stego-muted">Runs real sealed messages through the full patch-wise pipeline on a ready session. {benchSession ? <>Session <code>{short(benchSession.id, 12)}</code>.</> : <strong>No ready session (M1–M8 and K1–K3 complete) found.</strong>}</p>
+      <p className="stego-muted">Runs real sealed messages through the full patch-wise pipeline on a ready session, generating a fresh cover for every run under the Generated Cover Configuration above. {benchSession ? <>Session <code>{short(benchSession.id, 12)}</code>.</> : <strong>No ready session (M1–M8 and K1–K3 complete) found.</strong>}</p>
       <div className="form-grid stego-grid-4">
         <Field label="Iterations (max 50)"><Input type="number" min={1} max={50} value={iters} onChange={(ev) => setIters(Math.max(1, Math.min(50, parseInt(ev.target.value, 10) || 1)))} aria-label="Iterations" /></Field>
         <Field label="Message sizes (bytes, comma separated)"><Input value={sizes} onChange={(ev) => setSizes(ev.target.value)} aria-label="Message sizes" /></Field>
@@ -472,8 +462,10 @@ export function SteganographyLabPage() {
       </div>
       {bench && !bench.ok ? <Notice tone={describeStegoError(bench.error.code).tone} title={`${describeStegoError(bench.error.code).title} (${bench.error.code})`}>{describeStegoError(bench.error.code, bench.error.message).text}</Notice> : null}
       {bench && bench.ok ? <div className="output-block output-primary" data-testid="bench-summary"><span>BENCHMARK ({bench.data.runs?.length ?? 0} runs)</span>
-        <DataTable label="Benchmark runs"><thead><tr><th>Message bytes</th><th>Iteration</th><th>Outcome</th><th>Total</th><th>Algorithms (patches)</th><th>Event</th></tr></thead>
+        <p className="stego-muted" data-testid="bench-label">{bench.data.measurement_label ?? "host measurement"}. Host: {bench.data.host?.device_model ?? bench.data.host?.cpu_model ?? "unknown"} ({bench.data.host?.arch ?? "?"}, {bench.data.host?.logical_cpus ?? "?"} logical CPUs){bench.data.host?.is_raspberry_pi_5 ? "" : " — not a Raspberry Pi 5"}.</p>
+        <DataTable label="Benchmark runs"><thead><tr><th>Message bytes</th><th>Iteration</th><th>Outcome</th><th>Total</th><th>Cover (family, quality, generation)</th><th>Algorithms (patches)</th><th>Event</th></tr></thead>
           <tbody>{(bench.data.runs ?? []).map((r, i) => <tr key={i}><td>{r.payload_bytes}</td><td>{r.iteration}</td><td><Status tone={r.ok ? "success" : "danger"}>{r.ok ? "OK" : r.error_code ?? "FAILED"}</Status></td><td>{fmtMs(r.total_ms)}</td>
+            <td>{r.cover ? `${r.cover.family ?? "?"} · q ${fmtNum(r.cover.quality_score, 3)} · ${fmtMs(r.cover.generation_ms)}` : "—"}</td>
             <td>{r.algorithms_used ? Object.entries(r.algorithms_used).map(([a, n]) => `${a}×${n}`).join(", ") : "—"}</td><td>{fmtNum(r.event_id)}</td></tr>)}</tbody></DataTable></div> : null}
     </Panel>
 
@@ -484,6 +476,7 @@ export function SteganographyLabPage() {
         <li><strong>The patch manifest is authenticated</strong>: image size, segmentation map, patch ids, algorithm ids, parameters, offsets and lengths are covered by the same MAC as the payload. The in-image CRC only detects accidents; it is not authentication.</li>
         <li><strong>The receiver never re-segments</strong>: it rebuilds the patch masks from the manifest inside the image, so it cannot drift from the sender.</li>
         <li><strong>The image is an obscurity layer on top of AEAD</strong>, not extra cryptographic strength. No algorithm here is claimed undetectable; LSB-class methods are statistically detectable.</li>
+        <li><strong>Covers are generated locally</strong> for each transmission by a procedural generator (no pretrained model, no network, no camera, no upload). Candidates are screened with documented heuristics and only the payload <em>length</em> influences the choice. A generated image is still a synthetic image: it is not claimed to be indistinguishable from a photograph or undetectable.</li>
         <li>Transport is a <strong>lossless PNG handoff only</strong>. JPEG, resizing or filtering destroys the message; robustness is not claimed.</li>
         <li>Algorithm names denote <strong>this repository&apos;s variants</strong> (for example an additive approximation of HUGO, and custom STC sub-matrices) — see the Knowledge Base page.</li>
         <li>The decrypted message is shown only as the receiver&apos;s delivered result of this transaction; it is not stored in events, reports or exports.</li>

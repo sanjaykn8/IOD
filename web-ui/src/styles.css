@@ -150,3 +150,6 @@ tr.stego-excluded{opacity:.72}
 .kb-ev{border-left:3px solid var(--border);padding:4px 0 4px 8px;margin:6px 0;font-size:11px}
 .kb-ev-published{border-left-color:var(--success)}.kb-ev-implementation{border-left-color:var(--primary)}.kb-ev-local_heuristic{border-left-color:var(--warning,#d9a400)}
 @media(max-width:1000px){.patch-layout,.stego-triple,.kb-cols{grid-template-columns:1fr}}
+.stego-gen-config{margin:10px 0 14px;padding:10px 12px;border:1px solid var(--border);border-radius:6px}
+.stego-gen-config .stego-h3{margin-top:0}
+.stego-check input{margin-right:6px;vertical-align:middle}

@@ -28,19 +28,6 @@ def retention_max():
     return max(0, n)
 
 
-def camera_mode():
-    raw = (os.environ.get("IOD_STEGO_CAMERA") or "auto").strip().lower()
-    return raw if raw in ("auto", "disabled") else "auto"
-
-
-def camera_timeout_s():
-    try:
-        v = float(os.environ.get("IOD_STEGO_CAMERA_TIMEOUT_S", "3.0"))
-    except ValueError:
-        v = 3.0
-    return min(max(v, 0.05), 30.0)
-
-
 @dataclass(frozen=True)
 class Limits:
     max_width: int = HARD_MAX_DIM

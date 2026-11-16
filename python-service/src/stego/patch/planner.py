@@ -95,7 +95,9 @@ def _allocate(feats, struct_caps, total, target_chunk):
     return {i: c for i, c in chunk.items() if c > 0}, usable
 
 
-def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGET_CHUNK, dry_run=True):
+def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGET_CHUNK, dry_run=True, should_stop=None):
+    """`should_stop()` (optional) is polled before every refinement level after the first; when it returns
+    True the planner gives up with GENERATION_BUDGET_EXCEEDED instead of starting another level."""
     seg_cfg = seg_cfg or S.SegConfig()
     if isinstance(payload_len, bool) or not isinstance(payload_len, int) or payload_len < M.TAG_LEN + 1:
         raise StegoError("INVALID_REQUEST", "payload_bytes must be an integer > 32")
@@ -107,6 +109,9 @@ def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGE
     attempts = []
     t_all = time.perf_counter()
     for level in range(min_level, seg_cfg.max_refine_levels + 1):
+        if attempts and should_stop is not None and should_stop():
+            raise StegoError("GENERATION_BUDGET_EXCEEDED", "processing budget reached between refinement levels",
+                             {"attempts": attempts, "payload_bytes": payload_len})
         t0 = time.perf_counter()
         seg = S.segment(arr, seg_cfg, level)
         n = seg.n_regions

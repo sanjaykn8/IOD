@@ -70,7 +70,6 @@ export function KnowledgeBasePage() {
   const [events, setEvents] = useState<StegoEvent[] | null>(null);
   const [evSel, setEvSel] = useState<StegoEvent | null>(null);
   const [payload, setPayload] = useState(300);
-  const [seed, setSeed] = useState("kb-monitor");
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<StegoResult<StegoPlanPreview> | null>(null);
   const [selPatch, setSelPatch] = useState<number | null>(null);
@@ -84,7 +83,7 @@ export function KnowledgeBasePage() {
 
   async function run() {
     setBusy(true); setSelPatch(null);
-    const r = await stegoApi.plan({ payload_bytes: Math.max(33, payload), cover: { source: "procedural", seed } });
+    const r = await stegoApi.plan({ payload_bytes: Math.max(33, payload) });
     setPreview(r);
     if (r.ok) setSelPatch(r.data.plan?.patches?.find((p) => p.used)?.patch_id ?? null);
     setBusy(false);
@@ -169,13 +168,13 @@ export function KnowledgeBasePage() {
     </Panel>
 
     <Panel title="5 / Retrieval monitor — try a cover" meta={<Status tone="info">POST /api/stego/plan</Status>}>
-      <p className="stego-muted">Runs the real planner (segmentation, features, filters, BM25, allocation, dry run) on a procedural cover for a payload length. No message is sealed and nothing is embedded or sent.</p>
+      <p className="stego-muted">Runs the real planner (segmentation, features, filters, BM25, allocation, dry run) on a freshly generated cover for a payload length (a new cover every run, under the active generation profile). No message is sealed and nothing is embedded or sent.</p>
       <div className="form-grid stego-grid-4">
         <Field label="Payload length (bytes)"><Input type="number" min={33} max={60000} value={payload} onChange={(x) => setPayload(parseInt(x.target.value, 10) || 33)} aria-label="Payload length" /></Field>
-        <Field label="Procedural cover seed"><Input value={seed} maxLength={64} onChange={(x) => setSeed(x.target.value)} aria-label="Cover seed" /></Field>
         <div /><Button onClick={() => void run()} disabled={busy}><Play /><BusyLabel busy={busy} idle="Run retrieval" busyText="Planning" /></Button>
       </div>
       {preview && !preview.ok ? <Notice tone={describeStegoError(preview.error.code).tone} title={`${describeStegoError(preview.error.code).title} (${preview.error.code})`}>{describeStegoError(preview.error.code, preview.error.message).text}</Notice> : null}
+      {pv?.generation ? <p className="stego-muted" data-testid="kb-cover-line">Cover generated for this run: {pv.generation.family ?? "n/a"} · {pv.cover?.width}×{pv.cover?.height} · quality score {pv.generation.quality_score ?? "n/a"} · {pv.generation.candidate_count ?? "?"} candidate(s) · fingerprint <code>{pv.generation.seed_fingerprint ?? "n/a"}</code>. Running again generates a different cover.</p> : null}
       {ctx ? <>
         <div className="patch-layout"><PatchOverlay ctx={ctx} selected={selPatch} onSelect={setSelPatch} /><div><PatchInspector ctx={ctx} patch={patch} /></div></div>
         <PatchTable ctx={ctx} selected={selPatch} onSelect={setSelPatch} />

@@ -1,13 +1,18 @@
 //! End-to-end patch-wise image-transport transactions (docs/patchwise-transport.md).
 //!
-//! seal (Rust) -> plan: cover + adaptive segmentation + per-patch knowledge-base selection +
-//! chunk allocation (Python; receives only the payload LENGTH) -> manifest validation +
+//! seal (Rust) -> plan: FRESH payload-aware generated cover + adaptive segmentation + per-patch
+//! knowledge-base selection + chunk allocation (Python; receives only the payload LENGTH and the
+//! validated cover-generation configuration) -> manifest validation +
 //! Frame v2 + MAC over manifest and payload (Rust) -> patch embedding + PNG save + re-read
 //! (Python) -> [handoff by artifact id] -> local read -> extraction from the image's own
 //! bootstrap + manifest, no re-segmentation (Python) -> frame MAC, strict manifest parse,
 //! AppWire, channel/direction/replay, AEAD (Rust).
 //!
-//! No LLM, no explanation stage, no message priority, no single-algorithm or plaintext fallback.
+//! One cover is generated per transmission. A bounded internal re-plan reuses that same stored
+//! cover (no generation); the receiver never generates or re-segments anything.
+//!
+//! No LLM, no explanation stage, no message priority, no single-algorithm or plaintext fallback,
+//! no camera, no uploaded or client-selected cover.
 //!
 //! The global state mutex is never held across a backend call.
 //! Everything fails closed with a stable error code and a persisted event.
@@ -47,7 +52,9 @@ pub struct MessageRequest {
     pub session_id: String,
     pub from_id: String,
     pub plaintext: Vec<u8>,
-    pub cover: Value,
+    /// The request's `cover_generation` object (or Null for the process defaults). Validated and
+    /// tightened against the process configuration before anything else happens.
+    pub cover_generation: Value,
     pub origin: &'static str,
 }
 
@@ -119,6 +126,7 @@ struct Sent {
     inspection: Value,
     manifest: Value,
     cover: Value,
+    generation: Value,
     stego: Value,
     embed: Value,
     frame_sha: String,
@@ -168,10 +176,39 @@ fn malformed(st: &'static str, msg: &str) -> StegoError {
     StegoError::new("BACKEND_MALFORMED_RESPONSE", st, 502, msg)
 }
 
-/// What the plan request may contain: the payload LENGTH and cover/segmentation parameters -- never bytes or keys.
-fn plan_request(h: &Handles, payload_bytes: usize, cover: &Value, min_level: u32) -> Value {
-    json!({"payload_bytes": payload_bytes, "cover": cover, "limits": h.cfg.limits(), "segmentation": h.cfg.segmentation,
-           "min_level": min_level, "target_chunk_bytes": h.cfg.target_chunk_bytes})
+/// Where the cover of a plan request comes from. There is no third option.
+enum PlanCover<'a> {
+    /// New transmission: generate a fresh cover under this (already validated) configuration.
+    Generate(&'a Value),
+    /// Internal re-plan: the stored cover generated for THIS transmission; nothing is generated.
+    Reuse(&'a str),
+}
+
+/// What the plan request may contain: the payload LENGTH and generation/segmentation parameters --
+/// never payload bytes, keys, a seed, an image or a client-chosen artifact.
+fn plan_request(h: &Handles, payload_bytes: usize, cover: PlanCover, min_level: u32) -> Value {
+    let mut r = json!({"payload_bytes": payload_bytes, "limits": h.cfg.limits(), "segmentation": h.cfg.segmentation,
+                       "min_level": min_level, "target_chunk_bytes": h.cfg.target_chunk_bytes});
+    match cover {
+        PlanCover::Generate(cfg) => r["cover_generation"] = cfg.clone(),
+        PlanCover::Reuse(id) => r["replan_cover_id"] = json!(id),
+    }
+    r
+}
+
+/// Compact, secret-free record of the generation step for the persisted event.
+fn compact_generation(g: &Value) -> Value {
+    let cands: Vec<Value> = g["candidates"].as_array().map(|a| a.iter().map(|c| json!({
+        "index": c["index"], "round": c["round"], "family": c["family"], "width": c["width"], "height": c["height"],
+        "seed_fingerprint": c["seed_fingerprint"], "quality_score": c["quality_score"], "gates_passed": c["gates_passed"],
+        "rejection_reasons": c["rejection_reasons"], "outcome": c["outcome"], "capacity_bytes": c["capacity_bytes"],
+        "generate_ms": c["generate_ms"], "prescreen_ms": c["prescreen_ms"], "plan_ms": c["plan_ms"],
+    })).collect()).unwrap_or_default();
+    json!({"generator_version": g["generator_version"], "quality_version": g["quality_version"], "profile": g["profile"], "config": g["config"],
+           "requested": g["requested"], "actual": g["actual"], "resized": g["resized"], "family": g["family"], "params": g["params"],
+           "seed_fingerprint": g["seed_fingerprint"], "quality_score": g["quality_score"], "candidate_count": g["candidate_count"],
+           "planner_invocations": g["planner_invocations"], "candidates": cands, "timings_ms": g["timings_ms"], "budget": g["budget"],
+           "embedding_rate": g["embedding_rate"], "memory": g["memory"], "seeding": g["seeding"]})
 }
 
 struct Planned {
@@ -179,6 +216,7 @@ struct Planned {
     manifest: Manifest,
     plan: Value,
     cover: Value,
+    generation: Value,
     inspection: Value,
     timings: Value,
     level: u32,
@@ -204,11 +242,20 @@ fn accept_plan(h: &Handles, resp: &Value, payload_bytes: usize) -> Result<Planne
     if !is_artifact_id(cover_id) {
         return Err(malformed(stage::PLAN, "cover artifact id malformed"));
     }
+    // the only operational cover is one the image service generated itself
+    if cover["source"].as_str() != Some("generated") {
+        return Err(malformed(stage::PLAN, "cover was not produced by the local generator"));
+    }
+    if (man.width as u32) > h.cfg.generator.max_width || (man.height as u32) > h.cfg.generator.max_height
+        || (man.width as u64) * (man.height as u64) > h.cfg.generator.max_pixels
+    {
+        return Err(StegoError::new("MANIFEST_INVALID", stage::PLAN, 422, "generated cover exceeds the configured generator ceilings"));
+    }
     if plan["patch_count"].as_u64() != Some(man.patches.len() as u64) || plan["used_patches"].as_u64() != Some(man.used().count() as u64) {
         return Err(malformed(stage::PLAN, "plan diagnostics disagree with the manifest"));
     }
     let level = plan["refinement_level"].as_u64().filter(|l| *l <= 6).ok_or_else(|| malformed(stage::PLAN, "refinement level missing"))? as u32;
-    Ok(Planned { manifest_bytes: mb, manifest: man, plan, cover, inspection: resp.get("inspection").cloned().unwrap_or(Value::Null),
+    Ok(Planned { manifest_bytes: mb, manifest: man, plan, cover, generation: resp.get("generation").cloned().unwrap_or(Value::Null), inspection: resp.get("inspection").cloned().unwrap_or(Value::Null),
                  timings: resp.get("timings_ms").cloned().unwrap_or(json!({})), level })
 }
 
@@ -240,6 +287,17 @@ fn algorithms_json(man: &Manifest) -> (Value, Option<&'static str>) {
 }
 
 fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &MessageRequest) -> Result<Sent, StegoError> {
+    // ---- cover-generation configuration: validated before a sequence number is reserved
+    let gen_cfg = match h.cfg.generator.resolve(Some(&req.cover_generation)) {
+        Ok(c) => c,
+        Err(e) => {
+            tx.fail("prepare", 0.0, &e);
+            return Err(e);
+        }
+    };
+    let gen_json = gen_cfg.to_json();
+    tx.set("generator_profile", json!(gen_cfg.profile));
+    tx.set("generation_config", gen_json.clone());
     // ---- phase 1 (locked, short): validate session/keys, reserve sequence number.
     let (direction, seq, from_role, to_role, key, tag) = {
         let mut s = state.lock().unwrap();
@@ -298,29 +356,49 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     tx.ok("aead_seal", ms, format!("sealed; {payload_bytes} bytes (AppWire + frame tag) to distribute over patches"));
 
     // ---- plan -> validate -> frame + MAC -> embed, with a bounded re-plan at a coarser segmentation
-    let mut cover_spec = req.cover.clone();
+    // Exactly one cover is generated per transmission (first plan). Every re-plan names that stored cover.
     let mut min_level: u32 = 0;
     let mut replans: Vec<Value> = Vec::new();
-    let mut first_cover: Option<Value> = None;
+    let mut first: Option<(Value, Value, Value)> = None; // (cover, generation, timings) of the generating plan
+    let mut planner_ms_total = 0.0f64;
     let (planned, frame_bytes, enc, plan_wall, embed_wall) = loop {
         let t = Instant::now();
-        let resp = h.backend.plan(&plan_request(h, payload_bytes, &cover_spec, min_level)).map_err(|e| restage(e, stage::PLAN));
-        let planned = resp.and_then(|r| accept_plan(h, &r, payload_bytes));
+        let first_id = first.as_ref().and_then(|f| f.0["artifact_id"].as_str()).map(str::to_string);
+        let spec = match &first_id {
+            None => PlanCover::Generate(&gen_json),
+            Some(id) => PlanCover::Reuse(id),
+        };
+        let resp = h.backend.plan(&plan_request(h, payload_bytes, spec, min_level)).map_err(|e| restage(e, stage::PLAN));
+        let planned = resp.and_then(|r| accept_plan(h, &r, payload_bytes)).and_then(|p| match &first {
+            // a re-plan must come back on the very same cover artifact (same id, same pixels)
+            Some((c, _, _)) if p.cover["artifact_id"] != c["artifact_id"] || p.cover["sha256"] != c["sha256"] => {
+                Err(malformed(stage::PLAN, "re-plan did not reuse the cover generated for this transmission"))
+            }
+            _ => Ok(p),
+        });
         let planned = match planned {
             Ok(p) => p,
             Err(e) => {
                 let ms = tx.ms(t);
                 tx.fail("plan", ms, &e);
-                if let Some(a) = e.details.as_ref().and_then(|d| d.get("attempts")) {
-                    tx.set("plan_attempts", a.clone());
+                if let Some(d) = e.details.as_ref() {
+                    if let Some(a) = d.get("attempts") {
+                        tx.set("plan_attempts", a.clone());
+                    }
+                    if d.get("candidates").is_some() {
+                        // structured generation failure: which candidates were tried and why each was rejected
+                        tx.set("generation", compact_generation(d));
+                        tx.set("generation_failure_reason", d["reason"].clone());
+                    }
                 }
                 tx.set("replans", json!(replans));
                 return Err(e);
             }
         };
         let plan_wall = tx.ms(t);
-        if first_cover.is_none() {
-            first_cover = Some(planned.cover.clone());
+        planner_ms_total += planned.timings["plan"].as_f64().unwrap_or(0.0);
+        if first.is_none() {
+            first = Some((planned.cover.clone(), planned.generation.clone(), planned.timings.clone()));
         }
         // Frame v2: header | manifest | AppWire | HMAC (the tag covers the manifest and the payload)
         let frame_bytes = match frame::build_frame(&meta, &planned.manifest_bytes, &wire_bytes, h.cfg.max_frame_bytes) {
@@ -332,15 +410,15 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
         };
         let cover_id = planned.cover["artifact_id"].as_str().unwrap_or("").to_string();
         let t = Instant::now();
-        let ereq = json!({"frame_b64": b64::encode(&frame_bytes), "cover": {"source": "test_cover", "test_cover_id": cover_id}, "limits": h.cfg.limits()});
+        // encode loads the stored cover by id; it never generates
+        let ereq = json!({"frame_b64": b64::encode(&frame_bytes), "cover_id": cover_id, "limits": h.cfg.limits()});
         match h.backend.encode(&ereq).map_err(|e| restage(e, stage::EMBED)) {
             Ok(enc) => break (planned, frame_bytes, enc, plan_wall, tx.ms(t)),
             Err(e) if e.code == "PATCH_EMBED_FAILED" && (replans.len() as u32) < h.cfg.max_replans => {
                 // A patch could not carry its chunk with the selected algorithm. There is no fallback to
-                // another algorithm: the same cover is re-planned with a coarser segmentation (bounded).
-                replans.push(json!({"level": planned.level, "error_code": e.code, "details": e.details, "patches": planned.manifest.patches.len()}));
+                // another algorithm and no new cover: the SAME cover is re-planned with a coarser segmentation (bounded).
+                replans.push(json!({"level": planned.level, "error_code": e.code, "details": e.details, "patches": planned.manifest.patches.len(), "cover_id": cover_id}));
                 min_level = planned.level + 1;
-                cover_spec = json!({"source": "test_cover", "test_cover_id": cover_id});
                 continue;
             }
             Err(e) => {
@@ -353,14 +431,31 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
         }
     };
     let man = &planned.manifest;
-    let mut cover = first_cover.unwrap_or(Value::Null);
-    // a re-plan reuses the stored cover; keep the original acquisition labels (source / fallback reason)
-    for k in ["artifact_id", "width", "height", "mode", "channels", "sha256"] {
-        cover[k] = planned.cover[k].clone();
+    let (cover, generation, gen_timings) = first.unwrap_or((Value::Null, Value::Null, Value::Null));
+    if enc["cover"]["artifact_id"] != cover["artifact_id"] {
+        let e = malformed(stage::EMBED, "the image was not embedded into the cover generated for this transmission");
+        tx.fail("embed", embed_wall, &e);
+        return Err(e);
     }
     let (algs, dominant) = algorithms_json(man);
-    tx.timing("capture", planned.timings["capture"].as_f64().unwrap_or(0.0));
-    tx.timing("plan", planned.timings["plan"].as_f64().unwrap_or(0.0));
+    // generation-stage timings come from the one plan that generated; planner time accumulates over re-plans
+    tx.timing("cover_generate", gen_timings["generate"].as_f64().unwrap_or(0.0));
+    tx.timing("cover_prescreen", gen_timings["prescreen"].as_f64().unwrap_or(0.0));
+    tx.timing("cover_selection_total", gen_timings["selection_total"].as_f64().unwrap_or(0.0));
+    tx.timing("plan", planner_ms_total);
+    tx.set("generation", compact_generation(&generation));
+    tx.set("generator_version", generation["generator_version"].clone());
+    tx.set("cover_family", cover["family"].clone());
+    tx.set("seed_fingerprint", cover["seed_fingerprint"].clone());
+    tx.set("cover_quality_score", cover["quality_score"].clone());
+    tx.set("generation_candidates", generation["candidate_count"].clone());
+    tx.set("generation_budget_ms", generation["budget"]["limit_ms"].clone());
+    tx.set("generation_used_ms", generation["budget"]["used_ms"].clone());
+    tx.set("generation_budget_exceeded", generation["budget"]["exceeded"].clone());
+    tx.set("requested_width", generation["requested"]["width"].clone());
+    tx.set("requested_height", generation["requested"]["height"].clone());
+    tx.set("cover_resized", generation["resized"].clone());
+    tx.set("covers_generated", json!(1));
     tx.set("segmentation_version", planned.plan["segmentation"]["version"].clone());
     tx.set("selector_version", planned.plan["selector_version"].clone());
     tx.set("kb_version", planned.plan["kb_version"].clone());
@@ -375,13 +470,13 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     tx.set("algorithm", json!(dominant));
     tx.set("patches", compact_patches(&planned.plan));
     tx.set("cover_source", cover["source"].clone());
-    tx.set("cover_fallback_reason", cover["fallback_reason"].clone());
     for k in ["width", "height", "mode", "channels"] {
         tx.set(k, cover[k].clone());
     }
     tx.set("cover_sha256", cover["sha256"].clone());
     tx.set("cover_artifact_id", cover["artifact_id"].clone());
-    tx.ok("plan", plan_wall, format!("{} patches ({} used) at refinement level {}; manifest {} bytes validated", man.patches.len(), man.used().count(), planned.level, planned.manifest_bytes.len()));
+    tx.ok("plan", plan_wall, format!("fresh {} cover {}x{} (quality {}); {} patches ({} used) at refinement level {}; manifest {} bytes validated",
+        cover["family"].as_str().unwrap_or("generated"), man.width, man.height, cover["quality_score"], man.patches.len(), man.used().count(), planned.level, planned.manifest_bytes.len()));
 
     let frame_sha = sha_hex(&frame_bytes);
     tx.set("frame_bytes", json!(frame_bytes.len()));
@@ -401,6 +496,7 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
         return Err(e);
     }
     let etim = enc.get("timings_ms").cloned().unwrap_or(json!({}));
+    tx.timing("load_cover", etim["load_cover"].as_f64().unwrap_or(0.0));
     tx.timing("embed", etim["embed"].as_f64().unwrap_or(0.0));
     tx.timing("embed_verify", etim["verify"].as_f64().unwrap_or(0.0));
     tx.ok("embed", embed_wall, format!("{} bytes embedded in {} patches; saved image re-read and verified", frame_bytes.len(), man.used().count()));
@@ -440,7 +536,7 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     tx.set("ssim_defined", json!(m["ssim"].is_number()));
     tx.set("changed_fraction", m["changed_fraction"].clone());
 
-    Ok(Sent { artifact_id, direction, seq, from_role, to_role, manifest: man.summary(), plan: planned.plan, inspection: planned.inspection, cover, stego, embed,
+    Ok(Sent { artifact_id, direction, seq, from_role, to_role, manifest: man.summary(), plan: planned.plan, inspection: planned.inspection, cover, generation, stego, embed,
               frame_sha, frame_len: frame_bytes.len(), wire_len: wire_bytes.len(), manifest_len: planned.manifest_bytes.len(), file_sha, file_size: file.len() as u64 })
 }
 
@@ -717,7 +813,7 @@ pub fn run_message(state: &Mutex<SimulationState>, req: MessageRequest) -> Resul
         "ok": true, "event_id": id, "session_id": req.session_id, "direction": rec.direction, "seq": rec.seq,
         "from_role": rec.from_role, "to_role": rec.to_role,
         "delivered_message": String::from_utf8_lossy(&rec.plaintext),
-        "artifact": artifact_json(&sent), "cover": sent.cover, "plan": sent.plan, "inspection": sent.inspection, "manifest": sent.manifest, "embed": sent.embed,
+        "artifact": artifact_json(&sent), "cover": sent.cover, "generation": sent.generation, "plan": sent.plan, "inspection": sent.inspection, "manifest": sent.manifest, "embed": sent.embed,
         "bootstrap": rec.bootstrap, "received_image": rec.image, "received_manifest": rec.manifest, "extraction": rec.patches,
         "verification": {"frame_match": rec.frame_sha == sent.frame_sha, "header_mac_ok": true, "manifest_authenticated": true, "aead_ok": true,
                          "resegmented": false, "full_frame_recovered": true},
@@ -737,7 +833,7 @@ pub fn run_send(state: &Mutex<SimulationState>, req: MessageRequest) -> Result<V
     Ok(json!({
         "ok": true, "event_id": id, "session_id": req.session_id, "direction": sent.direction, "seq": sent.seq,
         "from_role": sent.from_role, "to_role": sent.to_role,
-        "artifact": artifact_json(&sent), "cover": sent.cover, "plan": sent.plan, "inspection": sent.inspection, "manifest": sent.manifest, "embed": sent.embed,
+        "artifact": artifact_json(&sent), "cover": sent.cover, "generation": sent.generation, "plan": sent.plan, "inspection": sent.inspection, "manifest": sent.manifest, "embed": sent.embed,
         "frame_sha256_prefix": &sent.frame_sha[..16],
         "timings_ms": Value::Object(tx.timings.clone()), "stages": tx.stages, "transport": transport_json(&sent),
     }))
@@ -764,24 +860,27 @@ pub fn run_receive(state: &Mutex<SimulationState>, session_id: &str, recipient_i
 /// Plan preview for the Lab (no keys, no message, nothing embedded): segmentation, per-patch
 /// retrieval and allocation for a payload of `payload_bytes`. The returned manifest is validated
 /// exactly as on the send path.
-pub fn run_plan_preview(state: &Mutex<SimulationState>, payload_bytes: usize, cover: &Value, min_level: u32) -> Result<Value, StegoError> {
+pub fn run_plan_preview(state: &Mutex<SimulationState>, payload_bytes: usize, cover_generation: &Value, min_level: u32) -> Result<Value, StegoError> {
     let h = handles(state);
+    let gen_json = h.cfg.generator.resolve(Some(cover_generation))?.to_json();
     if payload_bytes <= frame::TAG_LEN || payload_bytes > h.cfg.max_frame_bytes {
         return Err(StegoError::new("INVALID_REQUEST", stage::PLAN, 400, format!("payload_bytes must be within {}..={}", frame::TAG_LEN + 1, h.cfg.max_frame_bytes)));
     }
     let t = Instant::now();
-    let resp = h.backend.plan(&plan_request(&h, payload_bytes, cover, min_level)).map_err(|e| restage(e, stage::PLAN))?;
+    let resp = h.backend.plan(&plan_request(&h, payload_bytes, PlanCover::Generate(&gen_json), min_level)).map_err(|e| restage(e, stage::PLAN))?;
     let p = accept_plan(&h, &resp, payload_bytes)?;
     let cid = p.cover["artifact_id"].as_str().unwrap_or("").to_string();
-    Ok(json!({"ok": true, "plan": p.plan, "manifest": p.manifest.summary(), "manifest_bytes": p.manifest_bytes.len(), "cover": p.cover, "inspection": p.inspection,
+    Ok(json!({"ok": true, "plan": p.plan, "manifest": p.manifest.summary(), "manifest_bytes": p.manifest_bytes.len(), "cover": p.cover, "generation": p.generation, "inspection": p.inspection,
               "artifact": {"cover_id": cid, "cover_preview_url": format!("/api/stego/artifacts/{cid}/cover"),
                            "segmentation_overlay_url": format!("/api/stego/artifacts/{cid}/seg"), "label_map_url": format!("/api/stego/artifacts/{cid}/labels")},
               "timings_ms": p.timings, "wall_ms": r3(t.elapsed().as_secs_f64() * 1000.0),
-              "note": "plan preview only: no message sealed, no frame authenticated, no stego image saved"}))
+              "note": "plan preview only: a fresh cover was generated for this preview; no message sealed, no frame authenticated, no stego image saved. A later send generates its own fresh cover."}))
 }
 
 /// Repeatable benchmark: real sealed messages through the full pipeline.
-pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iterations: usize, sizes: &[usize], cover: &Value) -> Result<Value, StegoError> {
+/// Every run generates its own fresh cover under the active resource profile.
+pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iterations: usize, sizes: &[usize], cover_generation: &Value) -> Result<Value, StegoError> {
+    let gen_cfg = handles(state).cfg.generator.resolve(Some(cover_generation))?;
     if iterations == 0 || iterations > 50 || sizes.is_empty() || sizes.len() > 8 || iterations * sizes.len() > 400 {
         return Err(StegoError::new("INVALID_REQUEST", stage::PREPARE, 400, "benchmark bounds: iterations<=50, sizes<=8, total runs<=400"));
     }
@@ -798,13 +897,17 @@ pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iteration
         }
         for i in 0..iterations {
             let from = if i % 2 == 0 { d1.clone() } else { d2.clone() };
-            let req = MessageRequest { session_id: session_id.to_string(), from_id: from, plaintext: vec![b'b'; size], cover: cover.clone(), origin: "benchmark" };
-            let (ok, id, code, total, algs) = match run_message(state, req) {
-                Ok(v) => (true, v["event_id"].as_i64().unwrap_or(-1), Value::Null, v["timings_ms"]["total"].clone(), v["plan"]["algorithms_used"].clone()),
-                Err(f) => (false, f.event_id, json!(f.error.code), Value::Null, Value::Null),
+            let req = MessageRequest { session_id: session_id.to_string(), from_id: from, plaintext: vec![b'b'; size], cover_generation: cover_generation.clone(), origin: "benchmark" };
+            let (ok, id, code, total, algs, gen) = match run_message(state, req) {
+                Ok(v) => (true, v["event_id"].as_i64().unwrap_or(-1), Value::Null, v["timings_ms"]["total"].clone(), v["plan"]["algorithms_used"].clone(),
+                          json!({"cover_id": v["cover"]["artifact_id"], "family": v["cover"]["family"], "seed_fingerprint": v["cover"]["seed_fingerprint"],
+                                 "quality_score": v["cover"]["quality_score"], "width": v["cover"]["width"], "height": v["cover"]["height"],
+                                 "candidates": v["generation"]["candidate_count"], "generation_ms": v["generation"]["timings_ms"]["total"],
+                                 "budget_exceeded": v["generation"]["budget"]["exceeded"]})),
+                Err(f) => (false, f.event_id, json!(f.error.code), Value::Null, Value::Null, Value::Null),
             };
             ids.push(id);
-            runs.push(json!({"payload_bytes": size, "iteration": i, "ok": ok, "event_id": id, "error_code": code, "total_ms": total, "algorithms_used": algs}));
+            runs.push(json!({"payload_bytes": size, "iteration": i, "ok": ok, "event_id": id, "error_code": code, "total_ms": total, "algorithms_used": algs, "cover": gen}));
         }
     }
     let events: Vec<Value> = {
@@ -812,5 +915,8 @@ pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iteration
         ids.iter().filter_map(|id| s.db.get_stego_event(*id).ok().flatten()).collect()
     };
     let summary = crate::transport::report::build_report(&events, json!({"scope": "benchmark_run"}), now_ms());
-    Ok(json!({"ok": true, "runs": runs, "summary": summary, "samples": runs.len()}))
+    Ok(json!({"ok": true, "runs": runs, "summary": summary, "samples": runs.len(),
+              "cover_generation": {"profile": gen_cfg.profile, "effective": gen_cfg.to_json(), "fresh_cover_per_run": true},
+              "host": crate::transport::report::host_metadata(),
+              "measurement_label": format!("profile-constrained host benchmark ({}): the profile's limits were enforced on THIS host; these are not measurements from the profile's target hardware", gen_cfg.profile)}))
 }

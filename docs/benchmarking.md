@@ -75,25 +75,66 @@ TOTAL K1-K3 (sequential, no network)                 avg=    2.2090 ms  p50=    
 Reminder: host-simulation measurements only; no network, no embedded hardware.
 ```
 
-## Patch-wise steganography transport (development container, 2026-11-13)
+## Cover generator (profile-constrained host benchmark, 2026-11-15)
 
-Source: `benchmark-results-patchwise.json` (`POST /api/stego/benchmark`, 10 iterations × message sizes 64 / 256 / 1024 bytes
-per cover, alternating directions, release build, single machine, loopback HTTP). 60 transactions, 60 delivered.
+Source: `docs/samples/generator-benchmark-raspberry_pi_5_cpu-host.json`. **profile-constrained host benchmark (raspberry_pi_5_cpu): the profile's limits were enforced on THIS host; NOT a measurement of the profile's target hardware.**
 
-| Cover | Patches (mean) | Used (mean) | PSNR mean | SSIM mean | plan p50 / p95 | embed p50 / p95 | extract p50 | total p50 / p95 |
-|---|---|---|---|---|---|---|---|---|
-| 320×240 RGB varied test cover (uploaded) | 16 | 9.3 | 63.3 dB | 0.99934 | 143 / 237 ms | 73 / 153 ms | 15.7 ms | 314 / 494 ms |
-| 640×480 gray procedural fallback | 9.0 | 6.9 | 55.7 dB | 0.99566 | 189 / 273 ms | 22 / 105 ms | 26.5 ms | 471 / 646 ms |
+Host: Intel(R) Xeon(R) Processor @ 2.10GHz · x86_64 · 2 logical CPUs · 8024 MB RAM · Python 3.13.18 · NumPy 2.5.3 · `is_raspberry_pi_5: false`.
+Profile `raspberry_pi_5_cpu`: 320×240 RGB, ceiling 640×480, ≤ 2 candidates, budget 2500 ms, memory ≤ 96 MB, 1 worker, seeding `os-random`, a fresh cover per transaction.
 
-Algorithms actually used (patches, payload bytes): varied cover — `lsb_matching` 200 / 11 900, `wow` 60 / 3 080, `dct` 10 / 700,
-`s_uniward` 10 / 700; procedural cover — `dwt` 186 / 13 835, `s_uniward` 17 / 2 016, `lsb_matching` 4 / 529 (the procedural
-cover is largely saturated black/white, which the knowledge base maps to the DWT entry). Rust-side work (AEAD seal/open, MAC
-and manifest verification) is below 0.2 ms per transaction; the time is image processing in Python (planning includes
-segmentation, feature extraction, ten capacity measurements per patch and a dry-run embedding; the procedural cover's
-`capture` step of ~125 ms is its generation). p95 values come from n = 30 per cover.
+| Payload (B) | OK / runs | Selection total ms | Generate ms | Pre-screen ms | Planner ms | Candidates generated | Planner runs | Quality score | Over budget | Heap peak MB (max) | Failures |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| 96 | 30 / 30 | 270.97 (p50 260.033, p95 338.719) | 151.299 (p50 150.325, p95 179.9) | 35.81 (p50 34.906, p95 40.755) | 83.701 (p50 72.7, p95 148.153) | 2.0 | 1.0 | 0.97 | 0 | 12.097 | — |
+| 512 | 30 / 30 | 378.324 (p50 359.034, p95 499.021) | 157.517 (p50 153.543, p95 196.855) | 38.468 (p50 36.162, p95 48.584) | 182.169 (p50 175.299, p95 268.203) | 2.0 | 1.0 | 0.97 | 0 | 12.459 | — |
+| 2048 | 30 / 30 | 498.71 (p50 497.857, p95 683.796) | 156.364 (p50 148.881, p95 197.222) | 37.345 (p50 35.951, p95 42.964) | 304.833 (p50 302.479, p95 479.066) | 2.0 | 1.0 | 0.965 | 0 | 12.097 | — |
+| 5000 | 30 / 30 | 717.072 (p50 685.652, p95 923.166) | 168.042 (p50 164.868, p95 211.149) | 37.322 (p50 35.468, p95 49.149) | 511.54 (p50 486.226, p95 688.177) | 2.0 | 1.0 | 0.978 | 0 | 12.098 | — |
 
-These are measurements of this implementation on this host, not of UAV hardware or a radio link, and they say nothing
-about detectability.
+Generator quality report (320×240 RGB, fresh OS-random covers, score floor 0.7):
+
+| Family | Passed / covers | Score mean (min – max) | Rejection reasons | Generate ms | Pre-screen ms | adjacent corr. | lag-8 corr. | spectral slope | high-pass σ | RMS contrast | flat blocks | clipped |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `terrain` | 60 / 60 | 0.958 (0.883 – 1.0) | — | 69.276 (p50 69.736, p95 97.562) | 18.586 (p50 17.79, p95 24.781) | 0.98617 | 0.81899 | -3.65652 | 2.60725 | 37.66857 | 0.0 | 0.0 |
+| `clouds` | 60 / 60 | 0.95 (0.837 – 1.0) | — | 96.955 (p50 92.959, p95 116.033) | 17.745 (p50 17.058, p95 21.735) | 0.99459 | 0.90178 | -3.58959 | 1.74938 | 40.42892 | 4e-05 | 0.0 |
+| `strata` | 60 / 60 | 0.956 (0.869 – 0.997) | — | 77.136 (p50 75.959, p95 92.224) | 17.36 (p50 17.024, p95 21.65) | 0.98141 | 0.70749 | -3.49067 | 3.53874 | 39.56268 | 0.0 | 0.0 |
+| `cells` | 60 / 60 | 0.94 (0.806 – 1.0) | — | 66.637 (p50 64.349, p95 87.644) | 18.192 (p50 17.096, p95 23.717) | 0.98648 | 0.66255 | -3.66409 | 2.63951 | 40.86375 | 0.0 | 0.0 |
+
+
+Reading: at the default 320×240 the two candidates cost about 150–170 ms to generate and 36–38 ms to pre-screen;
+the rest is the real planner, which grows with the payload. Every run stayed inside the 2500 ms budget and far below
+the 96 MB memory limit (pre-flight estimate 24.55 MB for two held candidates; measured Python-heap peak about 12 MB).
+**No Raspberry Pi 5 was available.** These figures say what the profile's limits cost on this x86-64 host; a Raspberry
+Pi 5 will be slower by an unmeasured factor, and whether the 2500 ms budget holds there is not established. To measure
+the device, run the same command on it (`python3 scripts/bench_generator.py --profile raspberry_pi_5_cpu --runs 30`);
+the output file is then named `…-on-pi5.json` and labelled as a device measurement.
+
+## Patch-wise steganography transport on generated covers (development container, 2026-11-15)
+
+Source: `benchmark-results-patchwise.json` — `POST /api/stego/benchmark` through the whole stack (Rust core → Python
+image service over loopback HTTP), release build, alternating directions, **a fresh generated cover per transaction**,
+profile `raspberry_pi_5_cpu`. Host: Intel(R) Xeon(R) Processor @ 2.10GHz, x86_64, 2 logical CPUs, `is_raspberry_pi_5: false` —
+a profile-constrained host benchmark, not a Raspberry Pi measurement. Message sizes 64 / 256 / 1024 bytes × 10 iterations
+(first and third row) and 4096 bytes × 10 (second row). Times in ms: mean (p50 / p95); percentiles are omitted below 20 samples.
+
+| Run | Delivered | Patches | Used | Cover quality score | PSNR | SSIM | Generate | Pre-screen | Planner | Selection total | Embed | Extract | Transaction total | Over budget |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| raspberry_pi_5_cpu default (320x240 RGB) | 30 / 30 | 11.3 | 8.0 | 0.967 | 57.5 dB | 0.99873 | 163 (161 / 209) | 37 (35 / 48) | 158 (152 / 264) | 359 (356 / 512) | 105 (97 / 231) | 17.4 (17.0 / 20.5) | 589 (588 / 813) | 0 |
+| raspberry_pi_5_cpu, 4096-byte messages | 10 / 10 | 11.5 | 11.5 | 0.968 | 55.1 dB | 0.99858 | 166 | 37 | 451 | 653 | 398 | 20.3 | 1183 | 0 |
+| raspberry_pi_5_cpu, 640x480 requested | 30 / 30 | 19.3 | 9.6 | 0.962 | 58.0 dB | 0.99908 | 762 (763 / 901) | 156 (154 / 174) | 537 (546 / 766) | 1455 (1457 / 1714) | 252 (255 / 445) | 30.0 (28.0 / 40.1) | 2087 (2097 / 2535) | 0 |
+
+Algorithms actually used (patches / payload bytes) and cover families selected:
+
+* raspberry_pi_5_cpu default (320x240 RGB): `dct` 53 / 3496, `lsb_matching` 79 / 4524, `lsb_replacement` 17 / 1515, `s_uniward` 88 / 6652, `wow` 3 / 193; families cells 6, clouds 8, strata 8, terrain 8.
+* raspberry_pi_5_cpu, 4096-byte messages: `dct` 1 / 262, `hugo` 2 / 646, `lsb_matching` 25 / 8511, `lsb_replacement` 22 / 7763, `pvd` 5 / 2607, `s_uniward` 58 / 21479, `wow` 2 / 672; families cells 2, clouds 3, strata 3, terrain 2.
+* raspberry_pi_5_cpu, 640x480 requested: `dct` 162 / 8827, `lsb_matching` 22 / 1060, `s_uniward` 101 / 6316, `wow` 4 / 177; families cells 8, clouds 4, strata 9, terrain 9.
+
+Rust-side work (AEAD seal/open, MAC and manifest verification) remains below 0.2 ms per transaction; the time is image
+processing in Python. Cover generation and pre-screening scale with the pixel count (about ×4.2–4.7 from 320×240 to 640×480
+here); the planner scales with pixels and payload. At 640×480 the selection uses about 1.5 s of the 2.5 s budget on this host.
+
+The three kinds of figure must not be confused: the **cover quality score** is a heuristic about the cover before
+embedding; **PSNR / SSIM** measure cover-versus-stego distortion; **detector AUC** comes only from the offline evaluation
+in `detectability-evaluation.md` (where the transport is easily detected). None of them supports a claim of
+undetectability. These are measurements of this implementation on this host, not of UAV hardware or a radio link.
 
 ## Ten algorithms on one patch (educational workbench, 2026-11-13)
 From `docs/samples/learning-patch-comparison-all-ten.md` (256×256 RGB sample, largest patch = 25 088 pixels, 112-byte AEAD

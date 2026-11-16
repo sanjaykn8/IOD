@@ -1,4 +1,8 @@
-"""Deterministic procedural latent images with lossless embedding.
+"""LEGACY latent images (black-and-white sinusoid pattern) with a simple embedding.
+
+NOT the operational cover generator: the transport generates its covers with `stego.generator`.
+This module is kept only for the standalone tool (tools/stego-standalone) and for one teaching
+sample of the Algorithm Learning workbench; the quality gates reject its output as a cover.
 
 Moved verbatim (in behaviour) from tools/stego-standalone/latent_image.py;
 byte-oriented helpers added, text functions kept as wrappers.

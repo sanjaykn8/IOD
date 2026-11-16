@@ -7,11 +7,16 @@ const TABLE: Record<string, StegoErrorView> = {
   NO_GROUP_KEY: { title: "Group key not established", text: "Establish the group key (K1-K3) on the Secure Communication page before sending image messages.", tone: "warning" },
   STEGO_BACKEND_UNAVAILABLE: { title: "Steganography backend unavailable", text: "The Python image service is not reachable from the core. The system fails closed: nothing was sent and no plaintext fallback was used.", tone: "danger" },
   GATEWAY_UNREACHABLE: { title: "Gateway unreachable", text: "The browser could not reach the Node gateway. Check that the gateway and core are running.", tone: "danger" },
-  FRAME_TOO_LARGE: { title: "Message too large for the cover image", text: "The sealed frame does not fit the image capacity limit. Shorten the message or use a larger cover.", tone: "warning" },
+  FRAME_TOO_LARGE: { title: "Message too large", text: "The sealed frame exceeds the configured frame size limit. Shorten the message.", tone: "warning" },
+  COVER_GENERATION_FAILED: { title: "Cover generation failed", text: "The local cover generator could not produce a cover. Nothing was sent, and no other cover source is substituted.", tone: "danger" },
+  COVER_QUALITY_REJECTED: { title: "No generated cover passed the quality checks", text: "Every candidate cover failed a coherence gate or scored below the quality floor (see the candidate table for the reasons). Nothing was sent; a low-quality cover is never used as a fallback. Try again or allow more candidates within the profile.", tone: "warning" },
+  GENERATION_BUDGET_EXCEEDED: { title: "Cover generation budget exceeded", text: "The processing budget of the resource profile ran out before a suitable cover could be generated and planned. Nothing was sent. Use a smaller cover, fewer candidates, or a larger budget within the profile ceiling.", tone: "warning" },
+  GENERATOR_CONFIG_INVALID: { title: "Cover generation settings rejected", text: "The settings are outside what the active resource profile allows. A request can only tighten the profile, and it cannot choose a seed, a file, a camera, a stored cover or an algorithm.", tone: "warning" },
+  GENERATOR_MEMORY_LIMIT: { title: "Cover generation would exceed the memory limit", text: "The pre-flight memory estimate for this size and candidate count is above the profile's working-memory limit. Nothing was generated.", tone: "warning" },
   IMAGE_TOO_LARGE: { title: "Image too large", text: "The cover or stego image exceeds the configured size limit.", tone: "warning" },
   IMAGE_TOO_SMALL: { title: "Image too small", text: "The cover image is too small to embed the transport bootstrap and frame.", tone: "warning" },
   NO_ELIGIBLE_ALGORITHM: { title: "No eligible algorithm for a patch", text: "For at least one patch every knowledge-base entry was excluded by the structured filters (geometry, capacity, hard-avoid rules), also after the bounded coarser re-segmentation. Nothing was sent; there is no fallback algorithm.", tone: "warning" },
-  PATCH_CAPACITY_INSUFFICIENT: { title: "Cover cannot carry this message patch-wise", text: "The measured capacity of the patches is too small for the sealed frame at every allowed segmentation level. Shorten the message or use a larger / more textured cover. Nothing was sent.", tone: "warning" },
+  PATCH_CAPACITY_INSUFFICIENT: { title: "Cover cannot carry this message patch-wise", text: "No generated cover within the allowed size can carry the sealed frame patch-wise: either the message is above the embedding-rate limit for that size, or the measured patch capacity was too small at every segmentation level. Shorten the message, raise the cover size within the profile, or allow payload-driven resize. Nothing was sent.", tone: "warning" },
   PATCH_EMBED_FAILED: { title: "A patch could not carry its chunk", text: "A patch failed to embed or re-extract its chunk with the selected algorithm, also after the bounded re-planning. No other algorithm is substituted; the message was not sent.", tone: "danger" },
   PATCH_UNSUPPORTED: { title: "Patch geometry not supported", text: "The algorithm cannot work on this patch mask (for example no complete block inside it).", tone: "warning" },
   SEGMENTATION_FAILED: { title: "Segmentation failed", text: "The cover could not be segmented within the configured limits (refinement level exhausted or invalid settings).", tone: "danger" },
@@ -45,19 +50,7 @@ const TABLE: Record<string, StegoErrorView> = {
 export function describeStegoError(code: string | undefined, message?: string): StegoErrorView {
   const c = code || "UNKNOWN";
   if (TABLE[c]) return TABLE[c];
-  if (c.startsWith("CAMERA_")) {
-    return { title: "Webcam not used", text: "The webcam could not provide a frame, so a procedural cover image was used instead. This is a fallback, not a failure.", tone: "info" };
-  }
   if (c.startsWith("BOOTSTRAP_")) return { title: "Embedded header problem", text: "The embedded bootstrap header is invalid.", tone: "danger" };
   if (c.startsWith("AEAD")) return { title: "Decryption failed", text: "The AEAD check did not pass; the message was not decrypted.", tone: "danger" };
   return { title: "Operation failed", text: message || "The core reported an error.", tone: "danger" };
 }
-
-export const CAMERA_REASONS: Record<string, string> = {
-  CAMERA_ABSENT: "no camera device found",
-  CAMERA_PERMISSION_DENIED: "camera permission denied",
-  CAMERA_TIMEOUT: "camera timed out",
-  CAMERA_BACKEND_UNAVAILABLE: "camera backend (OpenCV) not available",
-  CAMERA_CAPTURE_FAILED: "camera capture failed",
-  CAMERA_DISABLED: "camera disabled by configuration",
-};

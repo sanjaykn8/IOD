@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Removes files that existed before the patch-wise redesign (see scripts/windows/remove_stale_files.ps1
+# Removes files that existed before the patch-wise redesign or before cameras/uploads were replaced by the cover generator (see scripts/windows/remove_stale_files.ps1
 # for why: unzipping a release over an older copy never deletes files). Safe to run repeatedly.
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -15,6 +15,8 @@ STALE=(
   python-service/tests/test_stego_boundaries.py python-service/tests/test_stego_new_algorithms.py
   python-service/tests/test_stego_selector.py python-service/tests/test_stego_service_api.py python-service/tests/test_validation.py
   rust-core/src/transport/explain.rs
+  python-service/src/stego/cover.py python-service/tests/test_stego_cover.py python-service/tests/test_stego_webcam.py
+  python-service/requirements-camera.txt web-ui/src/components/command/stego-webcam.tsx
   web-ui/src/pages/RagPage.tsx web-ui/src/routes/rag.tsx
   web-ui/tsconfig.tsbuildinfo web-ui/.tanstack web-ui/.output web-ui/.wrangler node-server/dist
 )

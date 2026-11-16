@@ -1,0 +1,1369 @@
+{
+ "schema": "detectability-eval-1",
+ "label": "OFFLINE EVALUATION ONLY. Weak classical detector on synthetic generated covers. A low AUC is NOT evidence of undetectability.",
+ "generator_version": "procgen-1",
+ "quality_version": "cover-quality-1",
+ "cover": {
+  "width": 320,
+  "height": 240,
+  "mode": "RGB",
+  "families": [
+   "terrain",
+   "clouds",
+   "strata",
+   "cells"
+  ],
+  "test_seeds_per_family": 40,
+  "accepted": 160,
+  "rejection_reasons": {},
+  "quality_score_mean": 0.9465337500000001
+ },
+ "detector": {
+  "model": "standardisation + L2 logistic regression (Newton/IRLS), implemented in this script with NumPy",
+  "l2": 1.0,
+  "features": [
+   {
+    "name": "spam1[49]",
+    "definition": "first-order co-occurrence of horizontally/vertically adjacent pixel differences truncated to [-3,3], averaged over both directions and all channels (7x7 normalised counts)"
+   },
+   {
+    "name": "lsb_ones",
+    "definition": "fraction of ones in the least-significant bit plane"
+   },
+   {
+    "name": "lsb_corr_h / lsb_corr_v",
+    "definition": "correlation of the LSB plane with its right / lower neighbour"
+   },
+   {
+    "name": "lsb_msb_corr",
+    "definition": "correlation between bit 0 and bit 1"
+   },
+   {
+    "name": "pov_chi2",
+    "definition": "pairs-of-values chi-square statistic of the histogram, divided by the number of populated pairs"
+   },
+   {
+    "name": "hist_pair_diff",
+    "definition": "mean |h[2k]-h[2k+1]| / (h[2k]+h[2k+1]) over populated pairs"
+   },
+   {
+    "name": "hcf_com",
+    "definition": "centre of mass of the histogram characteristic function (|DFT| of the 256-bin histogram)"
+   },
+   {
+    "name": "hist_smooth",
+    "definition": "mean absolute second difference of the normalised histogram"
+   },
+   {
+    "name": "hp_std / hp_mad / hp_kurt",
+    "definition": "standard deviation, mean absolute value and kurtosis of a 3x3 high-pass (KV-style) residual"
+   },
+   {
+    "name": "d1_std / d1_kurt",
+    "definition": "standard deviation and kurtosis of first differences"
+   },
+   {
+    "name": "d2_mad",
+    "definition": "mean absolute second difference"
+   },
+   {
+    "name": "block8",
+    "definition": "8x8 blockiness: mean |difference| across block boundaries divided by the same inside blocks"
+   },
+   {
+    "name": "parity_run",
+    "definition": "mean run length of equal LSBs along rows"
+   }
+  ],
+  "feature_count": 65
+ },
+ "protocol": {
+  "split": "grouped 5-fold by seed; leave-one-family-out",
+  "confidence_intervals": "percentile bootstrap, 1000 resamples of seeds",
+  "threshold": 0.5,
+  "payload": "uniformly random bytes (ciphertext-like)",
+  "rng_seed": 20261115
+ },
+ "results": [
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.9860546875,
+   "accuracy": 0.98125,
+   "precision": 0.9753086419753086,
+   "recall": 0.9875,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 156,
+    "true_cover_pred_stego": 4,
+    "true_stego_pred_cover": 2,
+    "true_stego_pred_stego": 158
+   },
+   "auc_ci95": [
+    0.9701875,
+    0.9984765625
+   ],
+   "accuracy_ci95": [
+    0.968671875,
+    0.99375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 0.975
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.986875,
+     "accuracy": 0.95
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.956875,
+     "accuracy": 0.975
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 1.0
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.9859375,
+   "condition": "patch_mixed",
+   "kind": "operational patch-wise transport (planner + KB selection + carrier)",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 58.73709792062506,
+   "seconds": 46.7,
+   "algorithms_selected_patches": {
+    "dct": 254,
+    "dct_svd": 3,
+    "hugo": 1,
+    "lsb_matching": 379,
+    "s_uniward": 283,
+    "wow": 40
+   }
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.6114453125,
+   "accuracy": 0.575,
+   "precision": 0.573170731707317,
+   "recall": 0.5875,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 90,
+    "true_cover_pred_stego": 70,
+    "true_stego_pred_cover": 66,
+    "true_stego_pred_stego": 94
+   },
+   "auc_ci95": [
+    0.5933203125,
+    0.6373056640625
+   ],
+   "accuracy_ci95": [
+    0.549921875,
+    0.60625
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.601875,
+     "accuracy": 0.5625
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.6225,
+     "accuracy": 0.55
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.564375,
+     "accuracy": 0.5875
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.6575,
+     "accuracy": 0.6125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.6115625,
+   "condition": "patch_mixed_below_carrier",
+   "kind": "same images as patch_mixed; the detector sees only rows >= 16 (carrier rows cropped from cover and stego)",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 58.73709792062506,
+   "seconds": 0.0
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.5266796875,
+   "accuracy": 0.525,
+   "precision": 0.5240963855421686,
+   "recall": 0.54375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 81,
+    "true_cover_pred_stego": 79,
+    "true_stego_pred_cover": 73,
+    "true_stego_pred_stego": 87
+   },
+   "auc_ci95": [
+    0.521052734375,
+    0.5376171875
+   ],
+   "accuracy_ci95": [
+    0.509375,
+    0.54375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.53,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.554375,
+     "accuracy": 0.5
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.506875,
+     "accuracy": 0.5
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.528125,
+     "accuracy": 0.5
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.52984375,
+   "condition": "lsb_replacement",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 71.65668863639787,
+   "seconds": 7.3
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.5324609375,
+   "accuracy": 0.534375,
+   "precision": 0.5379310344827586,
+   "recall": 0.4875,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 93,
+    "true_cover_pred_stego": 67,
+    "true_stego_pred_cover": 82,
+    "true_stego_pred_stego": 78
+   },
+   "auc_ci95": [
+    0.522146484375,
+    0.54586328125
+   ],
+   "accuracy_ci95": [
+    0.509375,
+    0.5625
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.521875,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.521875,
+     "accuracy": 0.5
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.5325,
+     "accuracy": 0.525
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.53625,
+     "accuracy": 0.5125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.528125,
+   "condition": "lsb_matching",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 71.64974921761628,
+   "seconds": 7.4
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.64015625,
+   "accuracy": 0.60625,
+   "precision": 0.6148648648648649,
+   "recall": 0.56875,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 103,
+    "true_cover_pred_stego": 57,
+    "true_stego_pred_cover": 69,
+    "true_stego_pred_stego": 91
+   },
+   "auc_ci95": [
+    0.6169111328125,
+    0.669033203125
+   ],
+   "accuracy_ci95": [
+    0.575,
+    0.6375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.5775,
+     "accuracy": 0.575
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.68625,
+     "accuracy": 0.6125
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.615625,
+     "accuracy": 0.5875
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.57875,
+     "accuracy": 0.525
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.61453125,
+   "condition": "pvd",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 56.69803103570384,
+   "seconds": 8.6
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.5126171875,
+   "accuracy": 0.509375,
+   "precision": 0.5084745762711864,
+   "recall": 0.5625,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 73,
+    "true_cover_pred_stego": 87,
+    "true_stego_pred_cover": 70,
+    "true_stego_pred_stego": 90
+   },
+   "auc_ci95": [
+    0.5083974609375,
+    0.5196494140625
+   ],
+   "accuracy_ci95": [
+    0.5,
+    0.521875
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.51,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.52,
+     "accuracy": 0.525
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.5125,
+     "accuracy": 0.5
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.51,
+     "accuracy": 0.5125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.513125,
+   "condition": "edge_adaptive_lsb",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 71.650008564207,
+   "seconds": 8.0
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.858828125,
+   "accuracy": 0.778125,
+   "precision": 0.7696969696969697,
+   "recall": 0.79375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 122,
+    "true_cover_pred_stego": 38,
+    "true_stego_pred_cover": 33,
+    "true_stego_pred_stego": 127
+   },
+   "auc_ci95": [
+    0.8263857421875,
+    0.8906699218749999
+   ],
+   "accuracy_ci95": [
+    0.7375,
+    0.81875
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.77625,
+     "accuracy": 0.7125
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.93125,
+     "accuracy": 0.8
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.76375,
+     "accuracy": 0.7625
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.87,
+     "accuracy": 0.725
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.8353125,
+   "condition": "dct",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 51.59095963150861,
+   "seconds": 7.6
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.97515625,
+   "accuracy": 0.959375,
+   "precision": 0.950920245398773,
+   "recall": 0.96875,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 152,
+    "true_cover_pred_stego": 8,
+    "true_stego_pred_cover": 5,
+    "true_stego_pred_stego": 155
+   },
+   "auc_ci95": [
+    0.954357421875,
+    0.99219140625
+   ],
+   "accuracy_ci95": [
+    0.9375,
+    0.978125
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.951875,
+     "accuracy": 0.85
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.868125,
+     "accuracy": 0.825
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.946875,
+     "accuracy": 0.95
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.9975,
+     "accuracy": 0.95
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.9410937500000001,
+   "condition": "dwt",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 60.26922107630704,
+   "seconds": 7.3
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.8956640625,
+   "accuracy": 0.8375,
+   "precision": 0.8375,
+   "recall": 0.8375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 134,
+    "true_cover_pred_stego": 26,
+    "true_stego_pred_cover": 26,
+    "true_stego_pred_stego": 134
+   },
+   "auc_ci95": [
+    0.866369140625,
+    0.9245810546875
+   ],
+   "accuracy_ci95": [
+    0.8,
+    0.8719531249999999
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.88,
+     "accuracy": 0.775
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.94875,
+     "accuracy": 0.825
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.79875,
+     "accuracy": 0.8125
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.905,
+     "accuracy": 0.8125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.8831249999999999,
+   "condition": "dct_svd",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 150.0,
+   "bits_per_sample_mean": 0.005208333333333333,
+   "psnr_db_mean": 51.44757950682911,
+   "seconds": 9.3
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.511328125,
+   "accuracy": 0.5,
+   "precision": 0.5,
+   "recall": 0.49375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 81,
+    "true_cover_pred_stego": 79,
+    "true_stego_pred_cover": 81,
+    "true_stego_pred_stego": 79
+   },
+   "auc_ci95": [
+    0.5043740234375,
+    0.5182431640624999
+   ],
+   "accuracy_ci95": [
+    0.490625,
+    0.509375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.49625,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.498125,
+     "accuracy": 0.4875
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.515,
+     "accuracy": 0.5
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.5125,
+     "accuracy": 0.5125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.5054687499999999,
+   "condition": "hugo",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 75.2588150934246,
+   "seconds": 71.9
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.544765625,
+   "accuracy": 0.528125,
+   "precision": 0.5294117647058824,
+   "recall": 0.50625,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 88,
+    "true_cover_pred_stego": 72,
+    "true_stego_pred_cover": 79,
+    "true_stego_pred_stego": 81
+   },
+   "auc_ci95": [
+    0.5343359375,
+    0.5600400390625
+   ],
+   "accuracy_ci95": [
+    0.509375,
+    0.550078125
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.5075,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.523125,
+     "accuracy": 0.525
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.545,
+     "accuracy": 0.55
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.5425,
+     "accuracy": 0.5125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.52953125,
+   "condition": "wow",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 75.0374268347455,
+   "seconds": 24.6
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.5373046875,
+   "accuracy": 0.540625,
+   "precision": 0.5448275862068965,
+   "recall": 0.49375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 94,
+    "true_cover_pred_stego": 66,
+    "true_stego_pred_cover": 81,
+    "true_stego_pred_stego": 79
+   },
+   "auc_ci95": [
+    0.52625,
+    0.55094140625
+   ],
+   "accuracy_ci95": [
+    0.51875,
+    0.5625
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.505,
+     "accuracy": 0.5125
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.528125,
+     "accuracy": 0.525
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.545,
+     "accuracy": 0.55
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.528125,
+     "accuracy": 0.525
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.5265625,
+   "condition": "s_uniward",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 256,
+   "payload_bytes_embedded_mean": 256.0,
+   "bits_per_sample_mean": 0.008888888888888889,
+   "psnr_db_mean": 76.07429663334608,
+   "seconds": 25.3
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.98421875,
+   "accuracy": 0.978125,
+   "precision": 0.9751552795031055,
+   "recall": 0.98125,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 156,
+    "true_cover_pred_stego": 4,
+    "true_stego_pred_cover": 3,
+    "true_stego_pred_stego": 157
+   },
+   "auc_ci95": [
+    0.966833984375,
+    0.9982822265625
+   ],
+   "accuracy_ci95": [
+    0.959375,
+    0.99375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 0.975
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.965625,
+     "accuracy": 0.825
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.95625,
+     "accuracy": 0.9625
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 0.9875
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.98046875,
+   "condition": "patch_mixed",
+   "kind": "operational patch-wise transport (planner + KB selection + carrier)",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 54.72500485456901,
+   "seconds": 94.3,
+   "algorithms_selected_patches": {
+    "dct": 238,
+    "lsb_matching": 358,
+    "lsb_replacement": 180,
+    "s_uniward": 964,
+    "wow": 57
+   }
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.747265625,
+   "accuracy": 0.71875,
+   "precision": 0.7243589743589743,
+   "recall": 0.70625,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 117,
+    "true_cover_pred_stego": 43,
+    "true_stego_pred_cover": 47,
+    "true_stego_pred_stego": 113
+   },
+   "auc_ci95": [
+    0.712025390625,
+    0.7878525390625
+   ],
+   "accuracy_ci95": [
+    0.678125,
+    0.75625
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.77375,
+     "accuracy": 0.6625
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.60625,
+     "accuracy": 0.5875
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.7425,
+     "accuracy": 0.7125
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.7575,
+     "accuracy": 0.6625
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.72,
+   "condition": "patch_mixed_below_carrier",
+   "kind": "same images as patch_mixed; the detector sees only rows >= 16 (carrier rows cropped from cover and stego)",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 54.72500485456901,
+   "seconds": 0.0
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.7576953125,
+   "accuracy": 0.690625,
+   "precision": 0.6763005780346821,
+   "recall": 0.73125,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 104,
+    "true_cover_pred_stego": 56,
+    "true_stego_pred_cover": 43,
+    "true_stego_pred_stego": 117
+   },
+   "auc_ci95": [
+    0.7292119140625001,
+    0.787587890625
+   ],
+   "accuracy_ci95": [
+    0.653125,
+    0.728125
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.65125,
+     "accuracy": 0.5875
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.8675,
+     "accuracy": 0.525
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.680625,
+     "accuracy": 0.625
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.664375,
+     "accuracy": 0.6
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.7159375,
+   "condition": "lsb_replacement",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 63.86927860509843,
+   "seconds": 7.7
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.58375,
+   "accuracy": 0.565625,
+   "precision": 0.567741935483871,
+   "recall": 0.55,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 93,
+    "true_cover_pred_stego": 67,
+    "true_stego_pred_cover": 72,
+    "true_stego_pred_stego": 88
+   },
+   "auc_ci95": [
+    0.5687089843750001,
+    0.6046875
+   ],
+   "accuracy_ci95": [
+    0.540625,
+    0.59375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.55875,
+     "accuracy": 0.5375
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.61875,
+     "accuracy": 0.5
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.53375,
+     "accuracy": 0.4875
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.560625,
+     "accuracy": 0.6
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.56796875,
+   "condition": "lsb_matching",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 63.86880261802023,
+   "seconds": 7.3
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.7966015625,
+   "accuracy": 0.721875,
+   "precision": 0.7290322580645161,
+   "recall": 0.70625,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 118,
+    "true_cover_pred_stego": 42,
+    "true_stego_pred_cover": 47,
+    "true_stego_pred_stego": 113
+   },
+   "auc_ci95": [
+    0.755572265625,
+    0.837666015625
+   ],
+   "accuracy_ci95": [
+    0.684375,
+    0.759375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.48375,
+     "accuracy": 0.525
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.9375,
+     "accuracy": 0.7375
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.679375,
+     "accuracy": 0.7
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.83625,
+     "accuracy": 0.7
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.73421875,
+   "condition": "pvd",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 48.88964220936303,
+   "seconds": 8.7
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.575859375,
+   "accuracy": 0.53125,
+   "precision": 0.5290697674418605,
+   "recall": 0.56875,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 79,
+    "true_cover_pred_stego": 81,
+    "true_stego_pred_cover": 69,
+    "true_stego_pred_stego": 91
+   },
+   "auc_ci95": [
+    0.56625,
+    0.59176171875
+   ],
+   "accuracy_ci95": [
+    0.5125,
+    0.553125
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.574375,
+     "accuracy": 0.5125
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.55875,
+     "accuracy": 0.5125
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.5625,
+     "accuracy": 0.5125
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.589375,
+     "accuracy": 0.5625
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.57125,
+   "condition": "edge_adaptive_lsb",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1461.60625,
+   "bits_per_sample_mean": 0.05075021701388889,
+   "psnr_db_mean": 64.16791932381815,
+   "seconds": 8.4
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.9887109375,
+   "accuracy": 0.95,
+   "precision": 0.9615384615384616,
+   "recall": 0.9375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 154,
+    "true_cover_pred_stego": 6,
+    "true_stego_pred_cover": 10,
+    "true_stego_pred_stego": 150
+   },
+   "auc_ci95": [
+    0.9812080078125,
+    0.9952353515625
+   ],
+   "accuracy_ci95": [
+    0.928125,
+    0.971875
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.9825,
+     "accuracy": 0.9125
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 0.975
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.97,
+     "accuracy": 0.8375
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.99125,
+     "accuracy": 0.9
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.9859374999999999,
+   "condition": "dct",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 900.0,
+   "bits_per_sample_mean": 0.03125,
+   "psnr_db_mean": 46.13993609728648,
+   "seconds": 8.1
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 1.0,
+   "accuracy": 1.0,
+   "precision": 1.0,
+   "recall": 1.0,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 160,
+    "true_cover_pred_stego": 0,
+    "true_stego_pred_cover": 0,
+    "true_stego_pred_stego": 160
+   },
+   "auc_ci95": [
+    1.0,
+    1.0
+   ],
+   "accuracy_ci95": [
+    1.0,
+    1.0
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 0.925
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 1.0
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 0.9875
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 1.0,
+     "accuracy": 1.0
+    }
+   },
+   "leave_one_family_out_mean_auc": 1.0,
+   "condition": "dwt",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 52.49603431871053,
+   "seconds": 8.1
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.8978515625,
+   "accuracy": 0.84375,
+   "precision": 0.8353658536585366,
+   "recall": 0.85625,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 133,
+    "true_cover_pred_stego": 27,
+    "true_stego_pred_cover": 23,
+    "true_stego_pred_stego": 137
+   },
+   "auc_ci95": [
+    0.8677626953125,
+    0.926615234375
+   ],
+   "accuracy_ci95": [
+    0.80625,
+    0.878125
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.876875,
+     "accuracy": 0.775
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.940625,
+     "accuracy": 0.8
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.796875,
+     "accuracy": 0.8
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.906875,
+     "accuracy": 0.8
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.8803124999999999,
+   "condition": "dct_svd",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 150.0,
+   "bits_per_sample_mean": 0.005208333333333333,
+   "psnr_db_mean": 51.45000679882041,
+   "seconds": 9.8
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.5420703125,
+   "accuracy": 0.515625,
+   "precision": 0.5170068027210885,
+   "recall": 0.475,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 89,
+    "true_cover_pred_stego": 71,
+    "true_stego_pred_cover": 84,
+    "true_stego_pred_stego": 76
+   },
+   "auc_ci95": [
+    0.5294873046875,
+    0.559140625
+   ],
+   "accuracy_ci95": [
+    0.496875,
+    0.5375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.52375,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.51625,
+     "accuracy": 0.525
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.545625,
+     "accuracy": 0.525
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.533125,
+     "accuracy": 0.5125
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.5296875,
+   "condition": "hugo",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 67.47355033190345,
+   "seconds": 445.6
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.5673046875,
+   "accuracy": 0.54375,
+   "precision": 0.5448717948717948,
+   "recall": 0.53125,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 89,
+    "true_cover_pred_stego": 71,
+    "true_stego_pred_cover": 75,
+    "true_stego_pred_stego": 85
+   },
+   "auc_ci95": [
+    0.5536289062499999,
+    0.5846494140624999
+   ],
+   "accuracy_ci95": [
+    0.521875,
+    0.565625
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.519375,
+     "accuracy": 0.525
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.541875,
+     "accuracy": 0.5
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.559375,
+     "accuracy": 0.55
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.56,
+     "accuracy": 0.55
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.54515625,
+   "condition": "wow",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 67.26370786718408,
+   "seconds": 67.3
+  },
+  {
+   "n_pairs": 160,
+   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
+   "auc": 0.55359375,
+   "accuracy": 0.51875,
+   "precision": 0.5197368421052632,
+   "recall": 0.49375,
+   "confusion_matrix": {
+    "true_cover_pred_cover": 87,
+    "true_cover_pred_stego": 73,
+    "true_stego_pred_cover": 81,
+    "true_stego_pred_stego": 79
+   },
+   "auc_ci95": [
+    0.5424199218750001,
+    0.5682431640625
+   ],
+   "accuracy_ci95": [
+    0.503125,
+    0.534375
+   ],
+   "leave_one_family_out": {
+    "cells": {
+     "n_pairs": 40,
+     "auc": 0.528125,
+     "accuracy": 0.5
+    },
+    "clouds": {
+     "n_pairs": 40,
+     "auc": 0.551875,
+     "accuracy": 0.5125
+    },
+    "strata": {
+     "n_pairs": 40,
+     "auc": 0.545,
+     "accuracy": 0.5125
+    },
+    "terrain": {
+     "n_pairs": 40,
+     "auc": 0.57125,
+     "accuracy": 0.5625
+    }
+   },
+   "leave_one_family_out_mean_auc": 0.5490625,
+   "condition": "s_uniward",
+   "kind": "single algorithm over the whole image, no carrier",
+   "payload_bytes_requested": 1536,
+   "payload_bytes_embedded_mean": 1536.0,
+   "bits_per_sample_mean": 0.05333333333333334,
+   "psnr_db_mean": 68.29722889729334,
+   "seconds": 65.3
+  }
+ ],
+ "skipped_embeddings": [],
+ "skipped_count": 0,
+ "environment": {
+  "python": "3.13.18",
+  "numpy": "2.5.3",
+  "machine": "x86_64",
+  "system": "Linux"
+ },
+ "wall_seconds": 984.0,
+ "limitations": [
+  "Synthetic procedural covers only; no photographs. Results do not transfer to natural images.",
+  "The detector is a small linear model on about 65 hand-made features with a few hundred training images; learned steganalysers (rich models with ensemble classifiers, CNNs) are far stronger.",
+  "An adversary who knows the generator can produce unlimited training covers; this evaluation trains on a small sample.",
+  "The single-algorithm conditions embed over the whole image without the bootstrap carrier; the operational transport is the patch_mixed condition.",
+  "The bootstrap carrier of the transport is written in plain least-significant bits of the reserved top rows and is itself a detectable structure for a detector that looks for it.",
+  "Confidence intervals reflect sampling of seeds only, not model or feature choice."
+ ]
+}

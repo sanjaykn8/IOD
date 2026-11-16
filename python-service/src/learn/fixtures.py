@@ -56,7 +56,7 @@ def sample_cover(name):
     if name == "bw_procedural_256":
         img = decode_latent(encode_text("learn-sample"), 256)
         return (np.array(img, dtype=np.uint8) > 0).astype(np.uint8) * 255, \
-            "256x256 black-and-white procedural cover (the operational fallback generator, seed 'learn-sample')"
+            "256x256 black-and-white legacy latent pattern (teaching sample only; the transport never uses it)"
     raise KeyError(name)
 
 

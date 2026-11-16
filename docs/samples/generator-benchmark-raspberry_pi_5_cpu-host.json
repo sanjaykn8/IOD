@@ -1,0 +1,741 @@
+{
+ "schema": "generator-bench-1",
+ "measurement_label": "profile-constrained host benchmark (raspberry_pi_5_cpu): the profile's limits were enforced on THIS host; NOT a measurement of the profile's target hardware",
+ "host": {
+  "system": "Linux",
+  "machine": "x86_64",
+  "device_model": null,
+  "cpu_model": "Intel(R) Xeon(R) Processor @ 2.10GHz",
+  "logical_cpus": 2,
+  "mem_total_mb": 8024,
+  "python": "3.13.18",
+  "numpy": "2.5.3",
+  "is_raspberry_pi_5": false
+ },
+ "generator_version": "procgen-1",
+ "quality_version": "cover-quality-1",
+ "profile": "raspberry_pi_5_cpu",
+ "config": {
+  "profile": "raspberry_pi_5_cpu",
+  "width": 320,
+  "height": 240,
+  "max_width": 640,
+  "max_height": 480,
+  "max_pixels": 307200,
+  "max_candidates": 2,
+  "processing_budget_ms": 2500,
+  "max_working_memory_mb": 96,
+  "min_quality_score": 0.7,
+  "max_embedding_rate": 0.2,
+  "allow_payload_driven_resize": false,
+  "workers": 1,
+  "mode": "RGB",
+  "families": [
+   "terrain",
+   "clouds",
+   "strata",
+   "cells"
+  ]
+ },
+ "seeding": "os-random",
+ "fresh_cover_per_transaction": true,
+ "benchmark": [
+  {
+   "payload_bytes": 96,
+   "runs": 30,
+   "ok": 30,
+   "failed": 0,
+   "failure_codes": {},
+   "timings_ms": {
+    "generate": {
+     "n": 30,
+     "mean": 151.299,
+     "p50": 150.325,
+     "p95": 179.9,
+     "min": 111.353,
+     "max": 188.489
+    },
+    "prescreen": {
+     "n": 30,
+     "mean": 35.81,
+     "p50": 34.906,
+     "p95": 40.755,
+     "min": 32.063,
+     "max": 41.71
+    },
+    "plan": {
+     "n": 30,
+     "mean": 83.701,
+     "p50": 72.7,
+     "p95": 148.153,
+     "min": 42.057,
+     "max": 164.378
+    },
+    "total": {
+     "n": 30,
+     "mean": 270.97,
+     "p50": 260.033,
+     "p95": 338.719,
+     "min": 212.145,
+     "max": 359.477
+    },
+    "wall_ms": {
+     "n": 30,
+     "mean": 271.036,
+     "p50": 260.081,
+     "p95": 338.779,
+     "min": 212.207,
+     "max": 359.552
+    }
+   },
+   "candidates_generated": {
+    "n": 30,
+    "mean": 2.0,
+    "p50": 2.0,
+    "p95": 2.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "planner_invocations": {
+    "n": 30,
+    "mean": 1.0,
+    "p50": 1.0,
+    "p95": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "cover_quality_score": {
+    "n": 30,
+    "mean": 0.97,
+    "p50": 0.975,
+    "p95": 0.998,
+    "min": 0.899,
+    "max": 1.0
+   },
+   "families_selected": {
+    "terrain": 10,
+    "strata": 6,
+    "cells": 6,
+    "clouds": 8
+   },
+   "candidate_rejection_reasons": {},
+   "budget_ms": 2500,
+   "budget_exceeded": 0,
+   "resized": 0,
+   "tracemalloc_peak_mb": {
+    "n": 5,
+    "mean": 12.084,
+    "p50": null,
+    "p95": null,
+    "min": 12.063,
+    "max": 12.097
+   },
+   "memory_estimate_mb": 24.55,
+   "memory_limit_mb": 96
+  },
+  {
+   "payload_bytes": 512,
+   "runs": 30,
+   "ok": 30,
+   "failed": 0,
+   "failure_codes": {},
+   "timings_ms": {
+    "generate": {
+     "n": 30,
+     "mean": 157.517,
+     "p50": 153.543,
+     "p95": 196.855,
+     "min": 115.001,
+     "max": 236.27
+    },
+    "prescreen": {
+     "n": 30,
+     "mean": 38.468,
+     "p50": 36.162,
+     "p95": 48.584,
+     "min": 32.925,
+     "max": 51.827
+    },
+    "plan": {
+     "n": 30,
+     "mean": 182.169,
+     "p50": 175.299,
+     "p95": 268.203,
+     "min": 117.517,
+     "max": 294.216
+    },
+    "total": {
+     "n": 30,
+     "mean": 378.324,
+     "p50": 359.034,
+     "p95": 499.021,
+     "min": 307.901,
+     "max": 532.975
+    },
+    "wall_ms": {
+     "n": 30,
+     "mean": 378.388,
+     "p50": 359.09,
+     "p95": 499.092,
+     "min": 307.955,
+     "max": 533.044
+    }
+   },
+   "candidates_generated": {
+    "n": 30,
+    "mean": 2.0,
+    "p50": 2.0,
+    "p95": 2.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "planner_invocations": {
+    "n": 30,
+    "mean": 1.0,
+    "p50": 1.0,
+    "p95": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "cover_quality_score": {
+    "n": 30,
+    "mean": 0.97,
+    "p50": 0.975,
+    "p95": 1.0,
+    "min": 0.908,
+    "max": 1.0
+   },
+   "families_selected": {
+    "clouds": 6,
+    "strata": 5,
+    "cells": 10,
+    "terrain": 9
+   },
+   "candidate_rejection_reasons": {},
+   "budget_ms": 2500,
+   "budget_exceeded": 0,
+   "resized": 0,
+   "tracemalloc_peak_mb": {
+    "n": 5,
+    "mean": 12.159,
+    "p50": null,
+    "p95": null,
+    "min": 12.064,
+    "max": 12.459
+   },
+   "memory_estimate_mb": 24.55,
+   "memory_limit_mb": 96
+  },
+  {
+   "payload_bytes": 2048,
+   "runs": 30,
+   "ok": 30,
+   "failed": 0,
+   "failure_codes": {},
+   "timings_ms": {
+    "generate": {
+     "n": 30,
+     "mean": 156.364,
+     "p50": 148.881,
+     "p95": 197.222,
+     "min": 105.769,
+     "max": 204.788
+    },
+    "prescreen": {
+     "n": 30,
+     "mean": 37.345,
+     "p50": 35.951,
+     "p95": 42.964,
+     "min": 32.711,
+     "max": 43.81
+    },
+    "plan": {
+     "n": 30,
+     "mean": 304.833,
+     "p50": 302.479,
+     "p95": 479.066,
+     "min": 142.469,
+     "max": 552.127
+    },
+    "total": {
+     "n": 30,
+     "mean": 498.71,
+     "p50": 497.857,
+     "p95": 683.796,
+     "min": 345.384,
+     "max": 787.394
+    },
+    "wall_ms": {
+     "n": 30,
+     "mean": 498.775,
+     "p50": 497.918,
+     "p95": 683.863,
+     "min": 345.44,
+     "max": 787.441
+    }
+   },
+   "candidates_generated": {
+    "n": 30,
+    "mean": 2.0,
+    "p50": 2.0,
+    "p95": 2.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "planner_invocations": {
+    "n": 30,
+    "mean": 1.0,
+    "p50": 1.0,
+    "p95": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "cover_quality_score": {
+    "n": 30,
+    "mean": 0.965,
+    "p50": 0.968,
+    "p95": 0.997,
+    "min": 0.915,
+    "max": 1.0
+   },
+   "families_selected": {
+    "cells": 10,
+    "strata": 6,
+    "terrain": 8,
+    "clouds": 6
+   },
+   "candidate_rejection_reasons": {},
+   "budget_ms": 2500,
+   "budget_exceeded": 0,
+   "resized": 0,
+   "tracemalloc_peak_mb": {
+    "n": 5,
+    "mean": 12.085,
+    "p50": null,
+    "p95": null,
+    "min": 12.063,
+    "max": 12.097
+   },
+   "memory_estimate_mb": 24.55,
+   "memory_limit_mb": 96
+  },
+  {
+   "payload_bytes": 5000,
+   "runs": 30,
+   "ok": 30,
+   "failed": 0,
+   "failure_codes": {},
+   "timings_ms": {
+    "generate": {
+     "n": 30,
+     "mean": 168.042,
+     "p50": 164.868,
+     "p95": 211.149,
+     "min": 133.044,
+     "max": 235.052
+    },
+    "prescreen": {
+     "n": 30,
+     "mean": 37.322,
+     "p50": 35.468,
+     "p95": 49.149,
+     "min": 32.062,
+     "max": 51.131
+    },
+    "plan": {
+     "n": 30,
+     "mean": 511.54,
+     "p50": 486.226,
+     "p95": 688.177,
+     "min": 339.879,
+     "max": 852.533
+    },
+    "total": {
+     "n": 30,
+     "mean": 717.072,
+     "p50": 685.652,
+     "p95": 923.166,
+     "min": 546.919,
+     "max": 1124.608
+    },
+    "wall_ms": {
+     "n": 30,
+     "mean": 717.137,
+     "p50": 685.728,
+     "p95": 923.23,
+     "min": 546.996,
+     "max": 1124.678
+    }
+   },
+   "candidates_generated": {
+    "n": 30,
+    "mean": 2.0,
+    "p50": 2.0,
+    "p95": 2.0,
+    "min": 2.0,
+    "max": 2.0
+   },
+   "planner_invocations": {
+    "n": 30,
+    "mean": 1.0,
+    "p50": 1.0,
+    "p95": 1.0,
+    "min": 1.0,
+    "max": 1.0
+   },
+   "cover_quality_score": {
+    "n": 30,
+    "mean": 0.978,
+    "p50": 0.982,
+    "p95": 0.994,
+    "min": 0.93,
+    "max": 1.0
+   },
+   "families_selected": {
+    "strata": 8,
+    "clouds": 9,
+    "terrain": 9,
+    "cells": 4
+   },
+   "candidate_rejection_reasons": {},
+   "budget_ms": 2500,
+   "budget_exceeded": 0,
+   "resized": 0,
+   "tracemalloc_peak_mb": {
+    "n": 5,
+    "mean": 12.086,
+    "p50": null,
+    "p95": null,
+    "min": 12.063,
+    "max": 12.098
+   },
+   "memory_estimate_mb": 24.55,
+   "memory_limit_mb": 96
+  }
+ ],
+ "quality_report": {
+  "size": [
+   320,
+   240
+  ],
+  "mode": "RGB",
+  "min_quality_score": 0.7,
+  "gates": [
+   [
+    "clipped_fraction",
+    "max",
+    0.02
+   ],
+   [
+    "flat_block_fraction",
+    "max",
+    0.25
+   ],
+   [
+    "rms_contrast",
+    "min",
+    9.0
+   ],
+   [
+    "adjacent_correlation",
+    "min",
+    0.8
+   ],
+   [
+    "lag8_correlation",
+    "min",
+    0.35
+   ],
+   [
+    "spectral_slope",
+    "max",
+    -1.6
+   ],
+   [
+    "periodic_peak_ratio",
+    "max",
+    1500.0
+   ],
+   [
+    "tile_similarity",
+    "max",
+    0.55
+   ],
+   [
+    "edge_density",
+    "max",
+    0.4
+   ],
+   [
+    "highpass_std",
+    "max",
+    9.0
+   ],
+   [
+    "highpass_std",
+    "min",
+    0.35
+   ],
+   [
+    "distinct_levels",
+    "min",
+    48
+   ]
+  ],
+  "weights": {
+   "adjacent_correlation": 1.5,
+   "lag8_correlation": 1.5,
+   "correlation_decay": 1.0,
+   "spectral_slope": 1.5,
+   "rms_contrast": 1.0,
+   "local_std_median": 1.0,
+   "local_std_spread": 1.0,
+   "local_entropy_mean": 0.75,
+   "local_entropy_spread": 0.75,
+   "gradient_mean": 0.75,
+   "edge_density": 0.75,
+   "highpass_std": 1.0,
+   "periodic_peak_ratio": 1.0,
+   "tile_similarity": 1.0,
+   "clipped_fraction": 0.75,
+   "flat_block_fraction": 0.75,
+   "colorfulness": 0.5,
+   "channel_correlation": 0.5,
+   "histogram_fill": 0.5
+  },
+  "families": {
+   "terrain": {
+    "covers": 60,
+    "passed": 60,
+    "pass_rate": 1.0,
+    "score": {
+     "n": 60,
+     "mean": 0.958,
+     "p50": 0.96,
+     "p95": 0.995,
+     "min": 0.883,
+     "max": 1.0
+    },
+    "rejection_reasons": {},
+    "generate_ms": {
+     "n": 60,
+     "mean": 69.276,
+     "p50": 69.736,
+     "p95": 97.562,
+     "min": 49.953,
+     "max": 108.392
+    },
+    "prescreen_ms": {
+     "n": 60,
+     "mean": 18.586,
+     "p50": 17.79,
+     "p95": 24.781,
+     "min": 16.35,
+     "max": 26.674
+    },
+    "metric_means": {
+     "adjacent_correlation": 0.98617,
+     "channel_correlation": 0.85737,
+     "channel_means": 115.56472,
+     "clipped_fraction": 0.0,
+     "colorfulness": 34.55562,
+     "correlation_decay": 0.3238,
+     "distinct_levels": 207.58333,
+     "edge_density": 0.00893,
+     "flat_block_fraction": 0.0,
+     "gradient_mean": 5.6315,
+     "highpass_std": 2.60725,
+     "histogram_fill": 0.6463,
+     "lag16_correlation": 0.66237,
+     "lag2_correlation": 0.95823,
+     "lag4_correlation": 0.90569,
+     "lag8_correlation": 0.81899,
+     "local_entropy_mean": 2.5873,
+     "local_entropy_spread": 0.5516,
+     "local_std_median": 8.77657,
+     "local_std_spread": 0.6817,
+     "periodic_peak_ratio": 60.18053,
+     "rms_contrast": 37.66857,
+     "spectral_slope": -3.65652,
+     "tile_similarity": 0.12621
+    }
+   },
+   "clouds": {
+    "covers": 60,
+    "passed": 60,
+    "pass_rate": 1.0,
+    "score": {
+     "n": 60,
+     "mean": 0.95,
+     "p50": 0.958,
+     "p95": 0.995,
+     "min": 0.837,
+     "max": 1.0
+    },
+    "rejection_reasons": {},
+    "generate_ms": {
+     "n": 60,
+     "mean": 96.955,
+     "p50": 92.959,
+     "p95": 116.033,
+     "min": 84.942,
+     "max": 130.065
+    },
+    "prescreen_ms": {
+     "n": 60,
+     "mean": 17.745,
+     "p50": 17.058,
+     "p95": 21.735,
+     "min": 16.069,
+     "max": 24.97
+    },
+    "metric_means": {
+     "adjacent_correlation": 0.99459,
+     "channel_correlation": 0.77388,
+     "channel_means": 125.8955,
+     "clipped_fraction": 0.0,
+     "colorfulness": 41.33276,
+     "correlation_decay": 0.19084,
+     "distinct_levels": 197.28333,
+     "edge_density": 0.00695,
+     "flat_block_fraction": 4e-05,
+     "gradient_mean": 3.10789,
+     "highpass_std": 1.74938,
+     "histogram_fill": 0.66492,
+     "lag16_correlation": 0.80375,
+     "lag2_correlation": 0.98374,
+     "lag4_correlation": 0.95758,
+     "lag8_correlation": 0.90178,
+     "local_entropy_mean": 1.69053,
+     "local_entropy_spread": 0.81529,
+     "local_std_median": 3.53514,
+     "local_std_spread": 1.35904,
+     "periodic_peak_ratio": 46.26339,
+     "rms_contrast": 40.42892,
+     "spectral_slope": -3.58959,
+     "tile_similarity": 0.15911
+    }
+   },
+   "strata": {
+    "covers": 60,
+    "passed": 60,
+    "pass_rate": 1.0,
+    "score": {
+     "n": 60,
+     "mean": 0.956,
+     "p50": 0.961,
+     "p95": 0.993,
+     "min": 0.869,
+     "max": 0.997
+    },
+    "rejection_reasons": {},
+    "generate_ms": {
+     "n": 60,
+     "mean": 77.136,
+     "p50": 75.959,
+     "p95": 92.224,
+     "min": 70.017,
+     "max": 103.992
+    },
+    "prescreen_ms": {
+     "n": 60,
+     "mean": 17.36,
+     "p50": 17.024,
+     "p95": 21.65,
+     "min": 15.574,
+     "max": 24.822
+    },
+    "metric_means": {
+     "adjacent_correlation": 0.98141,
+     "channel_correlation": 0.87381,
+     "channel_means": 119.90939,
+     "clipped_fraction": 0.0,
+     "colorfulness": 37.45227,
+     "correlation_decay": 0.51959,
+     "distinct_levels": 205.18333,
+     "edge_density": 0.02624,
+     "flat_block_fraction": 0.0,
+     "gradient_mean": 6.72765,
+     "highpass_std": 3.53874,
+     "histogram_fill": 0.63305,
+     "lag16_correlation": 0.46182,
+     "lag2_correlation": 0.94561,
+     "lag4_correlation": 0.86485,
+     "lag8_correlation": 0.70749,
+     "local_entropy_mean": 2.78578,
+     "local_entropy_spread": 0.59922,
+     "local_std_median": 10.5256,
+     "local_std_spread": 0.91928,
+     "periodic_peak_ratio": 88.09799,
+     "rms_contrast": 39.56268,
+     "spectral_slope": -3.49067,
+     "tile_similarity": 0.17191
+    }
+   },
+   "cells": {
+    "covers": 60,
+    "passed": 60,
+    "pass_rate": 1.0,
+    "score": {
+     "n": 60,
+     "mean": 0.94,
+     "p50": 0.958,
+     "p95": 0.991,
+     "min": 0.806,
+     "max": 1.0
+    },
+    "rejection_reasons": {},
+    "generate_ms": {
+     "n": 60,
+     "mean": 66.637,
+     "p50": 64.349,
+     "p95": 87.644,
+     "min": 53.137,
+     "max": 96.107
+    },
+    "prescreen_ms": {
+     "n": 60,
+     "mean": 18.192,
+     "p50": 17.096,
+     "p95": 23.717,
+     "min": 15.62,
+     "max": 25.656
+    },
+    "metric_means": {
+     "adjacent_correlation": 0.98648,
+     "channel_correlation": 0.86166,
+     "channel_means": 118.74933,
+     "clipped_fraction": 0.0,
+     "colorfulness": 38.58908,
+     "correlation_decay": 0.60476,
+     "distinct_levels": 199.31667,
+     "edge_density": 0.01387,
+     "flat_block_fraction": 0.0,
+     "gradient_mean": 6.17344,
+     "highpass_std": 2.63951,
+     "histogram_fill": 0.64689,
+     "lag16_correlation": 0.38171,
+     "lag2_correlation": 0.95741,
+     "lag4_correlation": 0.86849,
+     "lag8_correlation": 0.66255,
+     "local_entropy_mean": 2.8621,
+     "local_entropy_spread": 0.74425,
+     "local_std_median": 11.497,
+     "local_std_spread": 1.13631,
+     "periodic_peak_ratio": 22.9303,
+     "rms_contrast": 40.86375,
+     "spectral_slope": -3.66409,
+     "tile_similarity": 0.1566
+    }
+   }
+  },
+  "note": "Scores and gates are documented heuristics for coherent, natural-looking structure. They are not a steganalysis detector."
+ },
+ "wall_seconds": 124.8,
+ "limitations": [
+  "Single process, one worker, wall-clock timing on a shared machine.",
+  "tracemalloc reports the Python/NumPy heap peak during one selection, not the resident set size of the service.",
+  "Percentiles are null below 20 samples.",
+  "Unless is_raspberry_pi_5 is true, nothing here is a Raspberry Pi measurement."
+ ]
+}

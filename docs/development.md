@@ -104,7 +104,9 @@ start the processes by hand, set `IOD_STEGO_ARTIFACT_DIR` to the same absolute p
 | `IOD_PYTHON_HOST`, `IOD_PYTHON_PORT` | Python | `127.0.0.1`, `5001` | bind address |
 | `IOD_STEGO_MAX_FRAME_BYTES`, `IOD_STEGO_MAX_WIDTH`, `IOD_STEGO_MAX_HEIGHT`, `IOD_STEGO_HTTP_TIMEOUT_MS` | Rust | see `transport/config.rs` | limits sent with every request |
 | `IOD_STEGO_SEG_*`, `IOD_STEGO_TARGET_CHUNK_BYTES`, `IOD_STEGO_MAX_REPLANS` | Rust | see `patchwise-transport.md` section 7 | segmentation settings, chunk size, re-plan bound |
-| `IOD_STEGO_CAMERA` (`auto`/`disabled`), `IOD_STEGO_CAMERA_INDEX`, `IOD_STEGO_CAMERA_TIMEOUT_S` | Python | `auto` | server-side webcam; without one a procedural cover is used |
+| `IOD_STEGO_GENERATOR_PROFILE` | Rust, Python (same value) | `raspberry_pi_5_cpu` | cover-generation resource profile (`raspberry_pi_5_cpu`, `development_host`) |
+| `IOD_STEGO_GENERATOR_WIDTH`, `_HEIGHT`, `_MAX_WIDTH`, `_MAX_HEIGHT`, `_MAX_PIXELS`, `_MAX_CANDIDATES`, `_BUDGET_MS`, `_MAX_MEMORY_MB`, `_MIN_QUALITY`, `_MAX_EMBED_RATE`, `_ALLOW_RESIZE`, `_FAMILIES`, `_WORKERS`, `_MODE` | Rust, Python (same values) | profile values | overrides of the profile, bounded by hard ceilings; see `cover-generation.md` §6. An invalid value stops the process at start-up |
+| `IOD_STEGO_GENERATOR_TEST_SEED` | Python | unset | **test only**: fixed seed sequence for reproducible covers; health reports `seeding: "test-fixed"` |
 | `IOD_STEGO_RETENTION_MAX_ARTIFACTS` | Python | `0` (keep all) | artifact retention |
 
 No variable carries a key or a secret; do not put secrets in a `.env` file for this project (none is needed).

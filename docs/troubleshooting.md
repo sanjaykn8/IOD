@@ -77,13 +77,18 @@ Ensure you're using the project's virtualenv (`python-service/venv`),
 not a system Python — the setup scripts create this automatically. If
 building from scratch, Python 3.9+ is required.
 
-## Browser webcam does not start in the Steganography Lab
+## Cover generation errors in the Steganography Lab
 
-* Open the UI at `http://127.0.0.1:5173` or `http://localhost:5173`. Browsers refuse camera access on plain-HTTP LAN addresses.
-* "Permission denied": allow the camera for this site (address-bar camera icon); on Windows also enable *Settings -> Privacy -> Camera* for browsers; on macOS *System Settings -> Privacy -> Camera*.
-* "Camera is busy": close other apps using the camera (video calls). "No camera found": check the device and drivers.
-* Upload rejected with `IMAGE_DECODE_ERROR`: only lossless PNG is accepted. `IMAGE_TOO_LARGE`: lower the resolution (limit 4096 per side by default).
-* The server-side (OpenCV) path is separate: install `python-service/requirements-camera.txt`; `CAMERA_ABSENT`/`CAMERA_PERMISSION_DENIED` in the result means it fell back to the procedural cover.
+There is no camera or upload any more: every transmission generates its own cover inside the Python image service.
+
+* `GENERATOR_CONFIG_INVALID` (400): a setting is outside the active profile. Requests can only tighten it (see the limits printed next to each field, or `GET /api/stego/status` → `config.cover_generation`). Width and height must be multiples of 8. Fields such as `cover`, `seed`, `cover_id` are no longer accepted.
+* `PATCH_CAPACITY_INSUFFICIENT` with reason `embedding_rate_above_limit`: the message is larger than 0.20 payload bits per cover sample allows at the requested size (5760 bytes at 320×240 RGB). Shorten it, raise width/height within the ceiling, or tick *Payload-driven resize*.
+* `COVER_QUALITY_REJECTED`: every candidate failed a coherence gate or the score floor; the candidate table lists the reasons. Rare at the default size — send again (a new cover is drawn) or allow two candidates.
+* `GENERATION_BUDGET_EXCEEDED`: the processing budget ran out before a candidate could be planned (slow or busy machine, large cover). Lower the size or the candidate count, or raise `IOD_STEGO_GENERATOR_BUDGET_MS` for both services.
+* `GENERATOR_MEMORY_LIMIT`: the pre-flight estimate for this size × candidates exceeds `max_working_memory_mb`.
+* The Rust core or the Python service refuses to start with "generator configuration: …": an `IOD_STEGO_GENERATOR_*` variable is out of bounds. Both processes must be given the **same** values; if they differ the service rejects the core's requests with `GENERATOR_CONFIG_INVALID`.
+* Health shows `seeding: "test-fixed"`: `IOD_STEGO_GENERATOR_TEST_SEED` is set. Unset it outside tests.
+* After upgrading over an older copy run `scripts/windows/remove_stale_files.ps1` (or the Linux script): it deletes the removed camera/upload modules (`stego/cover.py`, `stego-webcam.tsx`, their tests).
 
 ## Build fails with `pythonClient.ts ... pythonBaseUrl` or `"RagPage" is not exported`
 

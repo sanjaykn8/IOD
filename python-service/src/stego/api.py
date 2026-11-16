@@ -4,16 +4,16 @@ import logging
 
 from flask import Blueprint, jsonify, request
 
-from . import cover as cover_mod, config, service
+from . import config, service
 from .errors import StegoError
 
 log = logging.getLogger("stego")
 bp = Blueprint("stego", __name__, url_prefix="/stego")
 
 _BODY_LIMIT = 4 * ((config.HARD_MAX_FRAME_BYTES + 2) // 3) + 64 * 1024
-_UPLOAD_BODY_LIMIT = cover_mod.MAX_UPLOAD_B64 + 64 * 1024
 _FORBIDDEN = {"path", "paths", "file", "filename", "dir", "directory", "artifact_dir", "artifact_path",
-              "key", "keys", "secret", "mac_key", "meta_key", "aead_key", "password", "token", "plaintext"}
+              "key", "keys", "secret", "mac_key", "meta_key", "aead_key", "password", "token", "plaintext",
+              "payload", "payload_b64", "wire", "wire_b64", "ciphertext", "message"}
 
 
 def _error_response(err):
@@ -42,7 +42,7 @@ def _on_exc(exc):
 
 @bp.before_request
 def _limit_body():
-    limit = _UPLOAD_BODY_LIMIT if request.path.endswith("/cover/upload") else _BODY_LIMIT
+    limit = _BODY_LIMIT
     try:
         request.max_content_length = limit
     except Exception:
@@ -66,29 +66,6 @@ def _body(optional=False):
 @bp.get("/health")
 def health():
     return jsonify(service.health())
-
-
-@bp.post("/camera/probe")
-def camera_probe():
-    body = _body(optional=True)
-    ci = body.get("camera_index", 0)
-    if isinstance(ci, bool) or not isinstance(ci, int) or not 0 <= ci <= 16:
-        raise StegoError("INVALID_REQUEST", "camera_index must be an integer 0..16")
-    ts = body.get("timeout_s")
-    if ts is not None:
-        if isinstance(ts, bool) or not isinstance(ts, (int, float)) or not 0.05 <= ts <= 30:
-            raise StegoError("INVALID_REQUEST", "timeout_s must be a number in [0.05, 30]")
-    return jsonify(cover_mod.probe(ci, ts))
-
-
-@bp.post("/cover/upload")
-def cover_upload():
-    return jsonify(service.upload_cover(_body()))
-
-
-@bp.post("/capture")
-def capture():
-    return jsonify(service.capture(_body()))
 
 
 @bp.post("/plan")

@@ -1,4 +1,4 @@
-"""Artifact store: ids are uuid4 hex, files <id>.png / <id>.cover.png.
+"""Artifact store: ids are uuid4 hex, files <id>.png / <id>.cover.png (+ inspection images and <id>.gen.json).
 
 Only validated ids ever reach the filesystem layer; paths are built from
 the fixed directory + id + fixed suffix, so traversal is impossible.
@@ -14,9 +14,12 @@ from .config import MAX_ARTIFACT_FILE_BYTES
 from .errors import StegoError
 
 _ID_RE = re.compile(r"[0-9a-f]{32}")
-_FILE_RE = re.compile(r"([0-9a-f]{32})(\.cover|\.seg|\.labels|\.diff)?\.png")
-# stego/cover are transport files; seg/labels/diff are inspection images for the dashboard only
-_SUFFIX = {"stego": ".png", "cover": ".cover.png", "seg": ".seg.png", "labels": ".labels.png", "diff": ".diff.png"}
+_FILE_RE = re.compile(r"([0-9a-f]{32})(?:(\.cover|\.seg|\.labels|\.diff)?\.png|\.gen\.json)")
+# stego/cover are transport files; seg/labels/diff are inspection images for the dashboard only;
+# gen is the generation record written together with a generated cover (proof that the cover was
+# produced by this service for one transmission: only such covers can be re-planned or embedded into)
+_SUFFIX = {"stego": ".png", "cover": ".cover.png", "seg": ".seg.png", "labels": ".labels.png", "diff": ".diff.png",
+           "gen": ".gen.json"}
 _lock = threading.Lock()
 
 
@@ -116,7 +119,7 @@ class ArtifactStore:
     def exists(self, artifact_id, kind):
         return os.path.isfile(self._path(artifact_id, kind))
 
-    def delete(self, artifact_id, kinds=("stego", "cover", "seg", "labels", "diff")):
+    def delete(self, artifact_id, kinds=("stego", "cover", "seg", "labels", "diff", "gen")):
         for k in kinds:
             try:
                 os.unlink(self._path(artifact_id, k))
