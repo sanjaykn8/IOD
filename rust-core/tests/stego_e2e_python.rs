@@ -7,6 +7,9 @@
 //! (set IOD_E2E_ALLOW_SKIP=1 to turn that into a visible skip message).
 
 use iod_core::api::state::SimulationState;
+use iod_core::crypto::aead::AeadKey;
+use iod_core::transport::bootstrap;
+use iod_core::transport::manifest::{self, Manifest};
 use iod_core::transport::backend::{HttpBackend, StegoBackend};
 use iod_core::transport::error::StegoError;
 use iod_core::transport::config::StegoConfig;
@@ -138,7 +141,9 @@ impl StegoBackend for FlakyEncode {
         drop(n);
         self.inner.encode(r)
     }
-    fn extract(&self, id: &str, l: &Value) -> Result<Value, StegoError> { self.inner.extract(id, l) }
+    fn carrier_probe(&self, r: &Value) -> Result<Value, StegoError> { self.inner.carrier_probe(r) }
+    fn carrier_read(&self, r: &Value) -> Result<Value, StegoError> { self.inner.carrier_read(r) }
+    fn extract(&self, r: &Value) -> Result<Value, StegoError> { self.inner.extract(r) }
     fn kb(&self) -> Result<Value, StegoError> { self.inner.kb() }
     fn learn_get(&self, p: &str) -> Result<Value, StegoError> { self.inner.learn_get(p) }
     fn learn_post(&self, p: &str, b: &Value) -> Result<Value, StegoError> { self.inner.learn_post(p, b) }
@@ -150,6 +155,55 @@ fn helper(mode: &str, path: &Path, args: &[&str]) -> String {
     let out = c.output().unwrap();
     assert!(out.status.success(), "helper {mode} failed: {}", String::from_utf8_lossy(&out.stderr));
     String::from_utf8_lossy(&out.stdout).to_string()
+}
+
+/// Sender-side directional key + channel tag (test-only: the real key never leaves Rust).
+fn dir_key(st: &Mutex<SimulationState>, sid: &str, dir: u8) -> (AeadKey, [u8; 16]) {
+    let s = st.lock().unwrap();
+    let ch = s.channels.get(sid).unwrap();
+    let k = if dir == 1 { ch.d1_keys.d1_to_d2.0 } else { ch.d1_keys.d2_to_d1.0 };
+    (AeadKey(k), ch.d1_keys.channel_tag)
+}
+
+/// Placement key of (direction, seq) and its value stream, written to a file for the pixel helper.
+fn placement(py: &Py, st: &Mutex<SimulationState>, sid: &str, dir: u8, seq: u32) -> (bootstrap::PlacementKey, PathBuf) {
+    let (key, tag) = dir_key(st, sid, dir);
+    let pk = bootstrap::placement_key(&key, &tag, dir, seq);
+    let f = py.dir.join(format!("values-{dir}-{seq}.bin"));
+    std::fs::write(&f, bootstrap::value_stream(&pk, bootstrap::STREAM_VALUES)).unwrap();
+    (pk, f)
+}
+
+/// Read and decrypt the manifest of a saved PNG through the independent pixel helper.
+fn carried_manifest(py: &Py, st: &Mutex<SimulationState>, sid: &str, png: &Path, dir: u8, seq: u32) -> (Vec<u8>, PathBuf) {
+    let (pk, vf) = placement(py, st, sid, dir, seq);
+    let vfs = vf.to_string_lossy().to_string();
+    let loc = hex::decode(helper("read-bits", png, &[&vfs, "0", "96"]).trim()).unwrap();
+    assert_eq!(loc[..8], bootstrap::sync_word(&pk), "the sync word sits at the keyed carrier pixels");
+    let n = bootstrap::open_header(&pk, &loc[8..12]).unwrap();
+    let body = hex::decode(helper("read-bits", png, &[&vfs, "96", &(8 * n).to_string()]).trim()).unwrap();
+    (bootstrap::open_body(&pk, &body).unwrap(), vf)
+}
+
+/// Re-encrypt the carrier of a saved PNG around a mutated manifest (valid sync word, header and CRC),
+/// keeping the patches and the frame tag: the adversary has the placement key but not the frame-MAC key.
+fn reseal(py: &Py, st: &Mutex<SimulationState>, sid: &str, png: &Path, dir: u8, seq: u32, mutate: &dyn Fn(&mut Vec<u8>)) {
+    let (mut man, vf) = carried_manifest(py, st, sid, png, dir, seq);
+    mutate(&mut man);
+    let (pk, _) = placement(py, st, sid, dir, seq);
+    let deflated = miniz_oxide::deflate::compress_to_vec(&man, 9);
+    let carrier = bootstrap::build_carrier(&pk, &man, &deflated).unwrap();
+    helper("write-bits", png, &[&vf.to_string_lossy(), &hex::encode(carrier)]);
+}
+
+/// Structured, still well-formed manifest change (carrier_pixels kept canonical).
+fn restructure(m: &mut Vec<u8>, mutate: impl Fn(&mut Manifest)) {
+    let mut man = manifest::parse(m, 4096).unwrap();
+    mutate(&mut man);
+    let mut enc = man.encode();
+    let cp = manifest::carrier_pixels_for(enc.len(), man.channels) as u16;
+    enc[14..16].copy_from_slice(&cp.to_be_bytes());
+    *m = enc;
 }
 
 fn png_path(py: &Py, id: &str) -> PathBuf {
@@ -217,12 +271,17 @@ fn both_directions_real_png_patchwise_on_fresh_generated_covers() {
         let id = v["artifact"]["id"].as_str().unwrap();
         let bytes = std::fs::read(png_path(&py, id)).unwrap();
         assert_eq!(&bytes[..8], b"\x89PNG\r\n\x1a\n");
-        let dump: Value = serde_json::from_str(&helper("dump", &png_path(&py, id), &[])).unwrap();
-        assert_eq!(dump["crc_ok"], true);
-        assert_eq!(dump["frame_len"], v["transport"]["frame_bytes"]);
-        assert_eq!(dump["manifest_len"], v["transport"]["manifest_bytes"]);
+        // the carrier is found at the keyed positions by an independent reader; its manifest is the planned one
+        let dir = if from == "drone-1" { 1 } else { 2 };
+        let seq = v["seq"].as_u64().unwrap() as u32;
+        let (man, vf) = carried_manifest(&py, &st, &sid, &png_path(&py, id), dir, seq);
+        assert_eq!(man.len() as u64, v["transport"]["manifest_bytes"].as_u64().unwrap());
+        let dump: Value = serde_json::from_str(&helper("dump", &png_path(&py, id), &[&vf.to_string_lossy(), &hex::encode(&man)])).unwrap();
         assert_eq!(dump["patch_count"], v["manifest"]["patch_count"]);
-        assert_eq!(dump["reserved_rows"], v["manifest"]["reserved_rows"]);
+        assert_eq!(dump["carrier_pixels"], v["manifest"]["carrier_pixels"]);
+        assert_eq!(dump["carrier_pixels_distinct"], dump["carrier_pixels"]);
+        assert!(dump["carrier_rows_touched"].as_u64().unwrap() > 120, "carrier pixels are spread over the image, not a band of rows");
+        assert!(dump["carrier_pixels"].as_u64().unwrap() <= 320 * 240 / 8);
         for (d, m) in dump["patches"].as_array().unwrap().iter().zip(v["manifest"]["patches"].as_array().unwrap()) {
             if m["used"] == true {
                 assert_eq!(d["alg_id"], m["alg_id"]);
@@ -233,10 +292,14 @@ fn both_directions_real_png_patchwise_on_fresh_generated_covers() {
                 assert_eq!(d["alg_id"], 0);
             }
         }
+        // with the wrong direction (wrong key) the same pixels hold no sync word
+        let (pk_wrong, vf_wrong) = placement(&py, &st, &sid, 3 - dir, seq);
+        let loc = hex::decode(helper("read-bits", &png_path(&py, id), &[&vf_wrong.to_string_lossy(), "0", "96"]).trim()).unwrap();
+        assert_ne!(loc[..8], bootstrap::sync_word(&pk_wrong));
         // per-patch records: selected algorithm comes from the knowledge-base ranking, with real scores
         for p in v["plan"]["patches"].as_array().unwrap().iter().filter(|p| p["used"] == true) {
             assert_eq!(p["retrieval"]["ranking"][0], p["selected"]);
-            assert_eq!(p["retrieval"]["selector_version"], "kb-bm25-1");
+            assert_eq!(p["retrieval"]["selector_version"], "kb-risk-1");
             assert!(p["retrieval"]["candidates"].as_array().unwrap().len() == 10);
             assert_eq!(p["dry_run"]["ok"], true);
         }
@@ -286,7 +349,11 @@ fn generated_covers_are_split_into_irregular_patches_using_several_algorithms() 
             seen.insert(a.clone());
         }
         // patches partition the image exactly; they are content-shaped, not a fixed grid
-        let dump: Value = serde_json::from_str(&helper("dump", &png_path(&py, v["artifact"]["id"].as_str().unwrap()), &[])).unwrap();
+        let png = png_path(&py, v["artifact"]["id"].as_str().unwrap());
+        let (man, vf) = carried_manifest(&py, &st, &sid, &png, if from == "drone-1" { 1 } else { 2 }, v["seq"].as_u64().unwrap() as u32);
+        let dump: Value = serde_json::from_str(&helper("dump", &png, &[&vf.to_string_lossy(), &hex::encode(&man)])).unwrap();
+        let usable: u64 = dump["usable_pixels_per_patch"].as_array().unwrap().iter().map(|x| x.as_u64().unwrap()).sum();
+        assert_eq!(usable + dump["carrier_pixels"].as_u64().unwrap(), 320 * 240, "carrier pixels are excluded from every patch");
         let px: Vec<u64> = dump["pixels_per_patch"].as_array().unwrap().iter().map(|x| x.as_u64().unwrap()).collect();
         assert_eq!(px.iter().sum::<u64>(), 320 * 240, "every pixel in exactly one patch");
         let sizes: std::collections::BTreeSet<u64> = px.iter().copied().collect();
@@ -297,10 +364,11 @@ fn generated_covers_are_split_into_irregular_patches_using_several_algorithms() 
     // On ONE stored cover the plan is deterministic (this is what a re-plan relies on) and nothing new is generated.
     let backend = st.lock().unwrap().backend.clone();
     let cfg = st.lock().unwrap().stego_cfg.clone();
-    let first = backend.plan(&json!({"payload_bytes": 500, "cover_generation": cfg.generator.to_json(), "limits": cfg.limits()})).unwrap();
+    let carrier = json!({"version": 3, "values_b64": iod_core::transport::b64::encode(&(0..8192u32).flat_map(|_| rand::random::<u32>().to_be_bytes()).collect::<Vec<u8>>())});
+    let first = backend.plan(&json!({"payload_bytes": 500, "cover_generation": cfg.generator.to_json(), "limits": cfg.limits(), "carrier": carrier})).unwrap();
     let cid = first["cover"]["artifact_id"].as_str().unwrap().to_string();
     let before = cover_pngs(&py);
-    let re = |lvl: u32| backend.plan(&json!({"payload_bytes": 500, "replan_cover_id": cid, "limits": cfg.limits(), "min_level": lvl})).unwrap();
+    let re = |lvl: u32| backend.plan(&json!({"payload_bytes": 500, "replan_cover_id": cid, "limits": cfg.limits(), "min_level": lvl, "carrier": carrier})).unwrap();
     let (a, b) = (re(0), re(0));
     assert_eq!(cover_pngs(&py), before, "a re-plan never generates a cover");
     assert_eq!(a["cover"]["artifact_id"], cid.as_str());
@@ -363,70 +431,83 @@ fn an_induced_replan_reuses_the_same_generated_cover_end_to_end() {
 fn pixel_level_tampering_of_real_pngs_fails_closed() {
     let Some(py) = start_python("tamper") else { return };
     let (st, sid) = state(&py);
-    // (helper mode, args, acceptable stable codes). `U` = the first used patch id, `N` = an unused/other id.
-    let cases: &[(&str, &[&str], &[&str])] = &[
+    /// U = first used patch id, O = second used patch id, SW = a different valid algorithm id for U.
+    struct Ctx { u: usize, o: usize, sw: u8 }
+    enum T {
+        /// pixel edit of the saved file with the independent helper (no key); `V` = value file, `M` = manifest hex
+        File(&'static str, &'static [&'static str]),
+        /// manifest rewritten inside a re-encrypted, CRC-valid carrier (placement key, but no frame-MAC key)
+        Man(Box<dyn Fn(&mut Vec<u8>, &Ctx)>),
+    }
+    let e = |c: &Ctx| 24 + 12 * c.u;
+    let cases: Vec<(&str, T, &[&str])> = vec![
         // --- payload area: Python cannot notice; the Rust MAC must (or extraction itself fails closed)
-        ("flip-patch", &["U"], &["FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
-        ("flip-patch", &["U", "40", "COVER"], &["FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
-        // --- manifest fields rewritten WITH a valid carrier CRC (CRC is not authentication)
-        ("manifest-entry", &["U", "alg", "SWAP"], &["FRAME_AUTH_FAILED", "EXTRACT_FAILED", "MANIFEST_INVALID"]),
-        ("manifest-entry", &["U", "alg", "11"], &["UNKNOWN_ALGORITHM"]),
-        ("manifest-entry", &["U", "alg", "200"], &["UNKNOWN_ALGORITHM"]),
-        ("manifest-entry", &["U", "param", "33"], &["FRAME_AUTH_FAILED", "EXTRACT_FAILED", "MANIFEST_INVALID"]),
-        ("manifest-entry", &["U", "offset", "7"], &["MANIFEST_INVALID"]),
-        ("manifest-entry", &["U", "length", "1"], &["MANIFEST_INVALID"]),
-        ("manifest-entry", &["U", "length", "4000000000"], &["MANIFEST_INVALID"]),
-        ("manifest-move-byte", &[], &["FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
-        ("manifest-relabel", &["U", "OTHER"], &["FRAME_AUTH_FAILED", "EXTRACT_FAILED", "MANIFEST_INVALID"]),
-        ("manifest-byte", &["9", "72"], &["MANIFEST_INVALID"]),           // width low byte (320 -> 328)
-        ("manifest-byte", &["11", "232"], &["MANIFEST_INVALID"]),         // height low byte
-        ("manifest-byte", &["12", "5"], &["MANIFEST_INVALID"]),           // cell size not whitelisted
-        ("manifest-byte", &["13", "1"], &["MANIFEST_INVALID"]),           // patch count
-        ("manifest-byte", &["4", "9"], &["UNSUPPORTED_VERSION"]),         // manifest version
-        ("manifest-byte", &["5", "9"], &["UNSUPPORTED_VERSION"]),         // segmentation version
-        ("manifest-byte", &["-2", "250"], &["MANIFEST_INVALID"]),         // map label out of range
-        // --- carrier / preamble
-        ("carrier-flip", &["100"], &["BOOTSTRAP_CORRUPT"]),
-        ("carrier-flip", &["400"], &["BOOTSTRAP_CORRUPT"]),
-        ("preamble-set", &["version", "7"], &["UNSUPPORTED_VERSION"]),
-        ("preamble-set", &["version", "1"], &["UNSUPPORTED_VERSION"]),
-        ("preamble-set", &["flags", "1"], &["BOOTSTRAP_CORRUPT"]),
-        ("preamble-set", &["frame_len", "-5"], &["FRAME_LENGTH_INVALID"]),
-        ("preamble-set", &["frame_len", "+5"], &["FRAME_LENGTH_INVALID"]),
-        ("preamble-set", &["frame_len", "2147483647"], &["FRAME_LENGTH_INVALID", "FRAME_TOO_LARGE"]),
-        ("preamble-set", &["manifest_len", "-3"], &["BOOTSTRAP_CORRUPT", "MANIFEST_INVALID", "FRAME_LENGTH_INVALID"]),
-        ("preamble-set", &["manifest_len", "4000000000"], &["MANIFEST_TOO_LARGE", "BOOTSTRAP_CORRUPT"]),
+        ("patch pixels damaged", T::File("flip-patch", &["V", "M", "U"]), &["FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
+        ("40 modified patch pixels damaged", T::File("flip-patch", &["V", "M", "U", "40", "COVER"]), &["FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
+        // --- carrier bits (no key): sync, header, body
+        ("sync word bit flipped", T::File("carrier-flip", &["V", "5"]), &["BOOTSTRAP_NOT_FOUND"]),
+        ("header version bit flipped", T::File("carrier-flip", &["V", "64"]), &["BOOTSTRAP_VERSION_UNSUPPORTED"]),
+        ("header flag bit flipped", T::File("carrier-flip", &["V", "79"]), &["BOOTSTRAP_CORRUPT"]),
+        ("body bit flipped", T::File("carrier-flip", &["V", "150"]), &["BOOTSTRAP_CORRUPT"]),
+        ("late body bit flipped", T::File("carrier-flip", &["V", "700"]), &["BOOTSTRAP_CORRUPT"]),
+        // --- manifest rewritten with a valid carrier (CRC is not authentication)
+        ("algorithm swapped", T::Man(Box::new(move |m, c| m[e(c)] = c.sw)), &["FRAME_AUTH_FAILED", "EXTRACT_FAILED", "MANIFEST_INVALID"]),
+        ("algorithm id 11", T::Man(Box::new(move |m, c| m[e(c)] = 11)), &["UNKNOWN_ALGORITHM"]),
+        ("algorithm id 200", T::Man(Box::new(move |m, c| m[e(c)] = 200)), &["UNKNOWN_ALGORITHM"]),
+        ("parameter 33", T::Man(Box::new(move |m, c| m[e(c) + 1] = 33)), &["FRAME_AUTH_FAILED", "EXTRACT_FAILED", "MANIFEST_INVALID"]),
+        ("offset 7", T::Man(Box::new(move |m, c| m[e(c) + 4..e(c) + 8].copy_from_slice(&7u32.to_be_bytes()))), &["MANIFEST_INVALID"]),
+        ("length 1", T::Man(Box::new(move |m, c| m[e(c) + 8..e(c) + 12].copy_from_slice(&1u32.to_be_bytes()))), &["MANIFEST_INVALID"]),
+        ("length 4e9", T::Man(Box::new(move |m, c| m[e(c) + 8..e(c) + 12].copy_from_slice(&4_000_000_000u32.to_be_bytes()))), &["MANIFEST_INVALID"]),
+        ("one payload byte moved between patches", T::Man(Box::new(|m, c| restructure(m, |x| { x.patches[c.u].length -= 1; x.patches[c.o].offset -= 1; x.patches[c.o].length += 1; }))), &["FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
+        ("one cell relabelled to another patch", T::Man(Box::new(|m, c| restructure(m, |x| { let k = x.cell_labels.iter().position(|l| *l as usize == c.u).unwrap(); x.cell_labels[k] = c.o as u8; }))), &["FRAME_AUTH_FAILED", "EXTRACT_FAILED", "MANIFEST_INVALID"]),
+        ("width changed", T::Man(Box::new(|m, _| m[9] = 72)), &["MANIFEST_INVALID"]),
+        ("height changed", T::Man(Box::new(|m, _| m[11] = 232)), &["MANIFEST_INVALID"]),
+        ("cell size not whitelisted", T::Man(Box::new(|m, _| m[12] = 5)), &["MANIFEST_INVALID"]),
+        ("patch count", T::Man(Box::new(|m, _| m[13] = 1)), &["MANIFEST_INVALID"]),
+        ("carrier_pixels not canonical", T::Man(Box::new(|m, _| m[15] ^= 1)), &["MANIFEST_INVALID"]),
+        ("manifest version 1", T::Man(Box::new(|m, _| m[4] = 1)), &["UNSUPPORTED_VERSION"]),
+        ("segmentation version", T::Man(Box::new(|m, _| m[5] = 9)), &["UNSUPPORTED_VERSION"]),
+        ("map label out of range", T::Man(Box::new(|m, _| { let n = m.len(); m[n - 2] = 250; })), &["MANIFEST_INVALID"]),
         // --- whole-image damage
-        ("blank", &[], &["BOOTSTRAP_MISSING"]),
-        ("truncate", &[], &["IMAGE_DECODE_ERROR"]),
-        ("garbage", &[], &["IMAGE_DECODE_ERROR"]),
-        ("jpeg", &[], &["BOOTSTRAP_MISSING", "BOOTSTRAP_CORRUPT", "UNSUPPORTED_VERSION", "MANIFEST_INVALID", "MANIFEST_TOO_LARGE", "FRAME_LENGTH_INVALID", "FRAME_AUTH_FAILED", "EXTRACT_FAILED", "UNKNOWN_ALGORITHM"]),
+        ("blank image", T::File("blank", &[]), &["BOOTSTRAP_NOT_FOUND"]),
+        ("retired bootstrap-v2 image", T::File("legacy-v2", &[]), &["BOOTSTRAP_VERSION_UNSUPPORTED"]),
+        ("truncated file", T::File("truncate", &[]), &["IMAGE_DECODE_ERROR"]),
+        ("not a PNG", T::File("garbage", &[]), &["IMAGE_DECODE_ERROR"]),
+        ("JPEG round trip", T::File("jpeg", &[]), &["BOOTSTRAP_NOT_FOUND", "BOOTSTRAP_CORRUPT", "BOOTSTRAP_VERSION_UNSUPPORTED", "MANIFEST_INVALID", "FRAME_AUTH_FAILED", "EXTRACT_FAILED"]),
     ];
-    for (mode, raw_args, codes) in cases {
+    for (desc, how, codes) in &cases {
         let sent = pipeline::run_send(&st, req(&sid, "drone-1", &format!("{SECRET} {}", "t".repeat(300)), Value::Null)).unwrap_or_else(|f| panic!("send: {}", f.error));
         let id = sent["artifact"]["id"].as_str().unwrap().to_string();
+        let seq = sent["seq"].as_u64().unwrap() as u32;
         let used: Vec<&Value> = sent["manifest"]["patches"].as_array().unwrap().iter().filter(|p| p["used"] == true).collect();
         assert!(used.len() >= 2, "the tamper cases need at least two used patches");
-        let u = used[0]["patch_id"].as_u64().unwrap();
-        let other = used[1]["patch_id"].as_u64().unwrap();
-        // a different but VALID algorithm id/parameter combination for the first used patch
-        let swap = if used[0]["alg_id"] == 1 { "2" } else { "1" };
-        let args: Vec<String> = raw_args.iter().map(|a| match *a { "U" => u.to_string(), "OTHER" => other.to_string(), "SWAP" => swap.to_string(),
-            "COVER" => py.dir.join("artifacts").join(format!("{}.cover.png", sent["cover"]["artifact_id"].as_str().unwrap())).to_string_lossy().to_string(), x => x.to_string() }).collect();
-        let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
-        helper(mode, &png_path(&py, &id), &argv);
+        let ctx = Ctx { u: used[0]["patch_id"].as_u64().unwrap() as usize, o: used[1]["patch_id"].as_u64().unwrap() as usize,
+                        sw: if used[0]["alg_id"] == 2 { 9 } else { 2 } };
+        let png = png_path(&py, &id);
+        match how {
+            T::File(mode, raw) => {
+                let (man, vf) = carried_manifest(&py, &st, &sid, &png, 1, seq);
+                let cover = py.dir.join("artifacts").join(format!("{}.cover.png", sent["cover"]["artifact_id"].as_str().unwrap()));
+                let args: Vec<String> = raw.iter().map(|a| match *a {
+                    "V" => vf.to_string_lossy().to_string(), "M" => hex::encode(&man), "U" => ctx.u.to_string(),
+                    "COVER" => cover.to_string_lossy().to_string(), x => x.to_string() }).collect();
+                let argv: Vec<&str> = args.iter().map(|s| s.as_str()).collect();
+                helper(mode, &png, &argv);
+            }
+            T::Man(f) => reseal(&py, &st, &sid, &png, 1, seq, &|m: &mut Vec<u8>| f(m, &ctx)),
+        }
         let got = match pipeline::run_receive(&st, &sid, "drone-2", &id) {
-            Ok(v) => panic!("[{mode} {argv:?}] delivered {:?}", v["delivered_message"]),
+            Ok(v) => panic!("[{desc}] delivered {:?}", v["delivered_message"]),
             Err(f) => f,
         };
-        assert!(codes.contains(&got.error.code.as_str()), "[{mode} {argv:?}] got {} expected one of {codes:?}", got.error);
+        assert!(codes.contains(&got.error.code.as_str()), "[{desc}] got {} expected one of {codes:?}", got.error);
         assert!(!got.to_json().to_string().contains(SECRET));
         assert!(got.event_id > 0);
     }
     // the receiver is still healthy afterwards (no failure advanced the replay window)
     let ok = pipeline::run_message(&st, req(&sid, "drone-1", "after tamper", Value::Null)).unwrap_or_else(|f| panic!("{}", f.error));
     assert_eq!(ok["delivered_message"], "after tamper");
-    // every tamper case that reached the Rust verifier with an intact carrier was a MAC failure
+    // structurally valid manifest changes inside a valid carrier were caught by the frame MAC
     let evs = st.lock().unwrap().db.query_stego_events(&Default::default()).unwrap();
     assert!(evs.iter().filter(|e| e["error_code"] == "FRAME_AUTH_FAILED").count() >= 3);
 }
@@ -500,7 +581,7 @@ fn cameras_uploads_and_client_chosen_covers_are_gone_from_the_image_service() {
         assert_eq!(e.code, "INVALID_REQUEST", "{extra}");
     }
     for bad in [json!({"seed": "00"}), json!({"source": "webcam"}), json!({"cover_id": foreign}), json!({"max_candidates": 5}), json!({"family": "terrain"})] {
-        let e = backend.plan(&json!({"payload_bytes": 200, "cover_generation": bad, "limits": cfg.limits()})).unwrap_err();
+        let e = backend.plan(&json!({"payload_bytes": 200, "cover_generation": bad, "limits": cfg.limits(), "carrier": {"version": 3, "values_b64": "AAAAAQAAAAI="}})).unwrap_err();
         assert_eq!(e.code, "GENERATOR_CONFIG_INVALID", "{bad}");
     }
     // the foreign cover can be neither re-planned nor embedded into
@@ -520,7 +601,7 @@ fn knowledge_base_is_served_validated_and_old_endpoints_are_gone() {
     let (st, _sid) = state(&py);
     let backend = st.lock().unwrap().backend.clone();
     let kb = backend.kb().unwrap();
-    assert_eq!(kb["selector"]["version"], "kb-bm25-1");
+    assert_eq!(kb["selector"]["version"], "kb-risk-1");
     let entries = kb["entries"].as_array().unwrap();
     assert_eq!(entries.len(), 10);
     for (i, e) in entries.iter().enumerate() {

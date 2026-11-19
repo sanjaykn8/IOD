@@ -10,6 +10,7 @@
 
 // --- KDF / seed-derivation domain strings (HKDF "info" parameters) ---
 pub const SEED_DOMAIN_KEM: &[u8] = b"IOD-SEED-KEM-v1";
+/// Name kept from the Round-3 era for stable derivation; the material belongs to the ML-DSA-44 key domain.
 pub const SEED_DOMAIN_DILITHIUM: &[u8] = b"IOD-SEED-DILITHIUM-v1";
 pub const SEED_DOMAIN_PID: &[u8] = b"IOD-SEED-PID-v1";
 pub const SEED_DOMAIN_PUF_MAC: &[u8] = b"IOD-SEED-PUF-MAC-v1";

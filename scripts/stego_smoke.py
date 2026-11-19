@@ -46,7 +46,20 @@ check("M1-M8 authentication", st == 200 and bool(sid), str(auth)[:200])
 
 st, status, _ = call("GET", "/stego/status")
 check("stego status reachable", st == 200 and status.get("backend", {}).get("reachable") is True, str(status)[:300])
-check("status exposes no secrets/full paths", "key" not in json.dumps(status).lower().replace("key-issued", ""))
+def _walk(o):
+    if isinstance(o, dict):
+        for k, v in o.items():
+            yield ("k", str(k)); yield from _walk(v)
+    elif isinstance(o, list):
+        for v in o:
+            yield from _walk(v)
+    else:
+        yield ("v", str(o))
+_items = list(_walk(status))
+check("status exposes no secrets/full paths",
+      not any(t == "k" and ("key" in x.lower() or "secret" in x.lower()) for t, x in _items)
+      and not any(t == "v" and (x.startswith("/") or "/home/" in x or "/tmp/" in x) for t, x in _items),
+      str([x for t, x in _items if "key" in x.lower()])[:200])
 gen = status.get("config", {}).get("cover_generation", {})
 check("status reports the cover-generation profile and no camera", gen.get("active_profile") in ("raspberry_pi_5_cpu", "development_host")
       and "camera" not in json.dumps(status).lower().replace("no camera", "") and status["backend"]["health"]["cover_generator"]["pretrained_models"] is False, str(gen)[:300])
@@ -137,7 +150,7 @@ check("plan preview generates a fresh cover each time", st == 200 and a["cover"]
 check("plan preview: validated manifest + ten KB candidates per used patch",
       st == 200 and a["manifest"]["payload_len"] == 300 and all(len(p["retrieval"]["candidates"]) == 10 for p in a["plan"]["patches"] if p["used"]), str(a)[:200])
 st, kb, _ = call("GET", "/stego/kb")
-check("knowledge base served (ten entries, BM25 selector)", st == 200 and len(kb["entries"]) == 10 and kb["selector"]["version"] == "kb-bm25-1", str(kb)[:200])
+check("knowledge base served (ten entries, risk-aware selector, risk table)", st == 200 and len(kb["entries"]) == 10 and kb["selector"]["version"] == "kb-risk-1" and kb.get("risk_table", {}).get("version") == "risk-table-1", str(kb)[:200])
 for gone in ("/stego/analyze", "/stego/explain", "/rag/run", "/rag/contribute"):
     st, _r, _ = call("POST", gone, {})
     check(f"removed endpoint {gone} -> 404", st == 404)

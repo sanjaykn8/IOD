@@ -14,12 +14,17 @@ cd rust-core
 cargo update -p <offending-crate> --precise <a version compatible with your toolchain>
 ```
 
-If you have Rust ≥1.77 available, you can also switch `pqcrypto-kyber`/
-`pqcrypto-dilithium` back to `pqcrypto-mlkem`/`pqcrypto-mldsa` (FIPS
-203/204-final implementations) and relax the `zeroize`/`getrandom`/
-`uuid`/`jobserver` pins — none of this project's own code depends on the
-pinned versions specifically, only on the trait/API surface those crates
-expose, which is stable across the pinned and current versions.
+The post-quantum crates `ml-kem =0.3.4` and `ml-dsa =0.1.2` need Rust ≥ 1.87 and are
+pinned exactly on purpose (see `docs/dependency-rationale.md`); do not `cargo update` them
+without re-running `cargo test --release --test fips_kat --test fips_interop`.
+
+## The core starts but all drones are gone after upgrading
+
+Expected once after the FIPS 203/204 migration (2026-11-19). Identities written by older
+releases used the Round-3 Kyber/Dilithium suite; they are archived at start-up into the
+`legacy_snapshots` table instead of being loaded (`GET /api/system/crypto` lists them).
+Create and register the drones again, or `POST /api/reset` to clear everything including
+the archive.
 
 ## `cargo build` fails trying to compile SQLite (`libsqlite3-sys`)
 

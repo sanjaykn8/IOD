@@ -95,6 +95,7 @@ pub fn register_drone(
         .map(|i| derive_pid(&enrolled.seed, drone.pid_counter + i))
         .collect();
     let body = EnrollmentBody {
+        suite: keys.suite.clone(),
         drone_id: drone.drone_id.clone(),
         group_id: group_id.to_string(),
         pk_kem: keys.kem_pk.0.clone(),
@@ -152,6 +153,9 @@ pub fn gcs_enroll(
     if (now as i64 - b.ts as i64).abs() > MAX_TIMESTAMP_SKEW_MS {
         return Err(RegistrationError::Rejected("stale enrollment timestamp"));
     }
+    if crate::crypto::suite::require(&b.suite).is_err() {
+        return Err(RegistrationError::Rejected("enrollment names another cryptographic suite"));
+    }
     let body_bytes = b.signing_bytes();
     if !sign::verify_transcript(&SignPublicKey(b.pk_dil.clone()), &body_bytes, &Signature(req.pop_sig.clone())) {
         return Err(RegistrationError::Rejected("ML-DSA proof of possession invalid"));
@@ -194,6 +198,7 @@ pub fn gcs_enroll(
         &gcs.sign_sk,
         CredentialBody {
             version: CRED_VERSION,
+            suite: crate::crypto::suite::SUITE_ID.to_string(),
             cred_id,
             group_id: b.group_id.clone(),
             pk_kem: b.pk_kem.clone(),
@@ -373,7 +378,7 @@ mod tests {
     #[test]
     fn enrollment_nonce_is_single_use_and_pop_is_checked() {
         let mut gcs = GcsState::new();
-        let mut d = DroneState::new("drone-1", [1u8; 32]);
+        let d = DroneState::new("drone-1", [1u8; 32]);
         gcs.create_group("alpha", 4);
         // Build a request manually, then corrupt it.
         let reading = d.puf.read();
@@ -384,6 +389,7 @@ mod tests {
         let crps = vec![CrpEntry { challenge: c.clone(), reference_response: r, state: CrpState::Fresh }];
         let nonce = gcs_begin_enrollment(&mut gcs);
         let body = EnrollmentBody {
+            suite: crate::crypto::suite::SUITE_ID.into(),
             drone_id: "drone-1".into(), group_id: "alpha".into(),
             pk_kem: keys.kem_pk.0.clone(), pk_dil: keys.dil_pk.0.clone(),
             comm_pk: compute_comm_pk(&keys.kem_pk.0, &keys.dil_pk.0), rho: [1; 8], metadata: md(),
@@ -405,5 +411,46 @@ mod tests {
             gcs_enroll(&mut gcs, &req, crps.clone()),
             Err(RegistrationError::Rejected("unknown or replayed enrollment nonce"))
         ));
+    }
+
+    #[test]
+    fn enrollment_naming_another_suite_is_rejected_even_when_correctly_signed() {
+        let mut gcs = GcsState::new();
+        let mut d = DroneState::new("drone-1", [1u8; 32]);
+        gcs.create_group("alpha", 4);
+        let enrolled = fuzzy_extractor::generate(&d.puf.read());
+        let keys = derive_device_keys(&enrolled.seed);
+        let c = vec![5u8; 16];
+        let r = d.puf.challenge_response(&c);
+        let crps = vec![CrpEntry { challenge: c.clone(), reference_response: r, state: CrpState::Fresh }];
+        for suite in [crate::crypto::suite::LEGACY_SUITE_ID, "", "iod-fips203-mlkem768-fips204-mldsa44-v2"] {
+            let nonce = gcs_begin_enrollment(&mut gcs);
+            let body = EnrollmentBody {
+                suite: suite.into(), drone_id: "drone-1".into(), group_id: "alpha".into(),
+                pk_kem: keys.kem_pk.0.clone(), pk_dil: keys.dil_pk.0.clone(),
+                comm_pk: compute_comm_pk(&keys.kem_pk.0, &keys.dil_pk.0), rho: [1; 8], metadata: md(),
+                pid_batch: vec![], gcs_nonce: nonce, ts: now_unix_ms(),
+            };
+            let bytes = body.signing_bytes();
+            let req = EnrollmentRequest {
+                pop_sig: sign::sign_transcript(&keys.dil_sk, &bytes).unwrap().0,
+                pop_mac: pop_mac(&r, &bytes).to_vec(), pop_challenge: c.clone(), body,
+            };
+            assert!(matches!(gcs_enroll(&mut gcs, &req, crps.clone()),
+                Err(RegistrationError::Rejected("enrollment names another cryptographic suite"))), "{suite}");
+        }
+        assert!(gcs.drones.is_empty());
+        let _ = &mut d;
+    }
+
+    #[test]
+    fn issued_credentials_and_device_keys_carry_the_active_suite() {
+        let mut gcs = GcsState::new();
+        let mut d = DroneState::new("drone-1", [1u8; 32]);
+        register_drone(&mut gcs, &mut d, "alpha", md(), 6).unwrap();
+        assert_eq!(d.credential.as_ref().unwrap().body.suite, crate::crypto::suite::SUITE_ID);
+        assert_eq!(d.keys.as_ref().unwrap().suite, crate::crypto::suite::SUITE_ID);
+        assert_eq!(d.credential.as_ref().unwrap().body.version, CRED_VERSION);
+        d.credential.as_ref().unwrap().verify(d.trust_anchor.as_ref().unwrap(), now_unix_ms()).unwrap();
     }
 }

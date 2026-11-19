@@ -14,10 +14,12 @@ const out = process.argv[2];
   p.on('console', m => { if (m.type() === 'error') errs.push(m.text()); });
   p.on('pageerror', e => errs.push('PAGEERROR ' + e.message));
   await p.goto('http://127.0.0.1:5173/steganography', { waitUntil: 'networkidle' });
-  await p.selectOption('select[aria-label="Drone D1"]', 'smoke-1');
-  await p.selectOption('select[aria-label="Drone D2"]', 'smoke-2');
+  await p.selectOption('select[aria-label="Initiator"]', 'smoke-1');
+  await p.selectOption('select[aria-label="Verifier"]', 'smoke-2');
   await p.fill('textarea[aria-label="Message payload"]', 'UI check: patch-wise transport, both directions verified. ' + 'x'.repeat(260));
-  // generated-cover configuration: profile shown, no camera / upload / seed / source controls anywhere on the page
+  // generated-cover configuration (inside the "Cover and transport settings" disclosure): profile shown,
+  // no camera / upload / seed / source controls anywhere on the page
+  await p.locator('[data-testid="transport-settings"] > summary').click();
   await p.waitForSelector('[data-testid="cover-generation-config"]');
   await p.waitForFunction(() => /raspberry_pi_5_cpu|development_host/.test(document.querySelector('[data-testid="gen-profile"]')?.textContent || ''), null, { timeout: 15000 });
   console.log('profile:', await p.locator('[data-testid="gen-profile"]').innerText(), '| fresh-cover note:', (await p.locator('[data-testid="fresh-cover-note"]').innerText()).slice(0, 70));
@@ -32,6 +34,7 @@ const out = process.argv[2];
   // plan preview
   await p.getByRole('button', { name: /Preview plan/ }).click();
   await p.waitForSelector('[data-testid^="patch-row-"]', { timeout: 60000 });
+  await p.locator('[data-testid="generation-disclosure"] > summary').click();
   await p.waitForSelector('[data-testid="generation-diagnostics"]');
   console.log('preview candidates', await p.locator('[data-testid="gen-candidate"]').count(), '| diagnostics:', (await p.locator('[data-testid="generation-diagnostics"] dl, [data-testid="generation-diagnostics"]').first().innerText()).replace(/\n/g, ' | ').slice(0, 260));
   console.log('preview rows', await p.locator('[data-testid^="patch-row-"]').count(), 'markers', await p.locator('[data-testid^="patch-marker-"]').count());
@@ -39,6 +42,7 @@ const out = process.argv[2];
   await p.getByRole('button', { name: /Send as image/ }).click();
   await p.waitForSelector('[data-testid="delivered"]', { timeout: 90000 });
   console.log('delivered:', (await p.locator('[data-testid="delivered"] pre').innerText()).slice(0, 60));
+  if (!(await p.locator('[data-testid="generation-disclosure"]').evaluate(d => d.open))) await p.locator('[data-testid="generation-disclosure"] > summary').click();
   console.log('send candidates', await p.locator('[data-testid="gen-candidate"]').count());
   console.log('stages ok', await p.locator('[data-testid="stage-ok"]').count(), 'failed', await p.locator('[data-testid="stage-failed"]').count(), 'none', await p.locator('[data-testid="stage-none"]').count());
   const rows = await p.locator('[data-testid^="patch-row-"]').count();
@@ -66,8 +70,8 @@ const out = process.argv[2];
   // D2->D1
   await p.selectOption('select[aria-label="Direction"]', 'D2_D1');
   await p.getByRole('button', { name: /Send as image/ }).click();
-  await p.waitForFunction(() => { const e = document.querySelector('[data-testid="delivered"] span'); return e && /D1/.test(e.textContent || ''); }, null, { timeout: 90000 });
-  console.log('D2->D1 delivered header:', await p.locator('[data-testid="delivered"] span').innerText());
+  await p.waitForFunction(() => [...document.querySelectorAll('[data-testid="delivered"] ~ .split-grid dd')].some(d => /Verifier → initiator/.test(d.textContent || '')), null, { timeout: 90000 });
+  console.log('verifier->initiator delivered:', (await p.locator('[data-testid="delivered"] pre').innerText()).slice(0, 60));
   // KB page
   await p.goto('http://127.0.0.1:5173/knowledge-base', { waitUntil: 'networkidle' });
   await p.waitForSelector('[data-testid="kb-card-wow"]');

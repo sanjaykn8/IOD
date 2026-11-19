@@ -1,6 +1,6 @@
 //! Patch-wise image-transport pipeline tests against the in-process fake backend
 //! (no Python needed). They exercise the REAL Rust sealing, manifest validation,
-//! Frame v2 / MAC, strict parsing, bounded re-planning, replay and AEAD code;
+//! Frame v3 / MAC, bootstrap-v3 discovery, strict parsing, bounded re-planning, replay and AEAD code;
 //! only pixel work is faked.
 //! The real Python service is covered by `stego_e2e_python.rs`.
 
@@ -9,7 +9,8 @@ use iod_core::crypto::aead::AeadKey;
 use iod_core::protocol::secure_messaging::seal_message;
 use iod_core::transport::backend::StegoBackend;
 use iod_core::transport::config::StegoConfig;
-use iod_core::transport::fake::FakeStegoBackend;
+use iod_core::transport::bootstrap;
+use iod_core::transport::fake::{build_fake, split_fake, FakeStegoBackend, FAKE_CH, FAKE_H, FAKE_W};
 use iod_core::transport::frame::{build_frame, derive_meta_key};
 use iod_core::transport::manifest::{self, Manifest};
 use iod_core::transport::pipeline::{self, MessageRequest};
@@ -89,33 +90,52 @@ fn events(w: &World) -> Vec<Value> {
     let s = w.state.lock().unwrap();
     s.db.query_stego_events(&Default::default()).unwrap()
 }
-
 // -------------------------------------------------------------- tests ---
 
-const F: usize = FakeStegoBackend::FRAME_OFFSET; // frame offset inside a saved fake image
-const M: usize = F + 16; // manifest offset
-const E1: usize = M + 24 + 12; // first used patch entry
+/// Offset of the carrier inside a saved fake image ("FAKEIMG3" | u32 len | carrier ...).
+const C0: usize = 12;
+/// First used patch entry inside a manifest.
+const E1: usize = 24 + 12;
 
-/// Replace the manifest inside a saved file by a mutated (still structurally valid) one, keeping
-/// the original payload and tag -- what an attacker without the MAC key can do at best.
-fn swap_manifest(file: &mut Vec<u8>, mutate: impl Fn(&mut Manifest)) {
-    let frame = file[F..].to_vec();
-    let mlen = u32::from_be_bytes(frame[8..12].try_into().unwrap()) as usize;
-    let mut man = manifest::parse(&frame[16..16 + mlen], 4096).unwrap();
-    mutate(&mut man);
-    let mut enc = man.encode();
-    let rr = manifest::reserved_rows_for(enc.len(), man.width, man.channels) as u16;
-    enc[14..16].copy_from_slice(&rr.to_be_bytes());
-    manifest::parse(&enc, 4096).expect("the tampered manifest must itself be well-formed for this test");
-    let mut out = file[..F].to_vec();
-    out.extend_from_slice(&frame[..8]);
-    out.extend_from_slice(&(enc.len() as u32).to_be_bytes());
-    out.extend_from_slice(&frame[12..16]);
-    out.extend_from_slice(&enc);
-    out.extend_from_slice(&frame[16 + mlen..]);
-    *file = out;
+/// Sender-side directional key and channel tag (test-only; the real key never leaves Rust).
+fn dir_key(w: &World, dir: u8) -> (AeadKey, [u8; 16]) {
+    let s = w.state.lock().unwrap();
+    let ch = s.channels.get(&w.sid).unwrap();
+    let k = if dir == 1 { ch.d1_keys.d1_to_d2.0 } else { ch.d1_keys.d2_to_d1.0 };
+    (AeadKey(k), ch.d1_keys.channel_tag)
 }
 
+/// Carrier bytes and value stream for `man` at (direction, seq), built exactly as the sender does.
+fn carrier_for(w: &World, dir: u8, seq: u32, man: &[u8]) -> (Vec<u8>, Vec<u8>) {
+    let (key, tag) = dir_key(w, dir);
+    let pk = bootstrap::placement_key(&key, &tag, dir, seq);
+    let deflated = miniz_oxide::deflate::compress_to_vec(man, 9);
+    (bootstrap::build_carrier(&pk, man, &deflated).unwrap(), bootstrap::value_stream(&pk, bootstrap::STREAM_VALUES))
+}
+
+/// Re-encrypt the carrier of a saved image around a mutated manifest, keeping payload and frame tag.
+fn reseal(w: &World, file: &mut Vec<u8>, dir: u8, seq: u32, mutate: impl Fn(&mut Vec<u8>)) {
+    let (carrier, _, payload) = split_fake(file).expect("fake image");
+    let (key, tag) = dir_key(w, dir);
+    let pk = bootstrap::placement_key(&key, &tag, dir, seq);
+    let n = bootstrap::open_header(&pk, &carrier[8..12]).unwrap();
+    let mut man = bootstrap::open_body(&pk, &carrier[12..12 + n]).unwrap();
+    let payload = payload.to_vec();
+    mutate(&mut man);
+    let (c, v) = carrier_for(w, dir, seq, &man);
+    *file = build_fake(&c, &v, &payload);
+}
+
+/// Structured, still well-formed manifest change (carrier_pixels kept canonical).
+fn restructure(m: &mut Vec<u8>, mutate: impl Fn(&mut Manifest)) {
+    let mut man = manifest::parse(m, 4096).unwrap();
+    mutate(&mut man);
+    let mut enc = man.encode();
+    let cp = manifest::carrier_pixels_for(enc.len(), man.channels) as u16;
+    enc[14..16].copy_from_slice(&cp.to_be_bytes());
+    manifest::parse(&enc, 4096).expect("the tampered manifest must itself be well-formed for this test");
+    *m = enc;
+}
 #[test]
 fn both_directions_round_trip_through_saved_files_with_all_stages() {
     let w = world("roundtrip");
@@ -143,7 +163,7 @@ fn both_directions_round_trip_through_saved_files_with_all_stages() {
             off += p["payload_length"].as_u64().unwrap();
         }
         assert_eq!(off, v["transport"]["payload_section_bytes"].as_u64().unwrap());
-        assert_eq!(v["transport"]["format_version"], "frame-v2/appwire-v1/bootstrap-v2/manifest-v1");
+        assert_eq!(v["transport"]["format_version"], "frame-v3/appwire-v1/bootstrap-v3/manifest-v2");
         assert_eq!(v["transport"]["frame_bytes"].as_u64().unwrap(), 16 + v["transport"]["manifest_bytes"].as_u64().unwrap() + off);
         assert!(v["artifact"]["segmentation_overlay_url"].as_str().unwrap().ends_with("/seg"));
         // the cover is a locally generated one, described by fingerprint only
@@ -159,11 +179,12 @@ fn both_directions_round_trip_through_saved_files_with_all_stages() {
     for e in &evs {
         assert_eq!(e["patch_count"], 4);
         assert_eq!(e["used_patches"], 3);
-        assert_eq!(e["algorithms_used"]["dwt"]["patches"], 1);
+        assert_eq!(e["algorithms_used"]["edge_adaptive_lsb"]["patches"], 1);
+        assert_eq!(e["bootstrap_version"], 3);
         assert_eq!(e["patches"].as_array().unwrap().len(), 4);
         assert_eq!(e["patches"][1]["bm25"], 1.25);
         assert_eq!(e["segmentation_version"], "arg-cells-1");
-        assert_eq!(e["selector_version"], "kb-bm25-1");
+        assert_eq!(e["selector_version"], "kb-risk-1");
         assert_eq!(e["cover_source"], "generated");
         assert_eq!(e["generator_profile"], "raspberry_pi_5_cpu");
         assert_eq!(e["covers_generated"], 1);
@@ -186,7 +207,7 @@ fn the_image_service_receives_lengths_only_for_planning() {
     assert_eq!(reqs.len(), 1);
     let mut keys: Vec<&str> = reqs[0].as_object().unwrap().keys().map(|k| k.as_str()).collect();
     keys.sort();
-    assert_eq!(keys, ["cover_generation", "limits", "min_level", "payload_bytes", "segmentation", "target_chunk_bytes"]);
+    assert_eq!(keys, ["carrier", "cover_generation", "limits", "min_level", "payload_bytes", "policy", "segmentation", "target_chunk_bytes"]);
     // the generation settings are the validated profile -- no seed, file, artifact, source or algorithm
     let mut gk: Vec<&str> = reqs[0]["cover_generation"].as_object().unwrap().keys().map(|k| k.as_str()).collect();
     gk.sort();
@@ -196,7 +217,7 @@ fn the_image_service_receives_lengths_only_for_planning() {
     let ereqs = w.fake.encode_requests.lock().unwrap().clone();
     let mut ek: Vec<&str> = ereqs[0].as_object().unwrap().keys().map(|k| k.as_str()).collect();
     ek.sort();
-    assert_eq!(ek, ["cover_id", "frame_b64", "limits"], "encode names the stored cover by id; it carries no generation settings");
+    assert_eq!(ek, ["carrier", "cover_id", "frame_b64", "limits"], "encode names the stored cover by id; it carries no generation settings");
     assert!(!ereqs[0].to_string().contains(SECRET));
     // AppWire (28-byte header + plaintext + 16-byte AEAD tag) + 32-byte frame tag
     assert_eq!(reqs[0]["payload_bytes"].as_u64().unwrap() as usize, iod_core::transport::wire::WIRE_HEADER_LEN + SECRET.len() + 16 + 32);
@@ -229,36 +250,50 @@ fn receiver_input_is_only_the_saved_file() {
 #[test]
 fn tampered_saved_images_fail_closed_and_are_recorded() {
     let w = world("tamper");
-    // (description, mutation of the stored container, expected stable code)
-    type Mutator = Box<dyn Fn(&mut Vec<u8>)>;
-    let cases: Vec<(&str, Mutator, &str)> = vec![
-        ("manifest: algorithm id of a patch changed (2 -> 1)", Box::new(|f| f[E1] = 1), "FRAME_AUTH_FAILED"),
-        ("manifest: algorithm parameter changed (dwt step 4 -> 5)", Box::new(|f| f[E1 + 12 + 1] = 5), "FRAME_AUTH_FAILED"),
-        ("manifest: image height changed", Box::new(|f| swap_manifest(f, |m| m.height = 60)), "FRAME_AUTH_FAILED"),
-        ("manifest: patch map changed (one cell moved to another patch)", Box::new(|f| swap_manifest(f, |m| { let i = m.cell_labels.iter().position(|l| *l == 1).unwrap(); m.cell_labels[i] = 0; })), "FRAME_AUTH_FAILED"),
-        ("manifest: chunk lengths rebalanced (offsets still contiguous)", Box::new(|f| swap_manifest(f, |m| { m.patches[1].length += 1; m.patches[2].offset += 1; m.patches[2].length -= 1; })), "FRAME_AUTH_FAILED"),
-        ("manifest: algorithms swapped between two patches", Box::new(|f| swap_manifest(f, |m| { let (a, b) = (m.patches[1].clone(), m.patches[2].clone()); m.patches[1].alg_id = b.alg_id; m.patches[1].param = b.param; m.patches[2].alg_id = a.alg_id; m.patches[2].param = a.param; })), "FRAME_AUTH_FAILED"),
-        ("manifest: two patches exchange their regions (chunk order across the image changed)", Box::new(|f| swap_manifest(f, |m| { for l in m.cell_labels.iter_mut() { *l = match *l { 1 => 2, 2 => 1, x => x }; } })), "FRAME_AUTH_FAILED"),
-        ("manifest: unused patch turned into a used one", Box::new(|f| swap_manifest(f, |m| { let l = m.patches[1].length; m.patches[0] = manifest::PatchEntry { alg_id: 1, param: 0, offset: 0, length: 5 }; m.patches[1].offset = 5; m.patches[1].length = l - 5; })), "FRAME_AUTH_FAILED"),
-        ("manifest: payload offset changed (now overlapping)", Box::new(|f| f[E1 + 12 + 7] ^= 1), "MANIFEST_INVALID"),
-        ("manifest: payload length changed", Box::new(|f| f[E1 + 11] ^= 1), "MANIFEST_INVALID"),
-        ("manifest: unknown algorithm id", Box::new(|f| f[E1] = 99), "UNKNOWN_ALGORITHM"),
-        ("manifest: patch count changed", Box::new(|f| f[M + 13] += 1), "MANIFEST_INVALID"),
-        ("manifest: version changed", Box::new(|f| f[M + 4] = 2), "UNSUPPORTED_VERSION"),
-        ("manifest: map label out of range", Box::new(|f| { let n = f.len(); let mlen = u32::from_be_bytes(f[F + 8..F + 12].try_into().unwrap()) as usize; let _ = n; f[M + mlen - 2] = 200; }), "MANIFEST_INVALID"),
-        ("frame: payload-length field changed", Box::new(|f| f[F + 15] ^= 1), "FRAME_MALFORMED"),
-        ("frame: version changed", Box::new(|f| f[F + 4] = 9), "FRAME_VERSION_UNSUPPORTED"),
-        ("frame: magic changed (e.g. a Frame v1 image)", Box::new(|f| f[F..F + 4].copy_from_slice(b"IODF")), "FRAME_MALFORMED"),
-        ("payload: ciphertext byte flipped", Box::new(|f| { let n = f.len(); f[n - 40] ^= 1 }), "FRAME_AUTH_FAILED"),
-        ("payload: MAC tag byte flipped", Box::new(|f| { let n = f.len(); f[n - 1] ^= 1 }), "FRAME_AUTH_FAILED"),
-        ("frame truncated", Box::new(|f| { f.truncate(f.len() - 7) }), "FRAME_MALFORMED"),
-        ("image header corrupted", Box::new(|f| f[0] ^= 0xff), "IMAGE_DECODE_ERROR"),
+    enum Tamper {
+        /// edit the saved file bytes directly (anyone with the file, no keys)
+        File(Box<dyn Fn(&mut Vec<u8>)>),
+        /// re-encrypt the carrier around an altered manifest, keeping payload and frame tag
+        /// (stronger than any outsider: needs the placement key, still lacks the frame-MAC key)
+        Manifest(Box<dyn Fn(&mut Vec<u8>)>),
+    }
+    use Tamper::*;
+    let values_at = |f: &Vec<u8>| 12 + u32::from_be_bytes(f[8..12].try_into().unwrap()) as usize + 4;
+    let cases: Vec<(&str, Tamper, &str)> = vec![
+        ("carrier: sync word bit flipped", File(Box::new(|f| f[C0] ^= 1)), "BOOTSTRAP_NOT_FOUND"),
+        ("carrier: encrypted header version bit flipped", File(Box::new(|f| f[C0 + 8] ^= 1)), "BOOTSTRAP_VERSION_UNSUPPORTED"),
+        ("carrier: encrypted body length changed", File(Box::new(|f| f[C0 + 11] ^= 1)), "BOOTSTRAP_CORRUPT"),
+        ("carrier: encrypted body bit flipped", File(Box::new(|f| f[C0 + 18] ^= 0x10)), "BOOTSTRAP_CORRUPT"),
+        ("carrier: pixel positions changed", File(Box::new(move |f| { let v = values_at(f); f[v] ^= 1; })), "BOOTSTRAP_NOT_FOUND"),
+        ("payload: ciphertext byte flipped", File(Box::new(|f| { let n = f.len(); f[n - 40] ^= 1 })), "FRAME_AUTH_FAILED"),
+        ("payload: MAC tag byte flipped", File(Box::new(|f| { let n = f.len(); f[n - 1] ^= 1 })), "FRAME_AUTH_FAILED"),
+        ("payload section truncated", File(Box::new(|f| f.truncate(f.len() - 7))), "EXTRACT_FAILED"),
+        ("image header corrupted", File(Box::new(|f| f[0] ^= 0xff)), "IMAGE_DECODE_ERROR"),
+        ("manifest: algorithm id of a patch changed (2 -> 1)", Manifest(Box::new(|m| m[E1] = 1)), "FRAME_AUTH_FAILED"),
+        ("manifest: algorithm parameter changed (edge-adaptive 4 -> 5)", Manifest(Box::new(|m| m[E1 + 12 + 1] = 5)), "FRAME_AUTH_FAILED"),
+        ("manifest: image height changed", Manifest(Box::new(|m| restructure(m, |x| x.height = 90))), "MANIFEST_INVALID"),
+        ("manifest: patch map changed (one cell moved to another patch)", Manifest(Box::new(|m| restructure(m, |x| { let i = x.cell_labels.iter().position(|l| *l == 1).unwrap(); x.cell_labels[i] = 0; }))), "FRAME_AUTH_FAILED"),
+        ("manifest: chunk lengths rebalanced (offsets still contiguous)", Manifest(Box::new(|m| restructure(m, |x| { x.patches[1].length += 1; x.patches[2].offset += 1; x.patches[2].length -= 1; }))), "FRAME_AUTH_FAILED"),
+        ("manifest: algorithms swapped between two patches", Manifest(Box::new(|m| restructure(m, |x| { let (a, b) = (x.patches[1].clone(), x.patches[2].clone()); x.patches[1].alg_id = b.alg_id; x.patches[1].param = b.param; x.patches[2].alg_id = a.alg_id; x.patches[2].param = a.param; }))), "FRAME_AUTH_FAILED"),
+        ("manifest: two patches exchange their regions", Manifest(Box::new(|m| restructure(m, |x| { for l in x.cell_labels.iter_mut() { *l = match *l { 1 => 2, 2 => 1, v => v }; } }))), "FRAME_AUTH_FAILED"),
+        ("manifest: unused patch turned into a used one", Manifest(Box::new(|m| restructure(m, |x| { let l = x.patches[1].length; x.patches[0] = manifest::PatchEntry { alg_id: 2, param: 0, offset: 0, length: 5 }; x.patches[1].offset = 5; x.patches[1].length = l - 5; }))), "FRAME_AUTH_FAILED"),
+        ("manifest: payload offset changed (now overlapping)", Manifest(Box::new(|m| m[E1 + 12 + 7] ^= 1)), "MANIFEST_INVALID"),
+        ("manifest: payload length changed", Manifest(Box::new(|m| m[E1 + 11] ^= 1)), "MANIFEST_INVALID"),
+        ("manifest: unknown algorithm id", Manifest(Box::new(|m| m[E1] = 99)), "UNKNOWN_ALGORITHM"),
+        ("manifest: patch count changed", Manifest(Box::new(|m| m[13] += 1)), "MANIFEST_INVALID"),
+        ("manifest: version changed (manifest-v1)", Manifest(Box::new(|m| m[4] = 1)), "UNSUPPORTED_VERSION"),
+        ("manifest: carrier_pixels not canonical", Manifest(Box::new(|m| m[15] ^= 1)), "MANIFEST_INVALID"),
+        ("manifest: map label out of range", Manifest(Box::new(|m| { let n = m.len(); m[n - 2] = 200; })), "MANIFEST_INVALID"),
     ];
-    for (desc, mutate, code) in &cases {
+    for (desc, how, code) in &cases {
         let sent = send(&w, "drone-1", SECRET);
         let id = sent["artifact"]["id"].as_str().unwrap().to_string();
+        let seq = sent["seq"].as_u64().unwrap() as u32;
         let mut file = std::fs::read(art_path(&w, &id)).unwrap();
-        mutate(&mut file);
+        match how {
+            File(f) => f(&mut file),
+            Manifest(f) => reseal(&w, &mut file, 1, seq, f),
+        }
         std::fs::write(art_path(&w, &id), &file).unwrap();
         let got = match pipeline::run_receive(&w.state, &w.sid, "drone-2", &id) {
             Ok(v) => panic!("[{desc}] delivered {:?}", v["delivered_message"]),
@@ -278,17 +313,20 @@ fn tampered_saved_images_fail_closed_and_are_recorded() {
 }
 
 #[test]
-fn structurally_bad_manifests_are_rejected_by_rust_even_if_the_image_service_passes_them_on() {
-    // The image service is not trusted to validate: with its own check disabled, Rust still refuses
-    // (the MAC fails first, because no manifest byte can change without the key).
+fn rust_parses_the_bootstrap_manifest_before_the_service_extracts_anything() {
+    // The image service is not trusted to validate: with its own check disabled, Rust still refuses a
+    // structurally bad manifest after decoding the carrier and never asks for extraction.
     let w = world("lenient");
     *w.fake.lenient_extract.lock().unwrap() = true;
-    for (off, val) in [(E1 + 12 + 7, 0x55u8), (E1, 99), (M + 13, 9), (M + 12, 5)] {
-        let id = send(&w, "drone-1", SECRET)["artifact"]["id"].as_str().unwrap().to_string();
+    for (off, val, code) in [(E1 + 12 + 7, 0x55u8, "MANIFEST_INVALID"), (E1, 99, "UNKNOWN_ALGORITHM"), (13, 9, "MANIFEST_INVALID"), (12, 5, "MANIFEST_INVALID")] {
+        let sent = send(&w, "drone-1", SECRET);
+        let id = sent["artifact"]["id"].as_str().unwrap().to_string();
         let mut file = std::fs::read(art_path(&w, &id)).unwrap();
-        file[off] = val;
+        reseal(&w, &mut file, 1, sent["seq"].as_u64().unwrap() as u32, |m| m[off] = val);
         std::fs::write(art_path(&w, &id), &file).unwrap();
-        assert_eq!(receive_err(&w, "drone-2", &id), "FRAME_AUTH_FAILED");
+        let before = w.fake.count("extract");
+        assert_eq!(receive_err(&w, "drone-2", &id), code);
+        assert_eq!(w.fake.count("extract"), before, "no extraction for a manifest Rust rejected");
     }
 }
 
@@ -296,75 +334,95 @@ fn structurally_bad_manifests_are_rejected_by_rust_even_if_the_image_service_pas
 fn wrong_recipient_and_direction_fail_closed() {
     let w = world("recipient");
     let id = send(&w, "drone-1", SECRET)["artifact"]["id"].as_str().unwrap().to_string();
-    // The sender itself is not the right recipient: directional keys differ.
-    assert_eq!(receive_err(&w, "drone-1", &id), "FRAME_AUTH_FAILED");
+    // The sender itself is not the right recipient: directional keys, hence placements, differ.
+    assert_eq!(receive_err(&w, "drone-1", &id), "BOOTSTRAP_NOT_FOUND");
     assert_eq!(receive_err(&w, "drone-9", &id), "WRONG_RECIPIENT");
     // The intended recipient still gets it.
     assert!(pipeline::run_receive(&w.state, &w.sid, "drone-2", &id).is_ok());
 }
 
-/// Forge a stored image whose frame is MAC-valid for the receiver (test-only: uses the real session key)
-/// to prove the checks BEHIND the MAC independently: manifest parsing and channel/direction/replay/AEAD.
-fn forge_with(w: &World, mutate: impl Fn(&mut iod_core::protocol::messages::SecureAppMessage), seq: u32, dir_for_keys: u8, man: impl Fn(u32) -> Vec<u8>) -> String {
-    let (key, tag) = {
-        let s = w.state.lock().unwrap();
-        let ch = s.channels.get(&w.sid).unwrap();
-        (AeadKey(ch.d1_keys.d1_to_d2.0), ch.d1_keys.channel_tag)
-    };
-    let mut msg = seal_message(&key, tag, 1, seq, b"forged-body");
+/// Forge a stored image that is MAC-valid for the receiver (test-only: uses the real session key) to prove
+/// the checks BEHIND the MAC independently. `place_seq` is the sequence number the carrier placement is
+/// derived for; `msg_seq` the one sealed inside AppWire (normally equal).
+fn forge_full(w: &World, mutate: impl Fn(&mut iod_core::protocol::messages::SecureAppMessage), msg_seq: u32, place_seq: u32, man: impl Fn(u32) -> Vec<u8>) -> String {
+    let (key, tag) = dir_key(w, 1);
+    let mut msg = seal_message(&key, tag, 1, msg_seq, b"forged-body");
     mutate(&mut msg);
     let wire = encode_app_wire(&msg);
-    let meta = derive_meta_key(&key, &tag, dir_for_keys);
-    let frame = build_frame(&meta, &man(wire.len() as u32 + 32), &wire, 4096).unwrap();
+    let meta = derive_meta_key(&key, &tag, 1);
+    let man_bytes = man(wire.len() as u32 + 32);
+    let frame = build_frame(&meta, &man_bytes, &wire, 4096).unwrap();
+    let (carrier, values) = carrier_for(w, 1, place_seq, &man_bytes);
     let id = format!("{:032x}", rand::random::<u128>());
-    let mut file = b"FAKEIMG2".to_vec();
-    file.extend_from_slice(&frame);
-    std::fs::write(art_path(w, &id), file).unwrap();
+    std::fs::write(art_path(w, &id), build_fake(&carrier, &values, &frame[16 + man_bytes.len()..])).unwrap();
     id
 }
 
-fn forge(w: &World, mutate: impl Fn(&mut iod_core::protocol::messages::SecureAppMessage), seq: u32, dir_for_keys: u8) -> String {
-    forge_with(w, mutate, seq, dir_for_keys, |n| manifest::sample(64, 64, 1, n, &[(1, 0), (3, 0)]).encode())
+fn forge_with(w: &World, mutate: impl Fn(&mut iod_core::protocol::messages::SecureAppMessage), seq: u32, man: impl Fn(u32) -> Vec<u8>) -> String {
+    forge_full(w, mutate, seq, seq, man)
+}
+
+fn forge(w: &World, mutate: impl Fn(&mut iod_core::protocol::messages::SecureAppMessage), seq: u32) -> String {
+    forge_with(w, mutate, seq, |n| manifest::sample(FAKE_W, FAKE_H, FAKE_CH, n, &[(2, 0), (9, 8)]).encode())
 }
 
 #[test]
 fn inner_checks_hold_even_when_the_frame_mac_is_valid() {
     let w = world("inner");
     // altered AAD field (timestamp changed after sealing) -> AEAD failure
-    let id = forge(&w, |m| m.header_ts += 1, 1, 1);
+    let id = forge(&w, |m| m.header_ts += 1, 1);
     assert_eq!(receive_err(&w, "drone-2", &id), "AEAD_FAILED");
     // wrong channel tag
-    let id = forge(&w, |m| m.channel_tag = [7; 16], 1, 1);
+    let id = forge(&w, |m| m.channel_tag = [7; 16], 1);
     assert_eq!(receive_err(&w, "drone-2", &id), "WRONG_CHANNEL");
     // wrong direction field
-    let id = forge(&w, |m| m.direction = 2, 1, 1);
+    let id = forge(&w, |m| m.direction = 2, 1);
     assert_eq!(receive_err(&w, "drone-2", &id), "WRONG_CHANNEL");
     // altered ciphertext
-    let id = forge(&w, |m| m.sealed.ciphertext[0] ^= 1, 1, 1);
+    let id = forge(&w, |m| m.sealed.ciphertext[0] ^= 1, 1);
     assert_eq!(receive_err(&w, "drone-2", &id), "AEAD_FAILED");
-    // a genuine message with seq 5 is accepted; anything <= 5 afterwards is a replay
-    let id5 = forge(&w, |_| {}, 5, 1);
+    // the carrier placement was derived for another sequence number than the sealed one
+    let id = forge_full(&w, |_| {}, 8, 7, |n| manifest::sample(FAKE_W, FAKE_H, FAKE_CH, n, &[(2, 0)]).encode());
+    assert_eq!(receive_err(&w, "drone-2", &id), "SEQUENCE_MISMATCH");
+    // a genuine message with seq 5 is accepted; anything <= 5 afterwards is a replay (found by discovery)
+    let id5 = forge(&w, |_| {}, 5);
     assert!(pipeline::run_receive(&w.state, &w.sid, "drone-2", &id5).is_ok());
-    let id3 = forge(&w, |_| {}, 3, 1);
+    let id3 = forge(&w, |_| {}, 3);
     assert_eq!(receive_err(&w, "drone-2", &id3), "REPLAY");
     assert_eq!(receive_err(&w, "drone-2", &id5), "REPLAY");
+    let evs = events(&w);
+    assert_eq!(evs[0]["error_code"], "REPLAY");
+    assert_eq!(evs[0]["error_stage"], "extract", "a replay is refused during discovery, before any extraction or decryption");
+}
+
+#[test]
+fn discovery_is_bounded_by_the_sync_window() {
+    let w = world("window");
+    let window = iod_core::transport::bootstrap::DEFAULT_SYNC_WINDOW;
+    // last accepted = 0: candidates are 1..=64
+    let far = forge(&w, |_| {}, window + 2);
+    assert_eq!(receive_err(&w, "drone-2", &far), "BOOTSTRAP_NOT_FOUND");
+    let edge = forge(&w, |_| {}, window);
+    assert!(pipeline::run_receive(&w.state, &w.sid, "drone-2", &edge).is_ok());
+    // the window moves with the accepted sequence number: the earlier "too far" image is now in range
+    assert!(pipeline::run_receive(&w.state, &w.sid, "drone-2", &far).is_ok());
 }
 
 #[test]
 fn an_authenticated_frame_still_needs_a_strictly_valid_manifest() {
     let w = world("authman");
     *w.fake.lenient_extract.lock().unwrap() = true;
-    // MAC-valid, but the manifest is garbage / inconsistent with the payload / for another image size
-    let id = forge_with(&w, |_| {}, 1, 1, |_| vec![0xAA; 60]);
+    // carrier and MAC valid, but the manifest is garbage / inconsistent with the payload / for another image size
+    let id = forge_with(&w, |_| {}, 1, |_| vec![0xAA; 60]);
     assert_eq!(receive_err(&w, "drone-2", &id), "MANIFEST_INVALID");
-    let id = forge_with(&w, |_| {}, 1, 1, |n| manifest::sample(64, 64, 1, n + 3, &[(1, 0)]).encode());
+    let id = forge_with(&w, |_| {}, 1, |n| manifest::sample(FAKE_W, FAKE_H, FAKE_CH, n + 3, &[(2, 0)]).encode());
     assert_eq!(receive_err(&w, "drone-2", &id), "MANIFEST_INVALID");
-    let id = forge_with(&w, |_| {}, 1, 1, |n| manifest::sample(128, 96, 3, n, &[(1, 0)]).encode());
+    let id = forge_with(&w, |_| {}, 1, |n| manifest::sample(64, 64, 3, n, &[(2, 0)]).encode());
     assert_eq!(receive_err(&w, "drone-2", &id), "MANIFEST_INVALID");
-    let id = forge_with(&w, |_| {}, 1, 1, |n| { let mut m = manifest::sample(64, 64, 1, n, &[(1, 0)]).encode(); m[24 + 12] = 77; m });
+    let id = forge_with(&w, |_| {}, 1, |n| { let mut m = manifest::sample(FAKE_W, FAKE_H, FAKE_CH, n, &[(2, 0)]).encode(); m[24 + 12] = 77; m });
     assert_eq!(receive_err(&w, "drone-2", &id), "UNKNOWN_ALGORITHM");
     // none of these advanced the replay window
-    let ok = forge(&w, |_| {}, 1, 1);
+    let ok = forge(&w, |_| {}, 1);
     assert!(pipeline::run_receive(&w.state, &w.sid, "drone-2", &ok).is_ok());
 }
 
@@ -454,11 +512,13 @@ fn rust_validates_the_planned_manifest_before_authenticating_it() {
     let wire_len = iod_core::transport::wire::WIRE_HEADER_LEN + 2 + 16;
     let cases: Vec<(&str, Vec<u8>, &str)> = vec![
         ("garbage", vec![1, 2, 3], "MANIFEST_INVALID"),
-        ("payload length differs from the sealed message", manifest::sample(64, 64, 1, wire_len as u32 + 33, &[(1, 0)]).encode(), "MANIFEST_INVALID"),
-        ("geometry differs from the cover", manifest::sample(128, 96, 3, wire_len as u32 + 32, &[(1, 0)]).encode(), "MANIFEST_INVALID"),
-        ("unknown algorithm", { let mut m = manifest::sample(64, 64, 1, wire_len as u32 + 32, &[(1, 0)]).encode(); m[24 + 12] = 42; m }, "UNKNOWN_ALGORITHM"),
-        ("parameter outside the whitelist", { let mut m = manifest::sample(64, 64, 1, wire_len as u32 + 32, &[(6, 4)]).encode(); m[24 + 13] = 200; m }, "MANIFEST_INVALID"),
-        ("diagnostics disagree (different patch count)", manifest::sample(64, 64, 1, wire_len as u32 + 32, &[(1, 0)]).encode(), "BACKEND_MALFORMED_RESPONSE"),
+        ("payload length differs from the sealed message", manifest::sample(FAKE_W, FAKE_H, FAKE_CH, wire_len as u32 + 33, &[(2, 0)]).encode(), "MANIFEST_INVALID"),
+        ("geometry differs from the cover", manifest::sample(64, 64, 3, wire_len as u32 + 32, &[(2, 0)]).encode(), "MANIFEST_INVALID"),
+        ("unknown algorithm", { let mut m = manifest::sample(FAKE_W, FAKE_H, FAKE_CH, wire_len as u32 + 32, &[(2, 0)]).encode(); m[24 + 12] = 42; m }, "UNKNOWN_ALGORITHM"),
+        ("parameter outside the whitelist", { let mut m = manifest::sample(FAKE_W, FAKE_H, FAKE_CH, wire_len as u32 + 32, &[(9, 8)]).encode(); m[24 + 13] = 200; m }, "MANIFEST_INVALID"),
+        ("diagnostics disagree (different patch count)", manifest::sample(FAKE_W, FAKE_H, FAKE_CH, wire_len as u32 + 32, &[(2, 0)]).encode(), "BACKEND_MALFORMED_RESPONSE"),
+        ("algorithm excluded by the operational policy (dwt)", manifest::sample(FAKE_W, FAKE_H, FAKE_CH, wire_len as u32 + 32, &[(2, 0), (6, 4), (9, 8)]).encode(), "POLICY_VIOLATION"),
+        ("algorithm excluded by the risk table (lsb_replacement)", manifest::sample(FAKE_W, FAKE_H, FAKE_CH, wire_len as u32 + 32, &[(2, 0), (1, 0), (9, 8)]).encode(), "POLICY_VIOLATION"),
     ];
     for (desc, bytes, code) in cases {
         *w.fake.manifest_override.lock().unwrap() = Some(bytes);

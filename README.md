@@ -2,7 +2,7 @@
 
 A locally-executable research simulation of a post-quantum secure
 Internet-of-Drones authentication and communication architecture: PUF +
-fuzzy extractor, ML-KEM-768/Kyber768 and ML-DSA-44/Dilithium2, a Poseidon
+fuzzy extractor, ML-KEM-768 (FIPS 203) and ML-DSA-44 (FIPS 204), a Poseidon2
 Merkle membership tree, a transparent (non-ECC) ZK membership proof, the
 full M1-M8 authentication handshake, K1-K4 GCS-assisted group-key
 establishment, AEAD secure messaging, Zero Trust authorization, a Trace
@@ -30,7 +30,7 @@ security property. Benchmarks are host-simulation measurements only.
 
 | Component | Classification |
 |---|---|
-| ML-KEM-768/Kyber768, ML-DSA-44/Dilithium2 | **REAL** (audited PQClean-derived libraries; Round-3 API, see `docs/cryptography.md` for the exact standards mapping) |
+| ML-KEM-768 (FIPS 203), ML-DSA-44 (FIPS 204) | **REAL**, final standards (RustCrypto `ml-kem` / `ml-dsa`, pinned); NIST ACVP vectors and PQClean interop pass; suite `iod-fips203-mlkem768-fips204-mldsa44-v1`; **not FIPS 140-3 validated** (`docs/cryptography.md`) |
 | Poseidon2/BabyBear hash, Merkle tree | **REAL** (Plonky3 Poseidon2 constants, 248-bit digest; not independently audited) |
 | SRAM-PUF, fuzzy extractor | **SIMULATED** (necessarily — no physical silicon), with a real code-offset construction and a computed reliability table (`docs/puf.md`) |
 | CRP-based PUF verification | **SIMULATED** (noise-free challenge-response; the noisy case is demonstrated at the seed-reconstruction layer instead) |
@@ -39,10 +39,9 @@ security property. Benchmarks are host-simulation measurements only.
 | Zero Trust | **REAL** (deterministic, configurable, replaceable policy engine — not ML-based) |
 | Trace Manager | **REAL** |
 | SQLite persistence | **REAL** |
-| Patch-wise stego transport (segmentation, static knowledge base + BM25 selection, Frame v2, authenticated manifest) | **REAL** (simulation: file handoff, no radio link) |
-| Per-patch algorithm selection | **REAL**, deterministic lookup in a hand-curated knowledge base; no LLM, no learned model |
-| Ollama LLM provider | **PLACEHOLDER/FUTURE** (interface only, `NotImplementedError`) |
-| Steganography transport | **PLACEHOLDER/FUTURE** (interface only, per explicit project scope) |
+| Patch-wise stego transport (segmentation, risk-aware knowledge-base selection, operational algorithm policy, Frame v3, authenticated manifest, keyed bootstrap-v3 carrier) | **REAL** (simulation: file handoff, no radio link; detectable by classical detectors, see `docs/detectability-evaluation.md`) |
+| Per-patch algorithm selection | **REAL**, deterministic: hard filters, then a versioned risk table measured on a validation split, then BM25; no LLM, no learned model at run time |
+| Radio / UAV link, Raspberry Pi 5 measurements | **DEFERRED** (all timings are host measurements) |
 | Node.js↔Rust live updates | **REAL SSE to the browser**, via internal polling on the Rust↔Node leg (documented toolchain-driven decision, see `docs/architecture.md`) |
 | Docker configuration | **Best-effort, UNTESTED** — no Docker daemon was available in the development sandbox; the native (non-Docker) path is what was actually verified |
 
@@ -140,18 +139,17 @@ through the identical scenario visually.
 
 Open `http://127.0.0.1:5173` after starting the dashboard dev server (or
 serve `web-ui/dist/` after `npm run build` with any static file server).
-Nine pages, all functional (not mockups): Dashboard, Drones, Groups,
-Authentication, Secure Communication, Steganography Lab, Knowledge Base, Trace Manager,
-Protocol Logs (live via SSE), and Settings. Every control was actually
-driven end-to-end with a headless browser (Playwright) during
-development — see `docs/testing.md` for the full verification writeup
-and the one real UI bug it caught and fixed.
+Ten pages in grouped navigation (Overview; Fleet: Drones, Groups; Protocols: Authentication,
+Secure communication; Analysis: Steganography lab, Knowledge base; Audit: Trace manager, Event log;
+System), dark and light themes, designed to `docs/ui-design-system.md`. Every value comes from the
+backend. The main flows are driven by `scripts/ui_check.js` (Playwright); screenshots at 1440, 1024,
+768 and 390 px are in `docs/screenshots/ui/`.
 
 ## Steganography transport (application messages)
 
-After M1–M8 and K1–K3 (unchanged), each application message is AEAD-sealed in Rust and wrapped as AppWire v1. For **every transmission** the Python image service generates a **fresh cover locally** — a procedural image (multi-scale gradient noise, domain warping, four families; NumPy only, seeded from the OS CSPRNG, **no pretrained model, no network, no camera, no upload**) chosen payload-aware: a bounded number of candidates is pre-screened with documented visual-coherence heuristics and the real planner picks the highest-quality candidate that can carry the payload *length* (`docs/cover-generation.md`; default resource profile `raspberry_pi_5_cpu`: 320×240, at most 2 candidates, 2500 ms — a limit profile, not an emulation of that device). The service then segments that cover into **irregular patches** by adaptive region growing, computes a feature vector per patch and selects **one algorithm per patch** from a static, curated knowledge base (structured hard filters, then BM25, top-1; no LLM, no embeddings, no network). The payload is cut into sequential chunks, one per used patch. Rust validates the resulting **patch manifest**, builds **Frame v2** and authenticates manifest + payload with an HKDF-keyed HMAC-SHA256; Python (which never holds a key) embeds, saves the PNG and re-reads it. The receiver reads **only the saved file**, takes the bootstrap and manifest from the image (it never re-segments), and Rust verifies the MAC, the manifest, channel/direction/replay and the AEAD. Ten algorithm ids (LSB replacement, LSB matching, PVD, edge-adaptive LSB, DCT, Haar DWT, DCT-SVD, HUGO additive approximation, WOW, S-UNIWARD; the last three with custom-matrix syndrome-trellis codes) all work on patch masks. Both directions use images; there is no plaintext fallback, no single-algorithm fallback and no message priority class; failures are structured errors persisted as events. UI: **Steganography Lab** (`/steganography`: overlay, patch inspector, per-patch retrieval, before/after/difference, exports), **Knowledge Base / Retrieval Monitor** (`/knowledge-base`) and the separate educational **Algorithm Learning** tab (`docs/learning-workbench.md`, `docs/worked-examples.md`). Cover: browser webcam, uploaded PNG, server-side OpenCV webcam, or a procedural fallback; **not run against a physical webcam**. Limits: PNG-lossless only, not robust to JPEG/resize, plaintext loopback hop, simulation. Exact formats, MAC coverage, test vectors and limitations: `docs/patchwise-transport.md`. What changed and what was removed: `IMPLEMENTATION_REPORT.md`.
+After M1–M8 and K1–K3 (unchanged), each application message is AEAD-sealed in Rust and wrapped as AppWire v1. For **every transmission** the Python image service generates a **fresh cover locally** — a procedural image (multi-scale gradient noise, domain warping, four families; NumPy only, seeded from the OS CSPRNG, **no pretrained model, no network, no camera, no upload**) chosen payload-aware: a bounded number of candidates is pre-screened with documented visual-coherence heuristics and the real planner picks the highest-quality candidate that can carry the payload *length* (`docs/cover-generation.md`; default resource profile `raspberry_pi_5_cpu`: 320×240, at most 2 candidates, 2500 ms — a limit profile, not an emulation of that device). The service then segments that cover into **irregular patches** by adaptive region growing, computes a feature vector per patch and selects **one algorithm per patch** (hard filters including the operational policy and measured capacity, then the versioned risk table — risk tier, changes per bit, cost — then BM25 over a static, curated knowledge base; no LLM, no embeddings, no network). The payload is cut into sequential chunks, one per used patch. Algorithms are restricted by the operational policy `low_detectability` (DCT/DWT/DCT-SVD excluded by rule, LSB replacement by the validation-split risk table; `all_algorithms` for comparisons). Rust validates the resulting **patch manifest**, builds **Frame v3** and authenticates manifest + payload with an HKDF-keyed HMAC-SHA256, and encrypts the compressed manifest into a **keyed bootstrap-v3 carrier** whose pixel positions derive from a per-frame placement key that never leaves Rust; Python (which never holds a key) embeds, writes the carrier at the positions its value stream maps to, saves the PNG and re-reads it. The receiver reads **only the saved file**: Rust locates the carrier by a bounded sequence-number search (sync word), decrypts and validates the manifest, Python extracts the patches with it (it never re-segments), and Rust verifies the MAC, the manifest, channel/direction/sequence/replay and the AEAD. Ten algorithm ids (LSB replacement, LSB matching, PVD, edge-adaptive LSB, DCT, Haar DWT, DCT-SVD, HUGO additive approximation, WOW, S-UNIWARD; the last three with custom-matrix syndrome-trellis codes) all work on patch masks. Both directions use images; there is no plaintext fallback, no single-algorithm fallback and no message priority class; failures are structured errors persisted as events. UI: **Steganography lab** (`/steganography`: overlay, patch inspector, per-patch selection, before/after/difference, exports), **Knowledge base** (`/knowledge-base`, incl. the risk table) and the separate educational **Algorithm Learning** tab (`docs/learning-workbench.md`, `docs/worked-examples.md`). Limits: PNG-lossless only, not robust to JPEG/resize, plaintext loopback hop, simulation. Exact formats, MAC coverage, test vectors and limitations: `docs/patchwise-transport.md`. What changed and what was removed: `IMPLEMENTATION_REPORT.md`.
 
-Quick check: `python3 scripts/stego_smoke.py` (with services running; see the script header). Cover generator: `docs/cover-generation.md`; generator benchmark `python3 scripts/bench_generator.py`; offline detectability evaluation `python3 scripts/eval_detectability.py` (`docs/detectability-evaluation.md` — the transport is **easily detected** by a small classical detector, mainly through its plain-LSB bootstrap carrier; no undetectability is claimed). Standalone tool: `tools/stego-standalone/`.
+Quick check: `python3 scripts/stego_smoke.py` (with services running; see the script header). Cover generator: `docs/cover-generation.md`; generator benchmark `python3 scripts/bench_generator.py`; offline detectability evaluation `python3 scripts/eval_detectability.py` (`docs/detectability-evaluation.md` — with SRM-inspired features the transport is detected with AUC ≈ 0.67 at 256 B up to ≈ 0.87 at 3 KB; the bootstrap-v2 band signature is gone, but the AUC ≤ 0.55 aspiration is **not met**; no undetectability is claimed). Standalone tool: `tools/stego-standalone/`.
 
 ## Tests
 
@@ -160,7 +158,7 @@ Quick check: `python3 scripts/stego_smoke.py` (with services running; see the sc
 .\scripts\windows\test.ps1     # Windows
 ```
 
-**Current results** (see `docs/testing.md`): Rust `cargo test --release` = 146 lib + 16 protocol integration + 1 end-to-end + 22 stego pipeline + 7 stego e2e (real Python service) + 4 learning workbench; Python `pytest` = 399; plus the 83-check `scripts/stego_smoke.py`. Full checklist-to-test mapping (every item from "stale
+**Current results** (2026-11-19, see `docs/testing.md`): Rust `cargo test --release` = 177 lib + 7 FIPS KAT + 5 FIPS interop + 3 suite lifecycle + 16 protocol integration + 1 end-to-end + 23 stego pipeline + 7 stego e2e (real Python service) + 4 learning workbench; Python `pytest` = 416; plus the 83-check `scripts/stego_smoke.py`. Full checklist-to-test mapping (every item from "stale
 timestamp" through "invalid AEAD authentication tag") in
 `docs/testing.md`.
 
@@ -172,7 +170,7 @@ timestamp" through "invalid AEAD authentication tag") in
 ```
 
 Real, measured (not fabricated) avg/p50/p95 latencies for every
-primitive, plus concrete sizes (Kyber768 keys/ciphertexts, Dilithium2
+primitive, plus concrete sizes (ML-KEM-768 keys/ciphertexts, ML-DSA-44
 keys/signatures, ZK proof size). Full captured output and honest
 interpretation guidance in `docs/benchmarking.md`.
 
@@ -194,10 +192,11 @@ the top of `rust-core/src/bin/vectors.rs`.
 1. **Moderate anonymity only.** The ZK proof hides leaf index/path and `rho`
    from D2, but sessions are linkable (stable keys/credential id) and
    metadata is public; the GCS knows everything. See `docs/zk-security-analysis.md`.
-2. **Deterministic PUF-seed-to-keypair regeneration is not literally
-   achieved** — keys are generated once from real entropy and persisted
-   on-device instead (the underlying pqcrypto library exposes no seeded
-   keygen). See `docs/cryptography.md`.
+2. **Device keys are not derived from the PUF.** ML-KEM/ML-DSA keys are generated
+   once from OS entropy and persisted on-device (seed form). The libraries do offer
+   the standard seeded key generation, but the PUF here is a software simulation,
+   so it is deliberately not used as key material; physical PUF integration is
+   deferred. See `docs/cryptography.md`.
 3. **GCS knows every group's session key** (`K_G,M`) — a property of the
    frozen specification's own K1-K4 design, not an implementation
    defect. See `docs/threat-model.md`.
@@ -214,11 +213,15 @@ the top of `rust-core/src/bin/vectors.rs`.
    see `docs/IMPLEMENTATION_STATUS.md`), **but were not executable-tested
    on an actual Windows machine** in this session (none was available).
    Please report any remaining issues.
-7. v2 builds with rustc 1.97 (Plonky3 `=0.9.0-rc.1` is pinned exactly); the
-   PQ crates are Round-3 Kyber768/Dilithium2, not final FIPS 203/204.
+7. Builds with rustc 1.97 (Plonky3 `=0.9.0-rc.1`, `ml-kem =0.3.4`, `ml-dsa =0.1.2`
+   pinned exactly). The algorithms are the final FIPS 203/204 ones and pass the NIST
+   ACVP vectors, but the software is **not FIPS 140-3 validated**.
 8. The steganography transport is a lossless-PNG file handoff inside one
    host; it is not robust to recompression and no steganalysis resistance
-   is claimed (`docs/patchwise-transport.md` section 13).
+   is claimed: classical detectors separate transport images from covers
+   (`docs/detectability-evaluation.md`, `docs/patchwise-transport.md` section 13).
+9. The PUF is a software simulation; Raspberry Pi 5 measurements and the
+   radio/UAV link are deferred.
 
 ## Documentation index
 
@@ -229,5 +232,5 @@ the top of `rust-core/src/bin/vectors.rs`.
 `docs/testing.md` · `docs/benchmarking.md` · `docs/troubleshooting.md` ·
 `docs/research-notes.md` · `docs/dependency-rationale.md` ·
 `docs/ecc-audit.md` · `docs/security-review.md` ·
-`docs/patchwise-transport.md` · `docs/stego-algorithms.md` · `docs/learning-workbench.md` · `docs/worked-examples.md` · `IMPLEMENTATION_REPORT.md` ·
+`docs/patchwise-transport.md` · `docs/bootstrap-v3-design.md` · `docs/detectability-evaluation.md` · `docs/ui-design-system.md` · `docs/cover-generation.md` · `docs/stego-algorithms.md` · `docs/learning-workbench.md` · `docs/worked-examples.md` · `IMPLEMENTATION_REPORT.md` ·
 `docs/IMPLEMENTATION_STATUS.md` (the complete, phase-by-phase build log)

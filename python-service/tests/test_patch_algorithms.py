@@ -195,7 +195,7 @@ def test_dct_saturated_patch_is_filtered():
     """Local heuristic in the KB: DCT is excluded on saturated patches; the implementation fails cleanly there."""
     bw = bw_cover(64, 64)
     lab = np.zeros((64, 64), np.uint8)
-    f = PF.compute(bw, lab, 1, 0)[0]
+    f = PF.compute(bw, lab, 1)[0]
     assert f["saturation"] >= 0.02
     reg = Region(0, lab == 0)
     sups = {n: BY_NAME[n].support(bw, reg) for n in NAMES}

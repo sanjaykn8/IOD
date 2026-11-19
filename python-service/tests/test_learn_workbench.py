@@ -129,7 +129,7 @@ def test_patch_choice_keywords_ids_and_survey():
         assert s["kb_selected"] in (None, *NAMES) and (s["kb_ranking"][:1] == [s["kb_selected"]] or s["kb_selected"] is None)
         assert s["blocks8"] >= 0 and isinstance(s["query_terms"], list)
     ro = tex["patch"]["kb_retrieval_readonly"]
-    assert ro["selector_version"] == "kb-bm25-1" and len(ro["candidates"]) == 10
+    assert ro["selector_version"] == "kb-risk-1" and len(ro["candidates"]) == 10
 
 
 def test_experiments_never_modify_the_production_knowledge_base():

@@ -1,8 +1,8 @@
 """Per-patch feature vectors (computed on the COVER, over every pixel of the region).
 
 All statistics use luma (0.299R + 0.587G + 0.114B, or the gray value). Definitions:
-  pixels            exact pixel count of the region (full region, bootstrap rows included)
-  usable_pixels     pixels outside the bootstrap-reserved rows (what algorithms may use)
+  pixels            exact pixel count of the region (full region, carrier pixels included)
+  usable_pixels     pixels minus the reserved bootstrap-v3 carrier pixels (what algorithms may use)
   bbox              [row0, col0, row1, col1) ; width/height/aspect from it
   compactness       4*pi*area / perimeter^2 (perimeter = pixel edges to other regions or the border)
   mean, variance    of luma ; mean_rgb for colour covers
@@ -31,8 +31,9 @@ def _r(x, d=6):
     return round(float(x), d)
 
 
-def compute(arr, labels, n, reserved_rows=0):
-    """Return a list of feature dicts, one per region id 0..n-1."""
+def compute(arr, labels, n, excluded=None):
+    """Return a list of feature dicts, one per region id 0..n-1. `excluded`: flat pixel indices
+    (the reserved carrier pixels) that no algorithm may use."""
     h, w = labels.shape
     lab = labels.reshape(-1).astype(np.int64)
     luma = luma_of(arr)
@@ -68,7 +69,9 @@ def compute(arr, labels, n, reserved_rows=0):
     r0 = np.full(n, h); r1 = np.zeros(n, dtype=np.int64); c0 = np.full(n, w); c1 = np.zeros(n, dtype=np.int64)
     np.minimum.at(r0, lab, rows_idx); np.maximum.at(r1, lab, rows_idx)
     np.minimum.at(c0, lab, cols_idx); np.maximum.at(c1, lab, cols_idx)
-    usable = np.bincount(lab[reserved_rows * w:], minlength=n) if reserved_rows < h else np.zeros(n, dtype=np.int64)
+    usable = np.bincount(lab, minlength=n)
+    if excluded is not None and len(excluded):
+        usable = usable - np.bincount(lab[np.asarray(excluded, dtype=np.int64)], minlength=n)
     # frequency energy over complete 8x8 blocks inside one region
     hb, wb = h // 8, w // 8
     hf_ratio = np.zeros(n)

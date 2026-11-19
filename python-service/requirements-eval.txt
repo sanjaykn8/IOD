@@ -1,0 +1,3 @@
+# Evaluation-only dependencies (scripts/eval_detectability.py). NOT needed by the image service.
+# Versions are the ones the 2026-11-19 evaluation ran with.
+scikit-learn==1.9.1

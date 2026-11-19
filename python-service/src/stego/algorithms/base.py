@@ -1,7 +1,7 @@
 """Common algorithm contract (patch/mask based).
 
-Every algorithm works on ONE patch: a `Region` (exact pixel mask with the bootstrap rows
-already removed). It may read and write only the patch's own pixels/samples, so patches
+Every algorithm works on ONE patch: a `Region` (exact pixel mask with the reserved
+bootstrap-v3 carrier pixels already removed). It may read and write only the patch's own pixels/samples, so patches
 are independent and extraction never depends on a neighbouring patch.
 
     support(img, region)                 -> (ok, reason)   structural/geometry support

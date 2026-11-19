@@ -1,6 +1,6 @@
 // Steganography Lab with two clearly separated views:
-//   * UAV Simulation — patch-wise operational flow (knowledge-base guided, per-patch algorithms)
-//   * Algorithm Learning — Worked Calculations and Experiments (educational workbench)
+//   * Transport — the operational patch-wise flow (policy + risk-aware per-patch selection, keyed bootstrap carrier)
+//   * Algorithm learning — worked calculations and experiments (educational workbench)
 import { useEffect, useState } from "react";
 import { GraduationCap, Radio } from "lucide-react";
 import { SteganographyLabPage } from "./stego-lab";
@@ -21,27 +21,50 @@ export function SteganographyLabTabs() {
     setView(v);
     if (typeof window !== "undefined") {
       const u = new URL(window.location.href);
-      if (v === "learn") u.searchParams.set("view", "learn"); else u.searchParams.delete("view");
+      if (v === "learn") u.searchParams.set("view", "learn");
+      else u.searchParams.delete("view");
       window.history.replaceState(null, "", u.toString());
     }
   }
   return (
     <>
-      <div className="lab-tabs" role="tablist" aria-label="Steganography Lab views">
-        <button type="button" role="tab" aria-selected={view === "live"} className={`lab-tab ${view === "live" ? "lab-tab-on" : ""}`} onClick={() => select("live")} data-testid="tab-live">
-          <Radio aria-hidden="true" /><span><strong>UAV Simulation</strong><small>Patch-wise Operational Flow</small></span>
+      <PageHeader
+        title="Steganography lab"
+        description={
+          view === "live"
+            ? "Send a message as a PNG: the core seals it, the image service generates a fresh cover and embeds it patch by patch, and the receiver verifies the saved file."
+            : "Worked calculations and same-input comparisons of all ten algorithms. Educational only: nothing here is a UAV transmission."
+        }
+      />
+      <div className="lab-tabs" role="tablist" aria-label="Steganography lab views">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "live"}
+          className={`lab-tab ${view === "live" ? "lab-tab-on" : ""}`}
+          onClick={() => select("live")}
+          data-testid="tab-live"
+        >
+          <Radio aria-hidden="true" />
+          <span>
+            <strong>Transport</strong>
+          </span>
         </button>
-        <button type="button" role="tab" aria-selected={view === "learn"} className={`lab-tab ${view === "learn" ? "lab-tab-on" : ""}`} onClick={() => select("learn")} data-testid="tab-learn">
-          <GraduationCap aria-hidden="true" /><span><strong>Algorithm Learning</strong><small>Worked Calculations and Experiments</small></span>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === "learn"}
+          className={`lab-tab ${view === "learn" ? "lab-tab-on" : ""}`}
+          onClick={() => select("learn")}
+          data-testid="tab-learn"
+        >
+          <GraduationCap aria-hidden="true" />
+          <span>
+            <strong>Algorithm learning</strong>
+          </span>
         </button>
       </div>
-      {view === "live" ? <SteganographyLabPage /> : (
-        <>
-          <PageHeader eyebrow="STEGANOGRAPHY LAB / ALGORITHM LEARNING" title="Algorithm Learning — Worked Calculations and Experiments"
-            description="Hand-worked mathematics, isolated patch-level executions and same-input comparisons of all ten algorithms. Educational only: nothing here is a UAV transmission." />
-          <LearningWorkbench />
-        </>
-      )}
+      {view === "live" ? <SteganographyLabPage /> : <LearningWorkbench />}
     </>
   );
 }

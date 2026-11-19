@@ -1,9 +1,9 @@
 {
  "kb_version": "patch-kb-1",
  "schema_version": 1,
- "description": "Static, curated knowledge base for per-patch algorithm selection (structured filters + BM25, top-1). No LLM. Edit in source control; validated at start-up.",
+ "description": "Static, curated knowledge base for per-patch algorithm selection (structured filters, then risk-table ranking with BM25 as the suitability tie-break, top-1). No LLM. Edit in source control; validated at start-up.",
  "selector": {
-  "version": "kb-bm25-1",
+  "version": "kb-risk-1",
   "bm25": {
    "k1": 1.5,
    "b": 0.75
@@ -13,7 +13,8 @@
    "summary": 1,
    "suitable_when": 1
   },
-  "tie_break": "higher BM25 score, then lower algorithm id",
+  "ranking": "risk tier (risk_table.json), then changes per embedded bit, then ms per KiB, then higher BM25 score, then lower algorithm id",
+  "tie_break": "lower algorithm id",
   "capacity_source": "measured by the algorithm implementation on the patch (KB capacity text is advisory only)"
  },
  "query_terms": [

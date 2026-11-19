@@ -5,7 +5,7 @@
 //! The specification's pseudocode repeatedly writes things like:
 //! `(ct, K_shared) = Enc_KEM(pk, payload)` and then transmits `{ "ct":
 //! ct }` — i.e. it treats `Enc_KEM` as if it directly encrypted a
-//! structured `payload`. **ML-KEM/Kyber is a Key Encapsulation
+//! structured `payload`. **ML-KEM is a Key Encapsulation
 //! Mechanism, not a public-key encryption scheme**: `encapsulate(pk)`
 //! only ever produces `(ciphertext, shared_secret)` for a FRESH random
 //! shared secret — it cannot take an arbitrary plaintext as input at
@@ -34,21 +34,28 @@
 //! intended data flow (a KEM-protected structured payload travels from
 //! sender to recipient) and its intended security property
 //! (confidentiality + integrity under the recipient's KEM key pair)
-//! while using ML-KEM/Kyber768 the way it actually works.
+//! while using ML-KEM-768 (FIPS 203) the way it actually works.
 
 use crate::crypto::aead::{self, AeadKey, SealedMessage};
 use crate::crypto::domains::SEED_DOMAIN_ENVELOPE;
 use crate::crypto::kdf::hkdf_expand;
 use crate::crypto::kem::{self, KemCiphertext, KemPublicKey, KemSecretKey};
+use crate::crypto::suite::SUITE_ID;
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct SecureEnvelope {
+    /// Cryptographic suite that produced `kem_ciphertext`. Also bound into the
+    /// envelope key (HKDF info), so relabelling it makes the AEAD tag fail.
+    pub suite: String,
     pub kem_ciphertext: Vec<u8>,
     pub sealed: SealedMessage,
 }
 
-fn derive_envelope_key(shared_secret: &[u8]) -> AeadKey {
-    let bytes = hkdf_expand(shared_secret, None, SEED_DOMAIN_ENVELOPE, 32);
+fn derive_envelope_key(shared_secret: &[u8], suite: &str) -> AeadKey {
+    let mut info = SEED_DOMAIN_ENVELOPE.to_vec();
+    info.push(0);
+    info.extend_from_slice(suite.as_bytes());
+    let bytes = hkdf_expand(shared_secret, None, &info, 32);
     let mut key = [0u8; 32];
     key.copy_from_slice(&bytes);
     AeadKey(key)
@@ -60,9 +67,10 @@ pub fn seal_for_recipient(
     plaintext: &[u8],
 ) -> anyhow::Result<SecureEnvelope> {
     let (ct, shared_secret) = kem::encapsulate(recipient_kem_pk)?;
-    let key = derive_envelope_key(&shared_secret.0);
+    let key = derive_envelope_key(&shared_secret.0, SUITE_ID);
     let sealed = aead::seal(&key, 1, associated_data, plaintext);
     Ok(SecureEnvelope {
+        suite: SUITE_ID.to_string(),
         kem_ciphertext: ct.0,
         sealed,
     })
@@ -74,6 +82,8 @@ pub enum EnvelopeError {
     Kem(#[from] anyhow::Error),
     #[error("AEAD open failed: {0}")]
     Aead(#[from] aead::AeadError),
+    #[error(transparent)]
+    Suite(#[from] crate::crypto::suite::SuiteMismatch),
 }
 
 pub fn open_as_recipient(
@@ -81,8 +91,9 @@ pub fn open_as_recipient(
     associated_data: &[u8],
     envelope: &SecureEnvelope,
 ) -> Result<Vec<u8>, EnvelopeError> {
+    crate::crypto::suite::require(&envelope.suite)?;
     let shared_secret = kem::decapsulate(recipient_kem_sk, &KemCiphertext(envelope.kem_ciphertext.clone()))?;
-    let key = derive_envelope_key(&shared_secret.0);
+    let key = derive_envelope_key(&shared_secret.0, &envelope.suite);
     let plaintext = aead::open(&key, associated_data, &envelope.sealed, 0)?;
     Ok(plaintext)
 }
@@ -120,5 +131,38 @@ mod tests {
         let mut env = seal_for_recipient(&pk, b"aad", b"secret").unwrap();
         env.sealed.ciphertext[0] ^= 0xFF;
         assert!(open_as_recipient(&sk, b"aad", &env).is_err());
+    }
+
+    #[test]
+    fn tampered_kem_ciphertext_is_caught_by_the_aead_after_implicit_rejection() {
+        // ML-KEM decapsulation of a modified ciphertext "succeeds" with a pseudo-random
+        // secret (FIPS 203 implicit rejection); the envelope must still refuse to open.
+        let (pk, sk) = kem::keypair();
+        let env = seal_for_recipient(&pk, b"aad", b"secret").unwrap();
+        for pos in [0usize, 543, env.kem_ciphertext.len() - 1] {
+            let mut bad = env.clone();
+            bad.kem_ciphertext[pos] ^= 0x01;
+            assert!(matches!(open_as_recipient(&sk, b"aad", &bad), Err(EnvelopeError::Aead(_))), "pos {pos}");
+        }
+        let mut short = env.clone();
+        short.kem_ciphertext.truncate(100);
+        assert!(matches!(open_as_recipient(&sk, b"aad", &short), Err(EnvelopeError::Kem(_))));
+    }
+
+    #[test]
+    fn envelopes_of_another_suite_are_rejected() {
+        let (pk, sk) = kem::keypair();
+        let env = seal_for_recipient(&pk, b"aad", b"secret").unwrap();
+        assert_eq!(env.suite, SUITE_ID);
+        for suite in [crate::crypto::suite::LEGACY_SUITE_ID, ""] {
+            let mut bad = env.clone();
+            bad.suite = suite.into();
+            assert!(matches!(open_as_recipient(&sk, b"aad", &bad), Err(EnvelopeError::Suite(_))), "{suite}");
+        }
+        // the suite is bound into the key: a key derived for another label cannot open it
+        let ss = kem::decapsulate(&sk, &KemCiphertext(env.kem_ciphertext.clone())).unwrap();
+        let other = derive_envelope_key(&ss.0, crate::crypto::suite::LEGACY_SUITE_ID);
+        assert!(aead::open(&other, b"aad", &env.sealed, 0).is_err());
+        assert!(aead::open(&derive_envelope_key(&ss.0, SUITE_ID), b"aad", &env.sealed, 0).is_ok());
     }
 }

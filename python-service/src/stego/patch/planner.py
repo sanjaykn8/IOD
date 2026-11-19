@@ -15,6 +15,7 @@ Allocation rule (deterministic, documented in docs/patchwise-transport.md):
 """
 
 import hashlib
+import os
 import time
 from dataclasses import dataclass
 
@@ -22,8 +23,9 @@ import numpy as np
 
 from ..algorithms import BY_NAME, NAMES
 from ..algorithms.adaptive import AdaptiveStc
+from .. import bootstrap as B
 from ..errors import StegoError
-from . import SELECTOR_VERSION, features as F, kb as KB, manifest as M, segment as S
+from . import SELECTOR_VERSION, features as F, kb as KB, manifest as M, policy as P, segment as S
 from .region import CoverCtx, Region
 
 DEFAULT_TARGET_CHUNK = 48
@@ -35,6 +37,8 @@ class Plan:
     parsed: M.Manifest
     seg: S.Segmentation
     diagnostics: dict
+    deflated: bytes = b""      # raw DEFLATE of `manifest` (what the bootstrap-v3 carrier holds)
+    values: bytes = b""        # the value stream the carrier pixels were reserved for
 
 
 def test_bytes(n, patch_id):
@@ -95,9 +99,15 @@ def _allocate(feats, struct_caps, total, target_chunk):
     return {i: c for i, c in chunk.items() if c > 0}, usable
 
 
-def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGET_CHUNK, dry_run=True, should_stop=None):
+def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGET_CHUNK, dry_run=True, should_stop=None,
+         carrier_values=None, policy=None):
     """`should_stop()` (optional) is polled before every refinement level after the first; when it returns
-    True the planner gives up with GENERATION_BUDGET_EXCEEDED instead of starting another level."""
+    True the planner gives up with GENERATION_BUDGET_EXCEEDED instead of starting another level.
+
+    `carrier_values`: the frame's bootstrap-v3 value stream (big-endian u32 bytes, from Rust). The first R
+    distinct pixels it maps to are reserved for the carrier and removed from every patch. None -> a random
+    stream (tests and offline evaluation only; the result's `values` must then be used for embedding).
+    `policy`: (name, allowed names) from `policy.parse`; None -> the default operational policy."""
     seg_cfg = seg_cfg or S.SegConfig()
     if isinstance(payload_len, bool) or not isinstance(payload_len, int) or payload_len < M.TAG_LEN + 1:
         raise StegoError("INVALID_REQUEST", "payload_bytes must be an integer > 32")
@@ -106,6 +116,12 @@ def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGE
     h, w = arr.shape[:2]
     ch = 1 if arr.ndim == 2 else 3
     kbv = KB.load()["kb_version"]
+    values = bytes(carrier_values) if carrier_values is not None else os.urandom(4 * 8192)
+    if not values or len(values) % 4 or len(values) > 4 * B.MAX_VALUES:
+        raise StegoError("INVALID_REQUEST", "carrier value stream must hold 1..16384 big-endian u32 values")
+    pos_all = B.positions(np.frombuffer(values, dtype=">u4").astype(np.int64), h * w)
+    pol_name, allowed = policy if policy is not None else P.parse(None)
+    allowed_set = frozenset(allowed)
     attempts = []
     t_all = time.perf_counter()
     for level in range(min_level, seg_cfg.max_refine_levels + 1):
@@ -119,20 +135,21 @@ def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGE
         attempts.append(att)
         map_bytes = M.rle_encode(seg.cell_labels)
         mlen = M.manifest_len_for(n, len(map_bytes))
-        rrows = M.reserved_rows_for(mlen, w, ch)
-        att.update(manifest_bytes=mlen, reserved_rows=rrows)
-        if mlen > M.MAX_MANIFEST_BYTES or rrows * 2 > h:
+        cpix = M.carrier_pixels_for(mlen, ch)
+        att.update(manifest_bytes=mlen, carrier_pixels=cpix)
+        if mlen > M.MAX_MANIFEST_BYTES or cpix > (h * w) // 8 or cpix > len(pos_all):
             att["outcome"] = "MANIFEST_DOES_NOT_FIT"
             continue
+        carrier = pos_all[:cpix]
         eff = seg.labels.copy()
-        eff[:rrows, :] = 255
-        feats = F.compute(arr, seg.labels, n, rrows)
+        eff.reshape(-1)[carrier] = 255
+        feats = F.compute(arr, seg.labels, n, carrier)
         regions, caps, sups = _patch_tables(arr, eff, feats, n)
         # largest structurally admissible capacity per patch (bytes)
         struct_caps = []
         for i in range(n):
             ok_names = KB.structural(feats[i], sups[i])
-            struct_caps.append(max([caps[i][nm] // 8 for nm, ok in ok_names.items() if ok] or [0]))
+            struct_caps.append(max([caps[i][nm] // 8 for nm, ok in ok_names.items() if ok and nm in allowed_set] or [0]))
         alloc, usable = _allocate(feats, struct_caps, payload_len, target_chunk)
         att.update(usable_patches=len(usable), capacity_bytes=int(sum(struct_caps)))
         if alloc is None:
@@ -153,7 +170,7 @@ def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGE
             c = alloc[i]
             q = dict(f)
             q["bits_per_sample"] = round(8.0 * c / max(1, f["usable_pixels"] * ch), 8)
-            res = KB.retrieve(q, c, caps[i], sups[i])
+            res = KB.retrieve(q, c, caps[i], sups[i], allowed_set)
             res["query_features"] = {k: q[k] for k in ("usable_pixels", "variance", "entropy", "gradient_mean", "edge_density", "texture",
                                                          "saturation", "hf_energy_ratio", "compactness", "aspect_ratio", "block8_fill",
                                                          "bits_per_sample", "channels", "mean")}
@@ -193,10 +210,14 @@ def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGE
         if failed is not None:
             att.update(outcome=failed[1], failed_patch=failed[0])
             continue
-        man = M.Manifest(ch, w, h, seg.cell, rrows, payload_len, tuple(entries), seg.cell_labels)
+        man = M.Manifest(ch, w, h, seg.cell, cpix, payload_len, tuple(entries), seg.cell_labels)
         data = M.pack(man)
         if len(data) != mlen:
             raise StegoError("INTERNAL_ERROR", "manifest size prediction mismatch")
+        deflated = B.deflate(data)
+        cbits = B.carrier_bits_for(len(deflated))
+        if cbits > cpix * ch:
+            raise StegoError("INTERNAL_ERROR", "bootstrap carrier exceeds its reserved pixels")
         att["outcome"] = "OK"
         att["ms"] = round((time.perf_counter() - t0) * 1000, 3)
         used = [p for p in patches if p["used"]]
@@ -205,13 +226,14 @@ def plan(arr, payload_len, seg_cfg=None, min_level=0, target_chunk=DEFAULT_TARGE
             counts[p["selected"]] = counts.get(p["selected"], 0) + 1
         diag = {
             "selector_version": SELECTOR_VERSION, "kb_version": kbv, "segmentation": seg.info, "refinement_level": level,
-            "attempts": attempts, "payload_bytes": payload_len, "manifest_bytes": mlen, "reserved_rows": rrows,
-            "bootstrap_carrier_bits": M.carrier_bits(mlen), "patch_count": n, "used_patches": len(used),
+            "attempts": attempts, "payload_bytes": payload_len, "manifest_bytes": mlen, "manifest_deflate_bytes": len(deflated),
+            "bootstrap_version": B.VERSION, "carrier_pixels": cpix, "bootstrap_carrier_bits": cbits,
+            "operational_policy": P.describe(pol_name, allowed), "patch_count": n, "used_patches": len(used),
             "algorithms_used": dict(sorted(counts.items())), "target_chunk_bytes": target_chunk,
             "allocation_rule": "texture-ranked prefix, water-filling by capacity, offsets in ascending patch id",
             "patches": patches, "plan_ms": round((time.perf_counter() - t_all) * 1000, 3),
         }
-        return Plan(data, M.parse(data), seg, diag)
+        return Plan(data, M.parse(data), seg, diag, deflated, values)
     last = attempts[-1]["outcome"] if attempts else "NO_ATTEMPT"
     code = "PATCH_CAPACITY_INSUFFICIENT" if last in ("CAPACITY_INSUFFICIENT", "MANIFEST_DOES_NOT_FIT") else "NO_ELIGIBLE_ALGORITHM"
     raise StegoError(code, "the cover cannot carry this frame patch-wise within the refinement limit",

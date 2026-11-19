@@ -2,11 +2,13 @@
 //!
 //! seal (Rust) -> plan: FRESH payload-aware generated cover + adaptive segmentation + per-patch
 //! knowledge-base selection + chunk allocation (Python; receives only the payload LENGTH and the
-//! validated cover-generation configuration) -> manifest validation +
-//! Frame v2 + MAC over manifest and payload (Rust) -> patch embedding + PNG save + re-read
-//! (Python) -> [handoff by artifact id] -> local read -> extraction from the image's own
-//! bootstrap + manifest, no re-segmentation (Python) -> frame MAC, strict manifest parse,
-//! AppWire, channel/direction/replay, AEAD (Rust).
+//! validated cover-generation configuration and the bootstrap-v3 value stream) -> manifest
+//! validation + Frame v3 + MAC over manifest and payload + encrypted bootstrap-v3 carrier (Rust)
+//! -> patch embedding + carrier write + PNG save + re-read (Python) -> [handoff by artifact id]
+//! -> local read -> keyed bootstrap discovery (Rust decides, Python only reads bits) -> manifest
+//! decrypted, inflated and strictly parsed (Rust) -> patch extraction with that manifest, no
+//! re-segmentation (Python) -> frame MAC, AppWire, sequence == discovered sequence,
+//! channel/direction/replay, AEAD (Rust). See docs/bootstrap-v3-design.md.
 //!
 //! One cover is generated per transmission. A bounded internal re-plan reuses that same stored
 //! cover (no generation); the receiver never generates or re-segments anything.
@@ -24,6 +26,7 @@ use crate::protocol::secure_messaging::{self, SecureMessagingError};
 use crate::transport::backend::{is_artifact_id, StegoBackend};
 use crate::transport::config::StegoConfig;
 use crate::transport::error::{stage, StegoError};
+use crate::transport::bootstrap::{self, Discovery};
 use crate::transport::frame;
 use crate::transport::manifest::{self, Manifest};
 use crate::transport::wire;
@@ -33,7 +36,7 @@ use sha2::{Digest, Sha256};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
-pub const TRANSPORT_FORMAT_VERSION: &str = "frame-v2/appwire-v1/bootstrap-v2/manifest-v1";
+pub const TRANSPORT_FORMAT_VERSION: &str = "frame-v3/appwire-v1/bootstrap-v3/manifest-v2";
 const MAX_ARTIFACT_FILE: u64 = 64 * 1024 * 1024;
 
 pub struct TxFailure {
@@ -186,9 +189,11 @@ enum PlanCover<'a> {
 
 /// What the plan request may contain: the payload LENGTH and generation/segmentation parameters --
 /// never payload bytes, keys, a seed, an image or a client-chosen artifact.
-fn plan_request(h: &Handles, payload_bytes: usize, cover: PlanCover, min_level: u32) -> Value {
+fn plan_request(h: &Handles, payload_bytes: usize, cover: PlanCover, min_level: u32, values_b64: &str) -> Value {
     let mut r = json!({"payload_bytes": payload_bytes, "limits": h.cfg.limits(), "segmentation": h.cfg.segmentation,
-                       "min_level": min_level, "target_chunk_bytes": h.cfg.target_chunk_bytes});
+                       "min_level": min_level, "target_chunk_bytes": h.cfg.target_chunk_bytes,
+                       "carrier": {"version": bootstrap::VERSION, "values_b64": values_b64},
+                       "policy": h.cfg.policy.to_json()});
     match cover {
         PlanCover::Generate(cfg) => r["cover_generation"] = cfg.clone(),
         PlanCover::Reuse(id) => r["replan_cover_id"] = json!(id),
@@ -213,6 +218,8 @@ fn compact_generation(g: &Value) -> Value {
 
 struct Planned {
     manifest_bytes: Vec<u8>,
+    /// DEFLATE of the manifest as produced by the service (checked to inflate to `manifest_bytes`).
+    deflated: Vec<u8>,
     manifest: Manifest,
     plan: Value,
     cover: Value,
@@ -227,6 +234,7 @@ struct Planned {
 fn accept_plan(h: &Handles, resp: &Value, payload_bytes: usize) -> Result<Planned, StegoError> {
     let mb = b64::decode(need_str(resp, "manifest_b64", stage::PLAN)?, manifest::MAX_MANIFEST_BYTES).map_err(|m| malformed(stage::PLAN, &m))?;
     let man = manifest::parse(&mb, h.cfg.max_width.max(h.cfg.max_height)).map_err(|e| restage(e, stage::PLAN))?;
+    let deflated = b64::decode(need_str(resp, "manifest_deflate_b64", stage::PLAN)?, bootstrap::MAX_BODY_BYTES).map_err(|m| malformed(stage::PLAN, &m))?;
     let cover = resp.get("cover").cloned().unwrap_or(Value::Null);
     let plan = resp.get("plan").cloned().unwrap_or(Value::Null);
     if man.payload_len as usize != payload_bytes {
@@ -255,7 +263,8 @@ fn accept_plan(h: &Handles, resp: &Value, payload_bytes: usize) -> Result<Planne
         return Err(malformed(stage::PLAN, "plan diagnostics disagree with the manifest"));
     }
     let level = plan["refinement_level"].as_u64().filter(|l| *l <= 6).ok_or_else(|| malformed(stage::PLAN, "refinement level missing"))? as u32;
-    Ok(Planned { manifest_bytes: mb, manifest: man, plan, cover, generation: resp.get("generation").cloned().unwrap_or(Value::Null), inspection: resp.get("inspection").cloned().unwrap_or(Value::Null),
+    h.cfg.policy.check(&man)?;
+    Ok(Planned { manifest_bytes: mb, deflated, manifest: man, plan, cover, generation: resp.get("generation").cloned().unwrap_or(Value::Null), inspection: resp.get("inspection").cloned().unwrap_or(Value::Null),
                  timings: resp.get("timings_ms").cloned().unwrap_or(json!({})), level })
 }
 
@@ -342,6 +351,9 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     let msg = secure_messaging::seal_message(&key, tag, direction, seq, &req.plaintext);
     let wire_bytes = wire::encode_app_wire(&msg);
     let meta = frame::derive_meta_key(&key, &tag, direction);
+    // bootstrap-v3 placement for THIS (channel, direction, seq); the key stays here
+    let place = bootstrap::placement_key(&key, &tag, direction, seq);
+    let values_b64 = b64::encode(&bootstrap::value_stream(&place, bootstrap::STREAM_VALUES));
     let payload_bytes = frame::payload_section_len(wire_bytes.len());
     let min_frame = frame::frame_len_for(manifest::FIXED_LEN + manifest::ENTRY_LEN + 2, wire_bytes.len());
     let ms = tx.ms(t);
@@ -361,6 +373,7 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     let mut replans: Vec<Value> = Vec::new();
     let mut first: Option<(Value, Value, Value)> = None; // (cover, generation, timings) of the generating plan
     let mut planner_ms_total = 0.0f64;
+    let mut carrier_bits;
     let (planned, frame_bytes, enc, plan_wall, embed_wall) = loop {
         let t = Instant::now();
         let first_id = first.as_ref().and_then(|f| f.0["artifact_id"].as_str()).map(str::to_string);
@@ -368,7 +381,7 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
             None => PlanCover::Generate(&gen_json),
             Some(id) => PlanCover::Reuse(id),
         };
-        let resp = h.backend.plan(&plan_request(h, payload_bytes, spec, min_level)).map_err(|e| restage(e, stage::PLAN));
+        let resp = h.backend.plan(&plan_request(h, payload_bytes, spec, min_level, &values_b64)).map_err(|e| restage(e, stage::PLAN));
         let planned = resp.and_then(|r| accept_plan(h, &r, payload_bytes)).and_then(|p| match &first {
             // a re-plan must come back on the very same cover artifact (same id, same pixels)
             Some((c, _, _)) if p.cover["artifact_id"] != c["artifact_id"] || p.cover["sha256"] != c["sha256"] => {
@@ -400,9 +413,12 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
         if first.is_none() {
             first = Some((planned.cover.clone(), planned.generation.clone(), planned.timings.clone()));
         }
-        // Frame v2: header | manifest | AppWire | HMAC (the tag covers the manifest and the payload)
-        let frame_bytes = match frame::build_frame(&meta, &planned.manifest_bytes, &wire_bytes, h.cfg.max_frame_bytes) {
-            Ok(f) => f,
+        // Frame v3: header | manifest | AppWire | HMAC (the tag covers the manifest and the payload);
+        // the manifest travels in the encrypted bootstrap-v3 carrier, the payload section in the patches
+        let built = frame::build_frame(&meta, &planned.manifest_bytes, &wire_bytes, h.cfg.max_frame_bytes)
+            .and_then(|f| bootstrap::build_carrier(&place, &planned.manifest_bytes, &planned.deflated).map(|c| (f, c)));
+        let (frame_bytes, carrier) = match built {
+            Ok(x) => x,
             Err(e) => {
                 tx.fail("plan", plan_wall, &e);
                 return Err(e);
@@ -411,7 +427,9 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
         let cover_id = planned.cover["artifact_id"].as_str().unwrap_or("").to_string();
         let t = Instant::now();
         // encode loads the stored cover by id; it never generates
-        let ereq = json!({"frame_b64": b64::encode(&frame_bytes), "cover_id": cover_id, "limits": h.cfg.limits()});
+        let ereq = json!({"frame_b64": b64::encode(&frame_bytes), "cover_id": cover_id, "limits": h.cfg.limits(),
+                          "carrier": {"values_b64": values_b64, "bits_b64": b64::encode(&carrier), "n_bits": 8 * carrier.len()}});
+        carrier_bits = 8 * carrier.len();
         match h.backend.encode(&ereq).map_err(|e| restage(e, stage::EMBED)) {
             Ok(enc) => break (planned, frame_bytes, enc, plan_wall, tx.ms(t)),
             Err(e) if e.code == "PATCH_EMBED_FAILED" && (replans.len() as u32) < h.cfg.max_replans => {
@@ -464,7 +482,10 @@ fn do_send(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, req: &Messa
     tx.set("plan_attempts", planned.plan["attempts"].clone());
     tx.set("patch_count", json!(man.patches.len()));
     tx.set("used_patches", json!(man.used().count()));
-    tx.set("reserved_rows", json!(man.reserved_rows));
+    tx.set("bootstrap_version", json!(bootstrap::VERSION));
+    tx.set("carrier_pixels", json!(man.carrier_pixels));
+    tx.set("carrier_bits", json!(carrier_bits));
+    tx.set("operational_policy", json!(h.cfg.policy.name));
     tx.set("manifest_bytes", json!(planned.manifest_bytes.len()));
     tx.set("algorithms_used", algs);
     tx.set("algorithm", json!(dominant));
@@ -556,8 +577,8 @@ struct Received {
 }
 
 fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_id: &str, recipient_id: &str, artifact_id: &str, sent_frame_sha: Option<&str>) -> Result<Received, StegoError> {
-    // ---- phase 1 (locked, short): receiver identity + key copy
-    let (expected_dir, key, tag, from_role, to_role) = {
+    // ---- phase 1 (locked, short): receiver identity + key copy + last accepted sequence number
+    let (expected_dir, key, tag, from_role, to_role, last_seen) = {
         let s = state.lock().unwrap();
         if !s.channels.contains_key(session_id) {
             return Err(StegoError::new("NO_GROUP_KEY", stage::PREPARE, 409, "no group key established for this session"));
@@ -573,13 +594,15 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
         }
         let ch = s.channels.get(session_id).unwrap();
         // The receiver of D1->D2 traffic is D2 and vice versa.
-        if recipient_id == sess.d2_id {
+        let (dir, k, t, fr, to) = if recipient_id == sess.d2_id {
             (1u8, AeadKey(ch.d2_keys.d1_to_d2.0), ch.d2_keys.channel_tag, "D1", "D2")
         } else if recipient_id == sess.d1_id {
             (2u8, AeadKey(ch.d1_keys.d2_to_d1.0), ch.d1_keys.channel_tag, "D2", "D1")
         } else {
             return Err(StegoError::new("WRONG_RECIPIENT", stage::PREPARE, 403, "recipient is not a participant of this session"));
-        }
+        };
+        let last = *s.recv_seen.get(&(session_id.to_string(), dir)).unwrap_or(&0);
+        (dir, k, t, fr, to, last)
     };
     tx.set("direction", json!(expected_dir));
     tx.set("from_role", json!(from_role));
@@ -604,27 +627,95 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
     tx.set("stego_sha256", json!(file_sha));
     tx.set("output_format", json!("PNG"));
 
-    // ---- extraction (Python reads the same saved file by id; bootstrap + manifest come from the image)
+    // ---- bootstrap-v3 discovery + manifest decode (Rust decides; the service only reads bits at given positions)
     let t = Instant::now();
-    let ex = h.backend.extract(artifact_id, &h.cfg.limits()).map_err(|e| restage(e, stage::EXTRACT));
-    let ex = match ex {
+    let limits = h.cfg.limits();
+    let disc = (|| -> Result<(u32, bootstrap::PlacementKey, Vec<u8>, Manifest, Value, Value), StegoError> {
+        let cands = bootstrap::candidates(last_seen, h.cfg.sync_window);
+        let keys: Vec<bootstrap::PlacementKey> = cands.iter().map(|&q| bootstrap::placement_key(&key, &tag, expected_dir, q)).collect();
+        let probe_req = json!({"artifact_id": artifact_id, "limits": limits, "locator_bits": bootstrap::LOCATOR_BITS,
+            "candidates": keys.iter().enumerate().map(|(i, k)| json!({"id": i, "values_b64": b64::encode(&bootstrap::value_stream(k, bootstrap::PROBE_VALUES))})).collect::<Vec<_>>()});
+        let pr = h.backend.carrier_probe(&probe_req).map_err(|e| restage(e, stage::EXTRACT))?;
+        let image = pr.get("image").cloned().unwrap_or(Value::Null);
+        if image["sha256"].as_str() != Some(file_sha.as_str()) {
+            return Err(StegoError::new("ARTIFACT_HASH_MISMATCH", stage::EXTRACT, 500, "the image service read different bytes than the Rust core"));
+        }
+        let probes = pr["probes"].as_array().ok_or_else(|| malformed(stage::EXTRACT, "probe response has no probes"))?;
+        if probes.len() != cands.len() {
+            return Err(malformed(stage::EXTRACT, "probe response does not answer every candidate"));
+        }
+        let mut probed: Vec<Option<Vec<u8>>> = vec![None; cands.len()];
+        for p in probes {
+            let i = p["id"].as_u64().filter(|i| (*i as usize) < cands.len()).ok_or_else(|| malformed(stage::EXTRACT, "probe id out of range"))? as usize;
+            probed[i] = match p["bits_b64"].as_str() {
+                Some(b) => Some(b64::decode(b, bootstrap::LOCATOR_BITS / 8).map_err(|m| malformed(stage::EXTRACT, &m))?),
+                None => None,
+            };
+        }
+        let idx = |q: u32| cands.iter().position(|&c| c == q).expect("candidate");
+        let found = bootstrap::discover(&cands, &probed, |q| bootstrap::sync_word(&keys[idx(q)]), last_seen);
+        let (seq, header) = match found {
+            Discovery::Found { seq, header } => (seq, header),
+            Discovery::Replay { seq } => {
+                return Err(StegoError::new("REPLAY", stage::EXTRACT, 409, "the image carries a sequence number that was already accepted (replay)")
+                    .with_details(json!({"seq": seq, "last_accepted": last_seen})));
+            }
+            Discovery::Ambiguous { seqs } => {
+                return Err(StegoError::new("BOOTSTRAP_AMBIGUOUS", stage::EXTRACT, 422, "more than one sequence number matched the locator").with_details(json!({"seqs": seqs})));
+            }
+            Discovery::NotFound if pr["legacy_bootstrap_v2"].as_bool() == Some(true) => {
+                return Err(StegoError::new("BOOTSTRAP_VERSION_UNSUPPORTED", stage::EXTRACT, 422, "image uses the retired bootstrap-v2 (fixed top rows); only bootstrap-v3 is accepted"));
+            }
+            Discovery::NotFound => {
+                return Err(StegoError::new("BOOTSTRAP_NOT_FOUND", stage::EXTRACT, 422,
+                    "no bootstrap-v3 carrier for this channel and direction within the sequence window (wrong recipient or key, out of window, or not a v3 image)")
+                    .with_details(json!({"window": [cands[0], *cands.last().unwrap()], "last_accepted": last_seen})));
+            }
+        };
+        let pk = bootstrap::placement_key(&key, &tag, expected_dir, seq);
+        let body_len = bootstrap::open_header(&pk, &header)?;
+        let values_b64 = b64::encode(&bootstrap::value_stream(&pk, bootstrap::STREAM_VALUES));
+        let rr = h.backend.carrier_read(&json!({"artifact_id": artifact_id, "limits": limits, "values_b64": values_b64,
+                                                 "skip_bits": bootstrap::LOCATOR_BITS, "n_bits": 8 * body_len})).map_err(|e| restage(e, stage::EXTRACT))?;
+        if rr["image"]["sha256"].as_str() != Some(file_sha.as_str()) {
+            return Err(StegoError::new("ARTIFACT_HASH_MISMATCH", stage::EXTRACT, 500, "the image service read different bytes than the Rust core"));
+        }
+        let enc_body = b64::decode(need_str(&rr, "bits_b64", stage::EXTRACT)?, body_len).map_err(|m| malformed(stage::EXTRACT, &m))?;
+        if enc_body.len() != body_len {
+            return Err(malformed(stage::EXTRACT, "carrier read returned the wrong number of bits"));
+        }
+        // untrusted until the frame MAC verifies, but parsed strictly before anything is extracted
+        let man_bytes = bootstrap::open_body(&pk, &enc_body)?;
+        let man = manifest::parse(&man_bytes, h.cfg.max_width.max(h.cfg.max_height)).map_err(|e| restage(e, stage::EXTRACT))?;
+        if image["width"].as_u64() != Some(man.width as u64) || image["height"].as_u64() != Some(man.height as u64) || image["channels"].as_u64() != Some(man.channels as u64) {
+            return Err(StegoError::new("MANIFEST_INVALID", stage::EXTRACT, 422, "bootstrap manifest geometry differs from the image that was read"));
+        }
+        let info = json!({"version": bootstrap::VERSION, "seq": seq, "candidates": cands.len(), "window": [cands[0], *cands.last().unwrap()],
+                          "carrier_bits": bootstrap::LOCATOR_BITS + 8 * body_len, "carrier_pixels": man.carrier_pixels, "manifest_bytes": man_bytes.len(),
+                          "body_bytes": body_len, "legacy_bootstrap_v2": pr["legacy_bootstrap_v2"]});
+        let ex_req = json!({"artifact_id": artifact_id, "limits": limits, "manifest_b64": b64::encode(&man_bytes), "values_b64": values_b64});
+        let ex = h.backend.extract(&ex_req).map_err(|e| restage(e, stage::EXTRACT))?;
+        Ok((seq, pk, man_bytes, man, info, ex))
+    })();
+    let wall = tx.ms(t);
+    tx.timing("extract", wall);
+    let (disc_seq, _pk, given_manifest, _given, bootstrap_info, ex) = match disc {
         Ok(v) => v,
         Err(e) => {
-            let ms = tx.ms(t);
-            tx.fail("extract", ms, &e);
+            tx.fail("extract", wall, &e);
             return Err(e);
         }
     };
-    let wall = tx.ms(t);
     let image = ex.get("image").cloned().unwrap_or(Value::Null);
-    let bootstrap = ex.get("bootstrap").cloned().unwrap_or(Value::Null);
-    tx.timing("extract", wall);
+    let bootstrap = bootstrap_info;
+    tx.set("bootstrap_version", json!(bootstrap::VERSION));
+    tx.set("discovered_seq", json!(disc_seq));
     let step = (|| -> Result<Vec<u8>, StegoError> {
         if image["sha256"].as_str() != Some(file_sha.as_str()) {
             return Err(StegoError::new("ARTIFACT_HASH_MISMATCH", stage::EXTRACT, 500, "the image service read different bytes than the Rust core"));
         }
         if ex["resegmented"].as_bool() != Some(false) {
-            return Err(malformed(stage::EXTRACT, "the image service must extract from the embedded manifest without re-segmenting"));
+            return Err(malformed(stage::EXTRACT, "the image service must extract from the given manifest without re-segmenting"));
         }
         b64::decode(need_str(&ex, "frame_b64", stage::EXTRACT)?, h.cfg.max_frame_bytes).map_err(|m| malformed(stage::EXTRACT, &m))
     })();
@@ -635,7 +726,7 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
             return Err(e);
         }
     };
-    tx.ok("extract", wall, format!("reconstructed a {}-byte frame from the image's bootstrap, manifest and patches (untrusted until verified)", frame_bytes.len()));
+    tx.ok("extract", wall, format!("located the bootstrap-v3 carrier (seq {disc_seq}), decoded the manifest and reconstructed a {}-byte frame from the patches (untrusted until verified)", frame_bytes.len()));
     for k in ["width", "height", "mode", "channels"] {
         tx.set(k, image[k].clone());
     }
@@ -650,10 +741,11 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
     let t = Instant::now();
     let meta = frame::derive_meta_key(&key, &tag, expected_dir);
     let verify = (|| -> Result<(wire::Parsed, Manifest), StegoError> {
-        if bootstrap["frame_len"].as_u64() != Some(frame_bytes.len() as u64) {
-            return Err(StegoError::new("FRAME_LENGTH_MISMATCH", stage::VERIFY, 422, "bootstrap frame length differs from the recovered frame"));
-        }
         let (man_bytes, payload) = frame::parse_and_verify(&meta, &frame_bytes, h.cfg.max_frame_bytes)?;
+        // the frame must carry exactly the manifest Rust decoded from the carrier
+        if man_bytes != given_manifest.as_slice() {
+            return Err(StegoError::new("MANIFEST_INVALID", stage::VERIFY, 422, "frame manifest differs from the bootstrap manifest"));
+        }
         // authenticated from here on; still parsed strictly
         let man = manifest::parse(man_bytes, h.cfg.max_width.max(h.cfg.max_height))?;
         if man.payload_len as usize != frame::payload_section_len(payload.len()) {
@@ -663,6 +755,10 @@ fn do_receive(state: &Mutex<SimulationState>, h: &Handles, tx: &mut Tx, session_
             return Err(StegoError::new("MANIFEST_INVALID", stage::VERIFY, 422, "authenticated manifest geometry differs from the image that was read"));
         }
         let msg = wire::decode_app_wire(payload, h.cfg.max_frame_bytes)?;
+        // the authenticated AppWire sequence number must be the one the placement was derived for
+        if msg.header_seq != disc_seq {
+            return Err(StegoError::new("SEQUENCE_MISMATCH", stage::VERIFY, 422, "authenticated sequence number differs from the bootstrap placement sequence"));
+        }
         Ok((wire::Parsed { msg }, man))
     })();
     let ms = tx.ms(t);
@@ -867,7 +963,7 @@ pub fn run_plan_preview(state: &Mutex<SimulationState>, payload_bytes: usize, co
         return Err(StegoError::new("INVALID_REQUEST", stage::PLAN, 400, format!("payload_bytes must be within {}..={}", frame::TAG_LEN + 1, h.cfg.max_frame_bytes)));
     }
     let t = Instant::now();
-    let resp = h.backend.plan(&plan_request(&h, payload_bytes, PlanCover::Generate(&gen_json), min_level)).map_err(|e| restage(e, stage::PLAN))?;
+    let resp = h.backend.plan(&plan_request(&h, payload_bytes, PlanCover::Generate(&gen_json), min_level, &b64::encode(&preview_values()))).map_err(|e| restage(e, stage::PLAN))?;
     let p = accept_plan(&h, &resp, payload_bytes)?;
     let cid = p.cover["artifact_id"].as_str().unwrap_or("").to_string();
     Ok(json!({"ok": true, "plan": p.plan, "manifest": p.manifest.summary(), "manifest_bytes": p.manifest_bytes.len(), "cover": p.cover, "generation": p.generation, "inspection": p.inspection,
@@ -878,6 +974,14 @@ pub fn run_plan_preview(state: &Mutex<SimulationState>, payload_bytes: usize, co
 }
 
 /// Repeatable benchmark: real sealed messages through the full pipeline.
+/// A plan preview has no session and no sequence number: its carrier positions come from OS
+/// randomness (nothing is embedded, so no receiver has to find them).
+fn preview_values() -> Vec<u8> {
+    let mut v = vec![0u8; 4 * bootstrap::STREAM_VALUES];
+    rand::RngCore::fill_bytes(&mut rand::thread_rng(), &mut v);
+    v
+}
+
 /// Every run generates its own fresh cover under the active resource profile.
 pub fn run_benchmark(state: &Mutex<SimulationState>, session_id: &str, iterations: usize, sizes: &[usize], cover_generation: &Value) -> Result<Value, StegoError> {
     let gen_cfg = handles(state).cfg.generator.resolve(Some(cover_generation))?;

@@ -122,7 +122,7 @@ classes and the manual override were removed. Measured usage on two covers is in
 * `dct`: refuses saturated blocks; `edge_adaptive_lsb`: no capacity on flat covers; `dct_svd`: low capacity (1 bit/64 pixels).
 * STC methods: public permutation (no stego key); non-optimised Ĥ; N_eff capped at 131072 elements (≤ 8 KiB frames at rate 1/2) to bound run time; HUGO variant without model correction; σ/γ for HUGO not re-verified against the full paper text here.
 * Mask-specific: `dct`/`dct_svd` need complete 8×8 blocks and `dwt` complete 2×2 blocks inside the patch; thin or very small patches report `unsupported`. `dct` is additionally excluded by the knowledge base on patches with ≥ 2 % saturated pixels (local heuristic backed by `tests/test_patch_algorithms.py::test_dct_saturated_patch_is_filtered`).
-* The bootstrap carrier (preamble + manifest + CRC) is plain LSB replacement in the reserved top rows; it is detectable and not secret.
+* The bootstrap-v3 carrier (sync word + encrypted header + encrypted DEFLATE(manifest) + CRC) is written by ±1 LSB matching at keyed, pseudo-random pixels removed from every patch (`bootstrap-v3-design.md`). Its position is hidden from anyone without the session key; the ±1 changes themselves are not claimed undetectable.
 
 ## 7. References
 * Pevný, Filler, Bas — *Using High-Dimensional Image Models to Perform Highly Undetectable Steganography*, IH 2010. https://doi.org/10.1007/978-3-642-16435-4_13

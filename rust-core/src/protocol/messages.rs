@@ -19,6 +19,8 @@ use serde::{Deserialize, Serialize};
 /// fresh GCS nonce.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EnrollmentBody {
+    /// Cryptographic suite of the enrolled keys (signed; must equal `crypto::suite::SUITE_ID`).
+    pub suite: String,
     pub drone_id: String,
     pub group_id: String,
     pub pk_kem: Vec<u8>,
@@ -34,7 +36,8 @@ pub struct EnrollmentBody {
 impl EnrollmentBody {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut c = Canon::new("ENROLL");
-        c.str(&self.drone_id)
+        c.str(&self.suite)
+            .str(&self.drone_id)
             .str(&self.group_id)
             .bytes(&self.pk_kem)
             .bytes(&self.pk_dil)

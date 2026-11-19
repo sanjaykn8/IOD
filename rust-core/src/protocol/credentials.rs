@@ -13,12 +13,15 @@ use crate::protocol::canon::Canon;
 use crate::zkhash::Limbs;
 use serde::{Deserialize, Serialize};
 
-pub const CRED_VERSION: u32 = 2;
+/// 3: adds the signed cryptographic-suite identifier (FIPS 203/204 migration).
+pub const CRED_VERSION: u32 = 3;
 pub const CRED_VALIDITY_MS: u64 = 30 * 24 * 3600 * 1000;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CredentialBody {
     pub version: u32,
+    /// Cryptographic suite of `pk_kem` / `pk_dil` (signed; see `crypto::suite`).
+    pub suite: String,
     /// Random pseudonymous identifier; NOT the permanent DroneID.
     pub cred_id: [u8; 16],
     pub group_id: String,
@@ -34,6 +37,7 @@ impl CredentialBody {
     pub fn signing_bytes(&self) -> Vec<u8> {
         let mut c = Canon::new("CREDENTIAL");
         c.u32(self.version)
+            .str(&self.suite)
             .bytes(&self.cred_id)
             .str(&self.group_id)
             .bytes(&self.pk_kem)
@@ -61,6 +65,8 @@ pub enum CredentialError {
     Expired,
     #[error("credential version unsupported")]
     Version,
+    #[error("credential belongs to another cryptographic suite")]
+    Suite,
     #[error("credential commitment does not match its public keys")]
     CommitmentMismatch,
 }
@@ -76,6 +82,9 @@ impl SignedCredential {
     pub fn verify(&self, trust_anchor: &SignPublicKey, now_ms: u64) -> Result<(), CredentialError> {
         if self.body.version != CRED_VERSION {
             return Err(CredentialError::Version);
+        }
+        if crate::crypto::suite::require(&self.body.suite).is_err() {
+            return Err(CredentialError::Suite);
         }
         if !sign::verify_transcript(trust_anchor, &self.body.signing_bytes(), &Signature(self.sig.clone())) {
             return Err(CredentialError::BadSignature);
@@ -111,6 +120,7 @@ mod tests {
         (
             CredentialBody {
                 version: CRED_VERSION,
+                suite: crate::crypto::suite::SUITE_ID.into(),
                 cred_id: [3; 16],
                 group_id: "alpha".into(),
                 comm_pk: comm_pk(&kpk.0, &dpk.0),
@@ -145,8 +155,24 @@ mod tests {
         t.body.pk_dil[0] ^= 1;
         assert_eq!(t.verify(&anchor, now + 10), Err(CredentialError::BadSignature));
         let mut t = c.clone();
-        t.body.version = 1;
-        assert_eq!(t.verify(&anchor, now + 10), Err(CredentialError::Version));
+        t.body.version = 2;
+        assert_eq!(t.verify(&anchor, now + 10), Err(CredentialError::Version), "pre-migration credential version");
+    }
+
+    #[test]
+    fn credentials_of_another_suite_are_rejected_even_when_validly_signed() {
+        let now = 1_700_000_000_000u64;
+        for suite in [crate::crypto::suite::LEGACY_SUITE_ID, ""] {
+            let (mut b, anchor, sk) = body(now);
+            b.suite = suite.into();
+            let c = issue(&sk, b).unwrap();
+            assert_eq!(c.verify(&anchor, now + 10), Err(CredentialError::Suite), "{suite}");
+        }
+        // relabelling a valid credential breaks the signature
+        let (b, anchor, sk) = body(now);
+        let mut c = issue(&sk, b).unwrap();
+        c.body.suite = crate::crypto::suite::LEGACY_SUITE_ID.into();
+        assert_eq!(c.verify(&anchor, now + 10), Err(CredentialError::Suite));
     }
 
     #[test]

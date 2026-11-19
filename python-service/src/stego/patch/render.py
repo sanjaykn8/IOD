@@ -19,7 +19,9 @@ def palette(n):
     return (np.stack([r, g, b], axis=1) * 255).astype(np.uint8)
 
 
-def overlay_png(arr, labels, n, reserved_rows=0):
+def overlay_png(arr, labels, n):
+    """Segmentation overlay. Carrier pixels are deliberately NOT marked: their positions are as
+    sensitive as the stego image and never leave the embedding step."""
     gray = S.luma_of(arr)
     base = np.repeat(gray[:, :, None], 3, axis=2)
     out = 0.5 * base + 0.5 * palette(n)[labels].astype(np.float64)
@@ -27,6 +29,4 @@ def overlay_png(arr, labels, n, reserved_rows=0):
     edge[:, 1:] |= labels[:, 1:] != labels[:, :-1]
     edge[1:, :] |= labels[1:, :] != labels[:-1, :]
     out[edge] = (20, 20, 20)
-    if reserved_rows:
-        out[:reserved_rows] = 0.6 * out[:reserved_rows] + 0.4 * np.array([255.0, 255.0, 255.0])
     return images.encode_png(np.clip(out, 0, 255).astype(np.uint8))

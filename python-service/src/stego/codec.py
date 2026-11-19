@@ -1,14 +1,16 @@
-"""Patch-wise embedding/extraction of a Frame v2 (shared by service, learning and tests).
+"""Patch-wise embedding/extraction of a Frame v3 with a bootstrap-v3 carrier (service, tests, evaluation).
 
-embed_frame : frame bytes (already built + MACed by Rust) -> stego array
-extract_frame: stego array -> reconstructed frame bytes
-The receiver NEVER segments: masks come from the manifest read out of the image.
-Nothing here is trusted until the Rust core verifies the frame MAC.
+embed_frame  : frame (built + MACed by Rust) + value stream + encrypted carrier bits -> stego array
+read_carrier : stego array + value stream -> carrier bits (for Rust to check, decrypt and parse)
+extract_frame: stego array + manifest (decoded and validated by Rust) + value stream -> frame bytes
+
+The receiver NEVER segments: masks come from the manifest Rust hands back. This module holds no key and
+cannot locate the carrier on its own; nothing here is trusted until the Rust core verifies the frame MAC.
 """
 
 import numpy as np
 
-from . import bootstrap
+from . import bootstrap as B
 from .algorithms import get_by_id
 from .errors import StegoError
 from .images import check_array
@@ -35,16 +37,23 @@ def _resolve(entry, patch_id):
     return alg, p
 
 
-def embed_frame(cover, frame, limits):
-    """Embed `frame` (Frame v2) into a copy of `cover` exactly as its manifest prescribes.
-    Returns (stego, manifest, per_patch list)."""
+def embed_frame(cover, frame, limits, values, carrier, n_bits, rng=None):
+    """Embed `frame` (Frame v3) into a copy of `cover` exactly as its manifest prescribes, then write the
+    carrier bits into the reserved carrier pixels. Returns (stego, manifest, per_patch, carrier_info)."""
     check_array(cover, limits)
     man_bytes, payload = M.split_frame(frame, limits.max_frame_bytes)
     man = M.parse(man_bytes, max(limits.max_width, limits.max_height))
     _check_against_image(man, cover)
     if man.payload_len != len(payload):
         raise StegoError("MANIFEST_INVALID", "manifest payload length differs from the frame")
-    eff = M.effective_masks(man)
+    ch = man.channels
+    if not B.LOCATOR_BITS < n_bits <= 8 * len(carrier) or n_bits % 8:
+        raise StegoError("INVALID_REQUEST", "carrier bit count invalid")
+    if n_bits > man.carrier_pixels * ch:
+        raise StegoError("INVALID_REQUEST", "carrier larger than the reserved carrier pixels",
+                         {"carrier_bits": n_bits, "reserved_slots": man.carrier_pixels * ch})
+    reserved = M.carrier_positions(man, values)
+    eff = M.effective_masks(man, reserved)
     ctx = CoverCtx(cover)
     out = cover.copy()
     per_patch = []
@@ -77,25 +86,35 @@ def embed_frame(cover, frame, limits):
     changed = (out != cover) if cover.ndim == 2 else (out != cover).any(axis=2)
     if np.any(changed & ~allowed):
         raise StegoError("PATCH_EMBED_FAILED", "an algorithm modified pixels outside its patch")
-    used_bits = bootstrap.write_carrier(out.reshape(-1), man_bytes, len(frame))
-    ch = man.channels
-    if used_bits > man.reserved_rows * man.width * ch:
-        raise StegoError("INTERNAL_ERROR", "bootstrap carrier exceeds its reserved rows")
-    return out, man, per_patch
+    # carrier last: its pixels are disjoint from every patch mask
+    changed_carrier = B.write_bits(out, reserved, carrier, n_bits, rng)
+    written = -(-n_bits // ch)
+    allowed.reshape(-1)[reserved[:written]] = True
+    changed = (out != cover) if cover.ndim == 2 else (out != cover).any(axis=2)
+    if np.any(changed & ~allowed):
+        raise StegoError("INTERNAL_ERROR", "carrier write touched pixels outside the reserved carrier pixels")
+    if B.read_bits(out, reserved, 0, n_bits) != bytes(carrier[:n_bits // 8]):
+        raise StegoError("EMBED_VERIFY_FAILED", "carrier did not read back")
+    info = {"version": B.VERSION, "carrier_pixels": man.carrier_pixels, "carrier_bits": n_bits,
+            "carrier_pixels_written": written, "carrier_changed_samples": changed_carrier}
+    return out, man, per_patch, info
 
 
-def extract_frame(arr, limits):
-    """Read preamble + manifest from the image, rebuild the masks from the manifest, extract every
-    chunk and return (frame_bytes, manifest, preamble, per_patch). Fails closed on any inconsistency."""
+def read_carrier(arr, values, skip, n_bits):
+    """Carrier bits at slots [skip, skip + n_bits) of the pixels the value stream maps to."""
+    return B.read_bits(arr, B.positions(values, arr.shape[0] * arr.shape[1]), skip, n_bits)
+
+
+def extract_frame(arr, man_bytes, values, limits):
+    """Rebuild the masks from `man_bytes` (already validated by Rust; parsed again here) without the
+    reserved carrier pixels, extract every chunk and return (frame_bytes, manifest, per_patch)."""
     check_array(arr, limits)
-    flat = arr.reshape(-1)
-    pre, man_bytes = bootstrap.read_carrier(flat, limits.max_frame_bytes)
     man = M.parse(man_bytes, max(limits.max_width, limits.max_height))
     _check_against_image(man, arr)
-    wire_len = pre.frame_len - M.FRAME_HEADER_LEN - pre.manifest_len - M.TAG_LEN
-    if wire_len < 1 or man.payload_len != wire_len + M.TAG_LEN:
-        raise StegoError("FRAME_LENGTH_INVALID", "bootstrap frame length inconsistent with the manifest")
-    eff = M.effective_masks(man)
+    wire_len = man.payload_len - M.TAG_LEN
+    if M.frame_len_for(len(man_bytes), wire_len) > limits.max_frame_bytes:
+        raise StegoError("FRAME_TOO_LARGE", "frame described by the manifest exceeds the maximum")
+    eff = M.effective_masks(man, M.carrier_positions(man, values))
     payload = bytearray(man.payload_len)
     per_patch = []
     for i, e in enumerate(man.patches):
@@ -115,7 +134,5 @@ def extract_frame(arr, limits):
         payload[e.offset:e.offset + e.length] = chunk
         per_patch.append({"patch_id": i, "algorithm": alg.name, "alg_id": alg.id, "param": p,
                           "payload_offset": e.offset, "payload_length": e.length, "status": "extracted"})
-    frame = M.frame_header(pre.manifest_len, wire_len) + man_bytes + bytes(payload)
-    if len(frame) != pre.frame_len:
-        raise StegoError("FRAME_LENGTH_INVALID", "reconstructed frame length mismatch")
-    return frame, man, pre, per_patch
+    frame = M.frame_header(len(man_bytes), wire_len) + bytes(man_bytes) + bytes(payload)
+    return frame, man, per_patch

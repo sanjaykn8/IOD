@@ -6,7 +6,7 @@ use super::snapshots::{DroneLocalSnapshot, GcsSnapshot};
 use crate::protocol::entities::GcsState;
 use crate::protocol::events::ProtocolEvent;
 use crate::trace::{SuspicionFlag, TraceRecord};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 
 #[derive(Default, Clone, Debug)]
 pub struct StegoEventFilter {
@@ -76,6 +76,17 @@ impl Database {
                 data TEXT NOT NULL
             );
             CREATE INDEX IF NOT EXISTS idx_stego_events_ts ON stego_events(ts_ms);
+            -- state written under another cryptographic suite (e.g. Round-3 Kyber/Dilithium);
+            -- archived verbatim at start-up, never loaded (see storage::snapshots docs)
+            CREATE TABLE IF NOT EXISTS legacy_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                archived_ms INTEGER NOT NULL,
+                kind TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                detected_suite TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                data TEXT NOT NULL
+            );
             -- EDUCATIONAL workbench records (never mixed with operational stego_events)
             CREATE TABLE IF NOT EXISTS learn_experiments (
                 id TEXT PRIMARY KEY,
@@ -107,6 +118,7 @@ impl Database {
         if let Some(row) = rows.next()? {
             let data: String = row.get(0)?;
             let snap: GcsSnapshot = serde_json::from_str(&data)?;
+            crate::crypto::suite::require(&snap.suite)?;
             Ok(Some(GcsState::from_snapshot(snap)))
         } else {
             Ok(None)
@@ -286,9 +298,90 @@ impl Database {
         }
     }
 
+    /// Start-up migration guard. Moves every persisted identity row that does not
+    /// belong to the active suite into `legacy_snapshots` and deletes it from the
+    /// live tables, so it can never be loaded as current-suite state. Rows with no
+    /// `suite` field were written by releases before the FIPS migration and are
+    /// labelled `LEGACY_SUITE_ID`. When the GCS row is archived, every drone row is
+    /// archived too (their credentials name a trust anchor that no longer exists).
+    /// Idempotent; returns what was archived by THIS call.
+    pub fn quarantine_incompatible(&self) -> anyhow::Result<serde_json::Value> {
+        use crate::crypto::suite::{LEGACY_SUITE_ID, SUITE_ID};
+        let detect = |data: &str| -> String {
+            match serde_json::from_str::<serde_json::Value>(data) {
+                Ok(v) => v.get("suite").and_then(|s| s.as_str()).map(str::to_string).unwrap_or_else(|| LEGACY_SUITE_ID.to_string()),
+                Err(_) => "<unparseable>".to_string(),
+            }
+        };
+        let now = crate::protocol::events::now_unix_ms() as i64;
+        let mut archived = Vec::new();
+        let tx = self.conn.unchecked_transaction()?;
+        let gcs_row: Option<String> = tx.query_row("SELECT data FROM gcs_state WHERE id = 1", [], |r| r.get(0)).optional()?;
+        let mut gcs_archived = false;
+        if let Some(data) = gcs_row {
+            let suite = detect(&data);
+            if suite != SUITE_ID {
+                tx.execute("INSERT INTO legacy_snapshots (archived_ms, kind, entity_id, detected_suite, reason, data) VALUES (?1, 'gcs', 'gcs', ?2, ?3, ?4)",
+                           params![now, suite, "GCS identity from another cryptographic suite", data])?;
+                tx.execute("DELETE FROM gcs_state", [])?;
+                archived.push(serde_json::json!({"kind": "gcs", "id": "gcs", "detected_suite": suite}));
+                gcs_archived = true;
+            }
+        }
+        let drones: Vec<(String, String)> = {
+            let mut st = tx.prepare("SELECT drone_id, data FROM drones_local")?;
+            let rows = st.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?.collect::<Result<Vec<_>, _>>()?;
+            rows
+        };
+        for (id, data) in drones {
+            let suite = detect(&data);
+            let reason = if suite != SUITE_ID {
+                Some("drone identity from another cryptographic suite")
+            } else if gcs_archived {
+                Some("GCS trust anchor was archived; drone must re-register")
+            } else {
+                match serde_json::from_str::<DroneLocalSnapshot>(&data).map_err(anyhow::Error::from).and_then(crate::protocol::entities::DroneState::from_local_snapshot) {
+                    Ok(_) => None,
+                    Err(_) => Some("stored device keys failed validation"),
+                }
+            };
+            if let Some(reason) = reason {
+                tx.execute("INSERT INTO legacy_snapshots (archived_ms, kind, entity_id, detected_suite, reason, data) VALUES (?1, 'drone', ?2, ?3, ?4, ?5)",
+                           params![now, id, suite, reason, data])?;
+                tx.execute("DELETE FROM drones_local WHERE drone_id = ?1", params![id])?;
+                archived.push(serde_json::json!({"kind": "drone", "id": id, "detected_suite": suite, "reason": reason}));
+            }
+        }
+        tx.commit()?;
+        Ok(serde_json::json!({"archived_now": archived}))
+    }
+
+    /// Summary of archived incompatible rows (no key material; ids, suites, reasons).
+    pub fn legacy_snapshot_summary(&self) -> anyhow::Result<serde_json::Value> {
+        let mut st = self.conn.prepare("SELECT archived_ms, kind, entity_id, detected_suite, reason FROM legacy_snapshots ORDER BY id")?;
+        let rows = st
+            .query_map([], |r| {
+                Ok(serde_json::json!({"archived_ms": r.get::<_, i64>(0)?, "kind": r.get::<_, String>(1)?, "id": r.get::<_, String>(2)?,
+                                      "detected_suite": r.get::<_, String>(3)?, "reason": r.get::<_, String>(4)?}))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(serde_json::json!({"count": rows.len(), "rows": rows}))
+    }
+
+    /// Test/diagnostic helper: write a raw row into a live identity table.
+    #[doc(hidden)]
+    pub fn put_raw_identity_row(&self, kind: &str, id: &str, data: &str) -> anyhow::Result<()> {
+        match kind {
+            "gcs" => self.conn.execute("INSERT INTO gcs_state (id, data) VALUES (1, ?1) ON CONFLICT(id) DO UPDATE SET data = excluded.data", params![data])?,
+            _ => self.conn.execute("INSERT INTO drones_local (drone_id, data) VALUES (?1, ?2) ON CONFLICT(drone_id) DO UPDATE SET data = excluded.data", params![id, data])?,
+        };
+        Ok(())
+    }
+
     pub fn reset_all(&self) -> anyhow::Result<()> {
         self.conn.execute_batch(
             r#"
+            DELETE FROM legacy_snapshots;
             DELETE FROM gcs_state;
             DELETE FROM drones_local;
             DELETE FROM protocol_events;
@@ -379,6 +472,89 @@ mod tests {
         db.save_drone_local(&d1.to_local_snapshot()).unwrap();
         db.reset_all().unwrap();
         assert!(db.load_gcs().unwrap().is_none());
+        assert!(db.load_all_drone_ids().unwrap().is_empty());
+    }
+
+    fn registered() -> (GcsState, DroneState) {
+        let mut gcs = GcsState::new();
+        let mut d1 = DroneState::new("drone-1", [1u8; 32]);
+        register_drone(&mut gcs, &mut d1, "alpha", MembershipMetadata { role: "recon".into(), issued_at_unix: 1 }, 6).unwrap();
+        (gcs, d1)
+    }
+
+    #[test]
+    fn current_suite_rows_are_kept_by_the_start_up_guard() {
+        let (gcs, d1) = registered();
+        let db = Database::open_in_memory().unwrap();
+        db.save_gcs(&gcs).unwrap();
+        db.save_drone_local(&d1.to_local_snapshot()).unwrap();
+        assert_eq!(db.quarantine_incompatible().unwrap()["archived_now"].as_array().unwrap().len(), 0);
+        assert!(db.load_gcs().unwrap().is_some());
+        assert_eq!(db.load_all_drone_ids().unwrap(), vec!["drone-1".to_string()]);
+        assert_eq!(db.legacy_snapshot_summary().unwrap()["count"], 0);
+    }
+
+    #[test]
+    fn pre_migration_rows_are_archived_never_loaded() {
+        // Rows as written by the Round-3 release: same structure, no `suite` field,
+        // Dilithium2-sized private keys. Built from a current row to keep the shape.
+        let (gcs, d1) = registered();
+        let mut g = serde_json::to_value(gcs.to_snapshot()).unwrap();
+        g.as_object_mut().unwrap().remove("suite");
+        g["sign_sk"] = serde_json::json!(vec![0u8; 2528]);
+        let mut d = serde_json::to_value(d1.to_local_snapshot()).unwrap();
+        d.as_object_mut().unwrap().remove("suite");
+        d["keys"].as_object_mut().unwrap().remove("suite");
+        let db = Database::open_in_memory().unwrap();
+        db.put_raw_identity_row("gcs", "gcs", &g.to_string()).unwrap();
+        db.put_raw_identity_row("drone", "drone-1", &d.to_string()).unwrap();
+        // loading directly is refused, not reinterpreted
+        assert!(db.load_gcs().is_err());
+        let out = db.quarantine_incompatible().unwrap();
+        let a = out["archived_now"].as_array().unwrap();
+        assert_eq!(a.len(), 2);
+        assert!(a.iter().all(|r| r["detected_suite"] == crate::crypto::suite::LEGACY_SUITE_ID));
+        assert!(db.load_gcs().unwrap().is_none());
+        assert!(db.load_all_drone_ids().unwrap().is_empty());
+        let sum = db.legacy_snapshot_summary().unwrap();
+        assert_eq!(sum["count"], 2);
+        assert!(!sum.to_string().contains("sign_sk"), "the summary carries no key material");
+        // idempotent
+        assert_eq!(db.quarantine_incompatible().unwrap()["archived_now"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn mixed_or_inconsistent_rows_are_archived() {
+        let (gcs, d1) = registered();
+        let db = Database::open_in_memory().unwrap();
+        db.save_gcs(&gcs).unwrap();
+        // a drone row labelled with another suite
+        let mut other = serde_json::to_value(d1.to_local_snapshot()).unwrap();
+        other["suite"] = serde_json::json!("iod-fips203-mlkem768-fips204-mldsa44-v2");
+        db.put_raw_identity_row("drone", "drone-x", &other.to_string()).unwrap();
+        // a current-suite row whose public key does not match its private seed
+        let mut bad = serde_json::to_value(d1.to_local_snapshot()).unwrap();
+        bad["keys"]["kem_pk"] = serde_json::to_value(crate::crypto::kem::keypair().0).unwrap();
+        db.put_raw_identity_row("drone", "drone-y", &bad.to_string()).unwrap();
+        db.save_drone_local(&d1.to_local_snapshot()).unwrap();
+        let out = db.quarantine_incompatible().unwrap();
+        let ids: Vec<&str> = out["archived_now"].as_array().unwrap().iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&"drone-x") && ids.contains(&"drone-y"));
+        assert_eq!(db.load_all_drone_ids().unwrap(), vec!["drone-1".to_string()]);
+        assert!(db.load_gcs().unwrap().is_some(), "a current GCS row stays");
+    }
+
+    #[test]
+    fn archiving_the_gcs_also_archives_its_drones() {
+        let (gcs, d1) = registered();
+        let mut g = serde_json::to_value(gcs.to_snapshot()).unwrap();
+        g["suite"] = serde_json::json!(crate::crypto::suite::LEGACY_SUITE_ID);
+        let db = Database::open_in_memory().unwrap();
+        db.put_raw_identity_row("gcs", "gcs", &g.to_string()).unwrap();
+        db.save_drone_local(&d1.to_local_snapshot()).unwrap();
+        let out = db.quarantine_incompatible().unwrap();
+        assert_eq!(out["archived_now"].as_array().unwrap().len(), 2);
         assert!(db.load_all_drone_ids().unwrap().is_empty());
     }
 }

@@ -52,715 +52,663 @@
    "runs": [
     {
      "algorithms_used": {
-      "lsb_matching": 3,
-      "s_uniward": 1
+      "s_uniward": 4
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "5eb53e68579f4b42b3d4e8be637356ea",
+      "cover_id": "39d4a1291e8c48aa975cf53297967462",
       "family": "strata",
-      "generation_ms": 327.288,
+      "generation_ms": 311.639,
+      "height": 240,
+      "quality_score": 0.9749,
+      "seed_fingerprint": "0d9d8a9e3880fca7",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 33,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 570.25
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "18e64e25b2d7473aa09c3e633f243861",
+      "family": "cells",
+      "generation_ms": 325.738,
+      "height": 240,
+      "quality_score": 0.9464,
+      "seed_fingerprint": "6dba74be94f86c57",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 34,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 563.102
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "ad0739ef308f421bac55795b42710c65",
+      "family": "strata",
+      "generation_ms": 303.673,
       "height": 240,
       "quality_score": 0.9617,
-      "seed_fingerprint": "e4903e7a60637b3b",
+      "seed_fingerprint": "b75b66ee1be5fa4a",
       "width": 320
      },
      "error_code": null,
-     "event_id": 3,
-     "iteration": 0,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 501.465
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 3,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "074b92cfc24940b0ae38d7930f4741bf",
-      "family": "strata",
-      "generation_ms": 325.257,
-      "height": 240,
-      "quality_score": 0.9658,
-      "seed_fingerprint": "86fb0a8ad7d5b699",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 4,
-     "iteration": 1,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 502.021
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "cbd25203ca6448cebd1936c0438f3bc2",
-      "family": "terrain",
-      "generation_ms": 236.357,
-      "height": 240,
-      "quality_score": 1,
-      "seed_fingerprint": "a1c8ddd7985b24b0",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 5,
+     "event_id": 35,
      "iteration": 2,
      "ok": true,
      "payload_bytes": 64,
-     "total_ms": 347.024
+     "total_ms": 574.584
     },
     {
      "algorithms_used": {
-      "lsb_matching": 4
+      "s_uniward": 4
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "c5e80c2c808041469c3d8f5bc0b77ea6",
-      "family": "cells",
-      "generation_ms": 275.639,
+      "cover_id": "584b75162d8c4431a58c61ca4939d845",
+      "family": "clouds",
+      "generation_ms": 342.433,
       "height": 240,
-      "quality_score": 0.974,
-      "seed_fingerprint": "c94e50f31650986f",
+      "quality_score": 0.9404,
+      "seed_fingerprint": "3deade8de23d6e3d",
       "width": 320
      },
      "error_code": null,
-     "event_id": 6,
+     "event_id": 36,
      "iteration": 3,
      "ok": true,
      "payload_bytes": 64,
-     "total_ms": 398.652
+     "total_ms": 594.207
     },
     {
      "algorithms_used": {
-      "dct": 2,
-      "s_uniward": 2
+      "s_uniward": 4
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "953b95b57ecc4a7ebbac380254ea10c8",
-      "family": "terrain",
-      "generation_ms": 299.642,
+      "cover_id": "993b61a6a2ce4ae39dc5a34d52288200",
+      "family": "cells",
+      "generation_ms": 325.27,
       "height": 240,
-      "quality_score": 0.9636,
-      "seed_fingerprint": "e98881b16934035e",
+      "quality_score": 0.9545,
+      "seed_fingerprint": "f4ba4cedc265eddf",
       "width": 320
      },
      "error_code": null,
-     "event_id": 7,
+     "event_id": 37,
      "iteration": 4,
      "ok": true,
      "payload_bytes": 64,
-     "total_ms": 486.303
+     "total_ms": 572.06
     },
     {
      "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 2
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "0b07b21a1b124b12a95b61cc33e09311",
-      "family": "cells",
-      "generation_ms": 264.597,
-      "height": 240,
-      "quality_score": 0.9729,
-      "seed_fingerprint": "8d716f0f8348bda8",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 8,
-     "iteration": 5,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 393.107
-    },
-    {
-     "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 2
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "fc0394e23a264375a8ae7bdb1217289f",
-      "family": "strata",
-      "generation_ms": 325.777,
-      "height": 240,
-      "quality_score": 0.9159,
-      "seed_fingerprint": "1022376eb9ecb3a5",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 9,
-     "iteration": 6,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 449.376
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "88abddd4ba454cb4871df582734e5fa6",
-      "family": "cells",
-      "generation_ms": 236.572,
-      "height": 240,
-      "quality_score": 0.9534,
-      "seed_fingerprint": "70fbb6165e8dec68",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 10,
-     "iteration": 7,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 361.186
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "d5af48f6df1649fb975769f3dcb2713f",
-      "family": "clouds",
-      "generation_ms": 246.482,
-      "height": 240,
-      "quality_score": 0.978,
-      "seed_fingerprint": "1b95f690024f7342",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 11,
-     "iteration": 8,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 377.092
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 1,
-      "s_uniward": 2
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "f992cbb0757841719cebe3704950f25e",
-      "family": "clouds",
-      "generation_ms": 406.571,
-      "height": 240,
-      "quality_score": 0.9945,
-      "seed_fingerprint": "83d5c955777ccc3f",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 12,
-     "iteration": 9,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 607.718
-    },
-    {
-     "algorithms_used": {
-      "dct": 4,
       "s_uniward": 4
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "78f111310f844e4a963f15ba8104b904",
-      "family": "clouds",
-      "generation_ms": 376.954,
-      "height": 240,
-      "quality_score": 0.9501,
-      "seed_fingerprint": "0ec47a668f0b2b5f",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 13,
-     "iteration": 0,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 647.478
-    },
-    {
-     "algorithms_used": {
-      "dct": 3,
-      "lsb_matching": 4,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "a574a582b2d040bbb5eaa8727d2858cd",
-      "family": "cells",
-      "generation_ms": 348.409,
-      "height": 240,
-      "quality_score": 0.9788,
-      "seed_fingerprint": "380272e2a614bfc1",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 14,
-     "iteration": 1,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 530.617
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 3,
-      "s_uniward": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "dba3852ab67f430198005b76b13f75ea",
-      "family": "strata",
-      "generation_ms": 335.272,
-      "height": 240,
-      "quality_score": 0.9928,
-      "seed_fingerprint": "a4573e67e6d17c2b",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 15,
-     "iteration": 2,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 557.254
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "s_uniward": 7
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "06f2a3fc27fc46368a97dafa1d67fbe6",
-      "family": "clouds",
-      "generation_ms": 382.009,
-      "height": 240,
-      "quality_score": 0.9223,
-      "seed_fingerprint": "b7a0fec4bfc2e55d",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 16,
-     "iteration": 3,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 646.012
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 5,
-      "s_uniward": 2,
-      "wow": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "c4e7875c047148fa90bd72865f90535f",
-      "family": "strata",
-      "generation_ms": 367.426,
-      "height": 240,
-      "quality_score": 0.9945,
-      "seed_fingerprint": "2a968ea9c4e8a1c3",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 17,
-     "iteration": 4,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 623.291
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 3,
-      "s_uniward": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "f8999f86675c4f0e9a5fbe5aa12dd858",
-      "family": "clouds",
-      "generation_ms": 361.023,
-      "height": 240,
-      "quality_score": 0.9846,
-      "seed_fingerprint": "383f9f566e7edcc3",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 18,
-     "iteration": 5,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 573.383
-    },
-    {
-     "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 2,
-      "s_uniward": 3
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "b6ecbb1afcab4863953309b83a49232a",
-      "family": "clouds",
-      "generation_ms": 388.17,
-      "height": 240,
-      "quality_score": 0.9598,
-      "seed_fingerprint": "1339af62ba7c2e0d",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 19,
-     "iteration": 6,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 620.668
-    },
-    {
-     "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 5,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "a825e9bd52104274b0630759a2dbab83",
-      "family": "cells",
-      "generation_ms": 342.668,
-      "height": 240,
-      "quality_score": 0.9692,
-      "seed_fingerprint": "1132e1c208215bb4",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 20,
-     "iteration": 7,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 540.063
-    },
-    {
-     "algorithms_used": {
-      "dct": 5,
-      "s_uniward": 3
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "1f368264dbe74e3e8d987df86191b13a",
-      "family": "clouds",
-      "generation_ms": 313.705,
-      "height": 240,
-      "quality_score": 0.985,
-      "seed_fingerprint": "cf1e86c35c3767e3",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 21,
-     "iteration": 8,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 552.442
-    },
-    {
-     "algorithms_used": {
-      "dct": 4,
-      "lsb_matching": 2,
-      "s_uniward": 2
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "68cad7f30acd4992b5406d6420d19156",
-      "family": "strata",
-      "generation_ms": 306.054,
-      "height": 240,
-      "quality_score": 0.9593,
-      "seed_fingerprint": "72d96836d3c9fb2b",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 22,
-     "iteration": 9,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 518.931
-    },
-    {
-     "algorithms_used": {
-      "dct": 2,
-      "s_uniward": 7
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "2c7af5acf25a47648f3e0300838cda9b",
+      "cover_id": "db2f353c99e640628c655c34f89a583c",
       "family": "terrain",
-      "generation_ms": 419.3,
+      "generation_ms": 302.315,
       "height": 240,
-      "quality_score": 0.9503,
-      "seed_fingerprint": "3655cbdabe545dd3",
+      "quality_score": 0.9938,
+      "seed_fingerprint": "92f1fbf419642cf2",
       "width": 320
      },
      "error_code": null,
-     "event_id": 23,
-     "iteration": 0,
+     "event_id": 38,
+     "iteration": 5,
      "ok": true,
-     "payload_bytes": 1024,
-     "total_ms": 731.49
+     "payload_bytes": 64,
+     "total_ms": 535.716
     },
     {
      "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 1,
-      "lsb_replacement": 1,
-      "s_uniward": 5
+      "s_uniward": 4
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "66d6c0913ca648df965d1ff6bed92f20",
-      "family": "clouds",
-      "generation_ms": 545.129,
+      "cover_id": "f7d09b40fd5b4acb9a39258e72fba722",
+      "family": "strata",
+      "generation_ms": 297.928,
       "height": 240,
-      "quality_score": 0.9466,
-      "seed_fingerprint": "2420a6f50ae02b59",
+      "quality_score": 0.9924,
+      "seed_fingerprint": "63c69878bfe7484a",
       "width": 320
      },
      "error_code": null,
-     "event_id": 24,
-     "iteration": 1,
+     "event_id": 39,
+     "iteration": 6,
      "ok": true,
-     "payload_bytes": 1024,
-     "total_ms": 863.199
+     "payload_bytes": 64,
+     "total_ms": 570.153
     },
     {
      "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 1,
-      "lsb_replacement": 3,
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "fb72e9809d6e42ca96b2f003326fafb6",
+      "family": "clouds",
+      "generation_ms": 329.041,
+      "height": 240,
+      "quality_score": 0.9374,
+      "seed_fingerprint": "2876cda8acff269c",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 40,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 610.042
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "867b5b176dfc424daf0e77a7b0781bca",
+      "family": "terrain",
+      "generation_ms": 323.04,
+      "height": 240,
+      "quality_score": 0.9984,
+      "seed_fingerprint": "e45501b6f5195175",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 41,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 572.022
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "40dfbf9c9ee847748040c44d659de2ba",
+      "family": "clouds",
+      "generation_ms": 412.385,
+      "height": 240,
+      "quality_score": 0.9769,
+      "seed_fingerprint": "d51945f8aae93203",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 42,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 653.758
+    },
+    {
+     "algorithms_used": {
       "s_uniward": 8
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "9dfc32af063d42fa9fb7fcb98e58ffba",
+      "cover_id": "f837a43a363f4023a026eb49d8ba22ff",
       "family": "cells",
-      "generation_ms": 386.604,
+      "generation_ms": 394.658,
       "height": 240,
-      "quality_score": 0.9218,
-      "seed_fingerprint": "6964909664f4448d",
+      "quality_score": 0.9833,
+      "seed_fingerprint": "7ff37e58e8399db7",
       "width": 320
      },
      "error_code": null,
-     "event_id": 25,
+     "event_id": 43,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 706.565
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 7
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "0d55401ae03045468bcb02339917f989",
+      "family": "terrain",
+      "generation_ms": 340.475,
+      "height": 240,
+      "quality_score": 0.9104,
+      "seed_fingerprint": "3765ff9afe430a6c",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 44,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 648.042
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "5b3a13a267e4457f8c081258208b6b9d",
+      "family": "cells",
+      "generation_ms": 341.508,
+      "height": 240,
+      "quality_score": 0.927,
+      "seed_fingerprint": "a15f3fda2e7ae963",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 45,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 647.108
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "508471a799c94264aaad88d2c0588f91",
+      "family": "strata",
+      "generation_ms": 355.545,
+      "height": 240,
+      "quality_score": 0.9564,
+      "seed_fingerprint": "c684bc0fe7b8a473",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 46,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 644.576
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "d2a98a7fe11a47c7bcf0fbd36738312b",
+      "family": "clouds",
+      "generation_ms": 394.963,
+      "height": 240,
+      "quality_score": 0.9933,
+      "seed_fingerprint": "eb55f70bc3f5bcd8",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 47,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 672.865
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "8027e4a2e41c4d05820b0f4bed1d1592",
+      "family": "cells",
+      "generation_ms": 366.028,
+      "height": 240,
+      "quality_score": 0.9823,
+      "seed_fingerprint": "75dc01630ece260e",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 48,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 653.316
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "7bb2932c1c574ffeb5f1215101e13d01",
+      "family": "clouds",
+      "generation_ms": 370.471,
+      "height": 240,
+      "quality_score": 0.9659,
+      "seed_fingerprint": "bc4df7df4216e1d7",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 49,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 677.3
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "00d34856d122487b9037f46657c3bcc1",
+      "family": "cells",
+      "generation_ms": 419.1,
+      "height": 240,
+      "quality_score": 0.985,
+      "seed_fingerprint": "3ecc484353847b80",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 50,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 734.488
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "4ad8dff23b444f08982b18fae1a6dac5",
+      "family": "strata",
+      "generation_ms": 337.519,
+      "height": 240,
+      "quality_score": 1,
+      "seed_fingerprint": "c694153ab6fda91a",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 51,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 617.613
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "3d7f428a18a14627b0a75788020d3924",
+      "family": "terrain",
+      "generation_ms": 375.913,
+      "height": 240,
+      "quality_score": 0.962,
+      "seed_fingerprint": "7ffa04fcd6b3f6e1",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 52,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 680.898
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "c657a9f8daa04cf99bce1a79312f7fb3",
+      "family": "clouds",
+      "generation_ms": 457.969,
+      "height": 240,
+      "quality_score": 0.9272,
+      "seed_fingerprint": "da4571ef26884225",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 53,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 853.539
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 9
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "5142d1fce8c14ea0b0dee28173d64025",
+      "family": "cells",
+      "generation_ms": 459.612,
+      "height": 240,
+      "quality_score": 0.9768,
+      "seed_fingerprint": "657f9e58b09aecea",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 54,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 1024,
+     "total_ms": 856.032
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 13
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "9027e5a612cf4717823c82ea20729a24",
+      "family": "terrain",
+      "generation_ms": 459.443,
+      "height": 240,
+      "quality_score": 0.9897,
+      "seed_fingerprint": "7a5b27e932032493",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 55,
      "iteration": 2,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 755.944
+     "total_ms": 930.706
     },
     {
      "algorithms_used": {
-      "dct": 4,
-      "lsb_matching": 4,
-      "lsb_replacement": 3,
-      "s_uniward": 3
+      "s_uniward": 12
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "fca92feb6f774e8791f37e6fe810a16f",
+      "cover_id": "838c0a42312644168dae48913693f18a",
       "family": "strata",
-      "generation_ms": 511.99,
+      "generation_ms": 516.457,
       "height": 240,
-      "quality_score": 0.9803,
-      "seed_fingerprint": "a7ef6c54997f8032",
+      "quality_score": 0.9996,
+      "seed_fingerprint": "93295979cebd9f94",
       "width": 320
      },
      "error_code": null,
-     "event_id": 26,
+     "event_id": 56,
      "iteration": 3,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 736.464
+     "total_ms": 939.954
     },
     {
      "algorithms_used": {
-      "dct": 3,
-      "lsb_matching": 3,
-      "lsb_replacement": 1,
-      "s_uniward": 4
+      "s_uniward": 9
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "e511f51b3739463ba730c63d983467fd",
+      "cover_id": "bb10393ee42f4eb8836958d0adb53e79",
       "family": "terrain",
-      "generation_ms": 391.402,
+      "generation_ms": 437.247,
       "height": 240,
-      "quality_score": 0.9957,
-      "seed_fingerprint": "19a9de23a90a030d",
+      "quality_score": 0.9271,
+      "seed_fingerprint": "d0006d2eb2e05c72",
       "width": 320
      },
      "error_code": null,
-     "event_id": 27,
+     "event_id": 57,
      "iteration": 4,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 634.949
+     "total_ms": 864.614
     },
     {
      "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 2,
-      "lsb_replacement": 2,
-      "s_uniward": 6
+      "s_uniward": 8
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "61b3bf19526c4ef7af562e262f99dba3",
+      "cover_id": "b57e525f602741e2b0f80da708b75b42",
       "family": "terrain",
-      "generation_ms": 379.688,
+      "generation_ms": 459.241,
       "height": 240,
-      "quality_score": 0.998,
-      "seed_fingerprint": "e2f9fc9ac2fba58e",
+      "quality_score": 0.946,
+      "seed_fingerprint": "560b9a33ae66ff3e",
       "width": 320
      },
      "error_code": null,
-     "event_id": 28,
+     "event_id": 58,
      "iteration": 5,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 757.475
+     "total_ms": 916.832
     },
     {
      "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 6,
-      "lsb_replacement": 4,
-      "s_uniward": 2,
-      "wow": 2
+      "s_uniward": 15
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "d84d9c768a854be980ce6701a431f1f1",
-      "family": "terrain",
-      "generation_ms": 401.435,
+      "cover_id": "170020a0bc5e4f5f8750aff69a272a9c",
+      "family": "strata",
+      "generation_ms": 510.553,
       "height": 240,
-      "quality_score": 0.9598,
-      "seed_fingerprint": "dc23c5a0c3631992",
+      "quality_score": 0.9711,
+      "seed_fingerprint": "245db912b5329bb8",
       "width": 320
      },
      "error_code": null,
-     "event_id": 29,
+     "event_id": 59,
      "iteration": 6,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 717.4
+     "total_ms": 1015.249
     },
     {
      "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 8,
-      "s_uniward": 6
+      "s_uniward": 8
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "3613bc0f1fa34164be3dd2b5497f1328",
-      "family": "strata",
-      "generation_ms": 351.778,
+      "cover_id": "21464c691e5e4d3cb1358be5964978fe",
+      "family": "clouds",
+      "generation_ms": 515.25,
       "height": 240,
-      "quality_score": 0.9132,
-      "seed_fingerprint": "1ec6b1bf6324a3fb",
+      "quality_score": 0.9532,
+      "seed_fingerprint": "f12a187907f0b2e5",
       "width": 320
      },
      "error_code": null,
-     "event_id": 30,
+     "event_id": 60,
      "iteration": 7,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 676.765
+     "total_ms": 949.397
     },
     {
      "algorithms_used": {
-      "dct": 3,
-      "lsb_matching": 1,
-      "lsb_replacement": 1,
-      "s_uniward": 5
+      "s_uniward": 13
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "4600737a4d2747b08c395fb4e827955e",
-      "family": "terrain",
-      "generation_ms": 511.932,
+      "cover_id": "29057e42abcb49a4a6350bcd9c0b012d",
+      "family": "cells",
+      "generation_ms": 437.532,
       "height": 240,
-      "quality_score": 0.9788,
-      "seed_fingerprint": "1eb9e4c30a071244",
+      "quality_score": 0.8938,
+      "seed_fingerprint": "bd473230640cb8a5",
       "width": 320
      },
      "error_code": null,
-     "event_id": 31,
+     "event_id": 61,
      "iteration": 8,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 891.096
+     "total_ms": 833.442
     },
     {
      "algorithms_used": {
-      "dct": 3,
-      "lsb_matching": 2,
-      "lsb_replacement": 2,
-      "s_uniward": 5
+      "s_uniward": 11
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "dacb012e52f94bb8a12ecafc6b8eda5f",
-      "family": "terrain",
-      "generation_ms": 391.565,
+      "cover_id": "59b580f3f697446bac629b08080df49d",
+      "family": "strata",
+      "generation_ms": 560.88,
       "height": 240,
-      "quality_score": 1,
-      "seed_fingerprint": "4679d0469a425cb7",
+      "quality_score": 0.9496,
+      "seed_fingerprint": "92b856c074c1d91a",
       "width": 320
      },
      "error_code": null,
-     "event_id": 32,
+     "event_id": 62,
      "iteration": 9,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 745.679
+     "total_ms": 940.304
     }
    ],
    "samples": 30,
@@ -775,24 +723,24 @@
       "p95": 2
      },
      "cover_quality_score": {
-      "mean": 0.9673566666666665,
+      "mean": 0.9625500000000001,
       "n": 30,
-      "p50": 0.97105,
-      "p95": 0.9991
+      "p50": 0.96395,
+      "p95": 0.99906
      },
      "covers_generated": 30,
      "failures": {},
      "families": {
-      "cells": 6,
-      "clouds": 8,
+      "cells": 8,
+      "clouds": 7,
       "strata": 8,
-      "terrain": 8
+      "terrain": 7
      },
      "generation_used_ms": {
-      "mean": 358.5565,
+      "mean": 392.7942,
       "n": 30,
-      "p50": 356.4005,
-      "p95": 511.9639
+      "p50": 373.192,
+      "p95": 515.91385
      },
      "metric_kinds": {
       "cover_quality_score": "heuristic coherence of the cover before embedding (not a steganalysis detector)",
@@ -807,7 +755,7 @@
     "environment": {
      "scope": "benchmark_run"
     },
-    "generated_ms": 1794774849202,
+    "generated_ms": 1795106822122,
     "limitations": [
      "Host-simulation measurements on one machine; not representative of drone hardware. A resource profile such as raspberry_pi_5_cpu enforces that device's LIMITS on this host; it does not reproduce its speed, and these figures are not Raspberry Pi measurements.",
      "Covers are procedurally generated images (no pretrained model). The cover quality score is a documented heuristic, not a steganalysis detector, and no generated cover or embedding is claimed to be undetectable.",
@@ -820,41 +768,41 @@
     ],
     "overall": {
      "frame_bytes": {
-      "mean": 1090.7,
+      "mean": 1086,
       "n": 30,
-      "p50": 875,
-      "p95": 1790.1
+      "p50": 904,
+      "p95": 1742.6999999999998
      },
      "image_bytes": {
-      "mean": 109148,
+      "mean": 105073.3,
       "n": 30,
-      "p50": 105748,
-      "p95": 136770.44999999998
+      "p50": 103158.5,
+      "p95": 123534.54999999999
      },
      "manifest_bytes": {
-      "mean": 528.7,
+      "mean": 524,
       "n": 30,
-      "p50": 508,
-      "p95": 674.2
+      "p50": 502,
+      "p95": 663
      },
      "mse": {
-      "mean": 0.215274,
+      "mean": 0.0080801,
       "n": 30,
-      "p50": 0.1598135,
-      "p95": 0.5568421499999999
+      "p50": 0.007209,
+      "p95": 0.012744049999999998
      },
      "n_ok": 30,
      "patch_count": {
-      "mean": 11.3,
+      "mean": 10.733333333333333,
       "n": 30,
-      "p50": 11.5,
-      "p95": 15
+      "p50": 11,
+      "p95": 14.549999999999997
      },
      "psnr": {
-      "mean": 57.51441333333333,
+      "mean": 69.33277666666666,
       "n": 30,
-      "p50": 56.09465,
-      "p95": 67.64018
+      "p50": 69.55199999999999,
+      "p95": 71.30577
      },
      "refinement_level": {
       "mean": 0,
@@ -863,128 +811,104 @@
       "p95": 0
      },
      "ssim": {
-      "mean": 0.99872926765,
+      "mean": 0.99994953438,
       "n": 30,
-      "p50": 0.9992839495500001,
-      "p95": 0.9999745896400001
+      "p50": 0.9999531399,
+      "p95": 0.999975413525
      },
      "timings_ms": {
       "aead_open": {
-       "mean": 0.01383333333333334,
+       "mean": 0.011800000000000005,
        "n": 30,
-       "p50": 0.013,
-       "p95": 0.018
+       "p50": 0.011,
+       "p95": 0.014
       },
       "aead_seal": {
-       "mean": 0.09026666666666668,
+       "mean": 0.3485333333333333,
        "n": 30,
-       "p50": 0.017,
-       "p95": 0.3164499999999998
+       "p50": 0.328,
+       "p95": 0.5900499999999999
       },
       "cover_generate": {
-       "mean": 163.41143333333332,
+       "mean": 144.6814,
        "n": 30,
-       "p50": 160.986,
-       "p95": 208.71015
+       "p50": 140.8085,
+       "p95": 180.15825
       },
       "cover_prescreen": {
-       "mean": 36.916900000000005,
+       "mean": 32.652499999999996,
        "n": 30,
-       "p50": 34.8305,
-       "p95": 48.115249999999996
+       "p50": 31.795,
+       "p95": 39.90659999999998
       },
       "cover_selection_total": {
-       "mean": 358.5565,
+       "mean": 392.7942,
        "n": 30,
-       "p50": 356.4005,
-       "p95": 511.9639
+       "p50": 373.192,
+       "p95": 515.91385
       },
       "embed": {
-       "mean": 104.80066666666669,
+       "mean": 162.49003333333334,
        "n": 30,
-       "p50": 96.79050000000001,
-       "p95": 230.78504999999993
+       "p50": 130.433,
+       "p95": 300.40104999999994
       },
       "extract": {
-       "mean": 17.369666666666667,
+       "mean": 52.4375,
        "n": 30,
-       "p50": 17.036,
-       "p95": 20.46695
+       "p50": 51.9055,
+       "p95": 56.837149999999994
       },
       "load_cover": {
-       "mean": 3.185066666666666,
+       "mean": 3.3021333333333325,
        "n": 30,
-       "p50": 3.1295,
-       "p95": 3.77675
+       "p50": 3.0010000000000003,
+       "p95": 4.526099999999998
       },
       "plan": {
-       "mean": 158.05273333333332,
+       "mean": 215.3237666666667,
        "n": 30,
-       "p50": 151.75,
-       "p95": 264.26829999999995
+       "p50": 188.16899999999998,
+       "p95": 336.49015
       },
       "read": {
-       "mean": 0.10436666666666668,
+       "mean": 0.09036666666666668,
        "n": 30,
-       "p50": 0.094,
-       "p95": 0.17869999999999991
+       "p50": 0.08549999999999999,
+       "p95": 0.11839999999999998
       },
       "save": {
-       "mean": 1.6532000000000004,
+       "mean": 1.3142333333333336,
        "n": 30,
-       "p50": 1.646,
-       "p95": 1.9326999999999999
+       "p50": 1.322,
+       "p95": 1.55295
       },
       "total": {
-       "mean": 589.1072666666665,
+       "mean": 717.0859999999999,
        "n": 30,
-       "p50": 587.8965000000001,
-       "p95": 812.7425499999997
+       "p50": 660.7935,
+       "p95": 943.7508999999999
       },
       "verify": {
-       "mean": 0.012933333333333335,
+       "mean": 0.019866666666666668,
        "n": 30,
-       "p50": 0.01,
-       "p95": 0.03209999999999994
+       "p50": 0.02,
+       "p95": 0.03524999999999996
       }
      },
      "used_patches": {
-      "mean": 8,
+      "mean": 7.5,
       "n": 30,
       "p50": 8,
-      "p95": 14.549999999999997
+      "p95": 13
      }
     },
     "per_algorithm": [
      {
-      "algorithm": "dct",
-      "events": 23,
-      "patches": 53,
-      "payload_bytes": 3496
-     },
-     {
-      "algorithm": "lsb_matching",
-      "events": 25,
-      "patches": 79,
-      "payload_bytes": 4524
-     },
-     {
-      "algorithm": "lsb_replacement",
-      "events": 8,
-      "patches": 17,
-      "payload_bytes": 1515
-     },
-     {
       "algorithm": "s_uniward",
-      "events": 24,
-      "patches": 88,
-      "payload_bytes": 6652
-     },
-     {
-      "algorithm": "wow",
-      "events": 2,
-      "patches": 3,
-      "payload_bytes": 193
+      "events": 30,
+      "patches": 225,
+      "payload_bytes": 16380
      }
     ],
     "schema": "stego-report-3",
@@ -1040,246 +964,233 @@
    "runs": [
     {
      "algorithms_used": {
-      "hugo": 2,
-      "lsb_matching": 5,
-      "lsb_replacement": 1,
-      "s_uniward": 4,
-      "wow": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "4c1edcb7acb84860afc26bf6949a775f",
-      "family": "clouds",
-      "generation_ms": 796.536,
-      "height": 240,
-      "quality_score": 0.993,
-      "seed_fingerprint": "21320e52293057eb",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 33,
-     "iteration": 0,
-     "ok": true,
-     "payload_bytes": 4096,
-     "total_ms": 1535.226
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 2,
-      "lsb_replacement": 2,
-      "pvd": 1,
-      "s_uniward": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "3e023443884d4d39973d52fe44b77e3d",
-      "family": "clouds",
-      "generation_ms": 594.982,
-      "height": 240,
-      "quality_score": 0.9845,
-      "seed_fingerprint": "aaa313b20aa5b334",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 34,
-     "iteration": 1,
-     "ok": true,
-     "payload_bytes": 4096,
-     "total_ms": 1060.397
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "lsb_replacement": 6,
+      "pvd": 6,
       "s_uniward": 9
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "ca373420dff64541adfcbc61200edb2c",
-      "family": "cells",
-      "generation_ms": 647.982,
+      "cover_id": "ab803f7ed4f6467a8ad27ef3a7fac49c",
+      "family": "terrain",
+      "generation_ms": 683.796,
       "height": 240,
-      "quality_score": 0.9764,
-      "seed_fingerprint": "0b0d3696776853f7",
+      "quality_score": 0.9352,
+      "seed_fingerprint": "3ead247d01cc2afe",
       "width": 320
      },
      "error_code": null,
-     "event_id": 35,
-     "iteration": 2,
+     "event_id": 63,
+     "iteration": 0,
      "ok": true,
      "payload_bytes": 4096,
-     "total_ms": 1182.916
+     "total_ms": 1228.933
     },
     {
      "algorithms_used": {
-      "lsb_matching": 3,
-      "lsb_replacement": 2,
-      "s_uniward": 6
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "e66d446f21f14b5a876c7b71f91d5612",
-      "family": "strata",
-      "generation_ms": 611.33,
-      "height": 240,
-      "quality_score": 0.9713,
-      "seed_fingerprint": "23ffef22416c1eb7",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 36,
-     "iteration": 3,
-     "ok": true,
-     "payload_bytes": 4096,
-     "total_ms": 1096.827
-    },
-    {
-     "algorithms_used": {
-      "lsb_replacement": 4,
-      "pvd": 1,
+      "pvd": 6,
       "s_uniward": 5
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "420761dd872a46fe8659b38dadafb888",
-      "family": "cells",
-      "generation_ms": 654.94,
+      "cover_id": "c59ef87d60604d7196259e4584fab32f",
+      "family": "terrain",
+      "generation_ms": 594.394,
       "height": 240,
-      "quality_score": 0.9804,
-      "seed_fingerprint": "bcd55cdb186d898f",
+      "quality_score": 0.9929,
+      "seed_fingerprint": "9962720a59fa4993",
       "width": 320
      },
      "error_code": null,
-     "event_id": 37,
-     "iteration": 4,
+     "event_id": 64,
+     "iteration": 1,
      "ok": true,
      "payload_bytes": 4096,
-     "total_ms": 1231.19
+     "total_ms": 1123.193
     },
     {
      "algorithms_used": {
-      "lsb_matching": 7,
-      "s_uniward": 7
+      "pvd": 3,
+      "s_uniward": 8
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "659c5aecbb854a569ab10430e3531d08",
-      "family": "terrain",
-      "generation_ms": 619.208,
+      "cover_id": "a844a13fc519468c8064786b12e25eba",
+      "family": "strata",
+      "generation_ms": 668.056,
       "height": 240,
-      "quality_score": 0.9723,
-      "seed_fingerprint": "b335abe775e6d9e0",
+      "quality_score": 0.9556,
+      "seed_fingerprint": "9a7151d3ff659b6a",
       "width": 320
      },
      "error_code": null,
-     "event_id": 38,
-     "iteration": 5,
+     "event_id": 65,
+     "iteration": 2,
      "ok": true,
      "payload_bytes": 4096,
-     "total_ms": 1059.266
+     "total_ms": 1322.38
     },
     {
      "algorithms_used": {
       "pvd": 2,
-      "s_uniward": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "86c83036cb3c45a797f21e8033c7d824",
-      "family": "clouds",
-      "generation_ms": 664.318,
-      "height": 240,
-      "quality_score": 0.9136,
-      "seed_fingerprint": "35deda0a1862641e",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 39,
-     "iteration": 6,
-     "ok": true,
-     "payload_bytes": 4096,
-     "total_ms": 1214.93
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 3,
-      "lsb_replacement": 2,
-      "s_uniward": 6,
-      "wow": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "623c4c51eb754bc1ac8fbbcc90d6b519",
-      "family": "strata",
-      "generation_ms": 753.64,
-      "height": 240,
-      "quality_score": 0.9572,
-      "seed_fingerprint": "d347cfe098473ebc",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 40,
-     "iteration": 7,
-     "ok": true,
-     "payload_bytes": 4096,
-     "total_ms": 1362.752
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 4,
-      "lsb_replacement": 2,
-      "pvd": 1,
-      "s_uniward": 6
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "c2accfbeef4f49c78cb4e2f5fffd0bca",
-      "family": "strata",
-      "generation_ms": 534.617,
-      "height": 240,
-      "quality_score": 0.9337,
-      "seed_fingerprint": "c5de8b527dc8d888",
-      "width": 320
-     },
-     "error_code": null,
-     "event_id": 41,
-     "iteration": 8,
-     "ok": true,
-     "payload_bytes": 4096,
-     "total_ms": 960.69
-    },
-    {
-     "algorithms_used": {
-      "lsb_matching": 1,
-      "lsb_replacement": 3,
       "s_uniward": 7
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "54759fdb1b2d42d2a5e68032ae27f1d0",
+      "cover_id": "eac1860ba5eb477eb8d5c07a09c922d2",
       "family": "terrain",
-      "generation_ms": 656.783,
+      "generation_ms": 682.419,
       "height": 240,
-      "quality_score": 1,
-      "seed_fingerprint": "c311076bb77570ef",
+      "quality_score": 0.9443,
+      "seed_fingerprint": "fe55788c2472a264",
       "width": 320
      },
      "error_code": null,
-     "event_id": 42,
+     "event_id": 66,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 4096,
+     "total_ms": 1323.213
+    },
+    {
+     "algorithms_used": {
+      "pvd": 2,
+      "s_uniward": 11
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "802419c6285446d29e8579040a979087",
+      "family": "strata",
+      "generation_ms": 715.875,
+      "height": 240,
+      "quality_score": 0.9962,
+      "seed_fingerprint": "a84d37bbac8e8d22",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 67,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 4096,
+     "total_ms": 1302.976
+    },
+    {
+     "algorithms_used": {
+      "pvd": 2,
+      "s_uniward": 7
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "c02ad894f1a2421e8be4d418dc1704bc",
+      "family": "terrain",
+      "generation_ms": 654.273,
+      "height": 240,
+      "quality_score": 0.9113,
+      "seed_fingerprint": "1143391bd742501f",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 68,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 4096,
+     "total_ms": 1390.041
+    },
+    {
+     "algorithms_used": {
+      "pvd": 3,
+      "s_uniward": 10
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "8ec4bdef6a05400abcbc17faeee371cc",
+      "family": "terrain",
+      "generation_ms": 621.58,
+      "height": 240,
+      "quality_score": 0.9923,
+      "seed_fingerprint": "1dfcb561fef06ba9",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 69,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 4096,
+     "total_ms": 1212.448
+    },
+    {
+     "algorithms_used": {
+      "pvd": 5,
+      "s_uniward": 7
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "420b218716ef4092aaebb510349fd62a",
+      "family": "clouds",
+      "generation_ms": 569.002,
+      "height": 240,
+      "quality_score": 0.9933,
+      "seed_fingerprint": "06a31fd5ebeafcd7",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 70,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 4096,
+     "total_ms": 1052.558
+    },
+    {
+     "algorithms_used": {
+      "pvd": 3,
+      "s_uniward": 9
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "eb4afc36559e4211805977d3e00327de",
+      "family": "cells",
+      "generation_ms": 641.691,
+      "height": 240,
+      "quality_score": 0.9934,
+      "seed_fingerprint": "03ce0efc4e4adfeb",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 71,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 4096,
+     "total_ms": 1194.978
+    },
+    {
+     "algorithms_used": {
+      "pvd": 3,
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "37af821528a84ee3a7f51dee21ae31b7",
+      "family": "strata",
+      "generation_ms": 620.294,
+      "height": 240,
+      "quality_score": 0.9893,
+      "seed_fingerprint": "b8db6f69237cba90",
+      "width": 320
+     },
+     "error_code": null,
+     "event_id": 72,
      "iteration": 9,
      "ok": true,
      "payload_bytes": 4096,
-     "total_ms": 1149.959
+     "total_ms": 1175.755
     }
    ],
    "samples": 10,
@@ -1294,7 +1205,7 @@
       "p95": null
      },
      "cover_quality_score": {
-      "mean": 0.96824,
+      "mean": 0.9703799999999999,
       "n": 10,
       "p50": null,
       "p95": null
@@ -1302,13 +1213,13 @@
      "covers_generated": 10,
      "failures": {},
      "families": {
-      "cells": 2,
-      "clouds": 3,
+      "cells": 1,
+      "clouds": 1,
       "strata": 3,
-      "terrain": 2
+      "terrain": 5
      },
      "generation_used_ms": {
-      "mean": 653.4336000000001,
+      "mean": 645.1380000000001,
       "n": 10,
       "p50": null,
       "p95": null
@@ -1326,7 +1237,7 @@
     "environment": {
      "scope": "benchmark_run"
     },
-    "generated_ms": 1794774861118,
+    "generated_ms": 1795106834509,
     "limitations": [
      "Host-simulation measurements on one machine; not representative of drone hardware. A resource profile such as raspberry_pi_5_cpu enforces that device's LIMITS on this host; it does not reproduce its speed, and these figures are not Raspberry Pi measurements.",
      "Covers are procedurally generated images (no pretrained model). The cover quality score is a documented heuristic, not a steganalysis detector, and no generated cover or embedding is claimed to be undetectable.",
@@ -1339,38 +1250,38 @@
     ],
     "overall": {
      "frame_bytes": {
-      "mean": 4747.8,
+      "mean": 4776.9,
       "n": 10,
       "p50": null,
       "p95": null
      },
      "image_bytes": {
-      "mean": 111990.2,
+      "mean": 113664,
       "n": 10,
       "p50": null,
       "p95": null
      },
      "manifest_bytes": {
-      "mean": 537.8,
+      "mean": 566.9,
       "n": 10,
       "p50": null,
       "p95": null
      },
      "mse": {
-      "mean": 0.4734822,
+      "mean": 0.9825704,
       "n": 10,
       "p50": null,
       "p95": null
      },
      "n_ok": 10,
      "patch_count": {
-      "mean": 11.5,
+      "mean": 11.6,
       "n": 10,
       "p50": null,
       "p95": null
      },
      "psnr": {
-      "mean": 55.11053,
+      "mean": 49.102549999999994,
       "n": 10,
       "p50": null,
       "p95": null
@@ -1382,93 +1293,93 @@
       "p95": null
      },
      "ssim": {
-      "mean": 0.9985834821100001,
+      "mean": 0.99703356042,
       "n": 10,
       "p50": null,
       "p95": null
      },
      "timings_ms": {
       "aead_open": {
-       "mean": 0.015999999999999997,
+       "mean": 0.013999999999999999,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "aead_seal": {
-       "mean": 0.017499999999999998,
+       "mean": 0.15430000000000002,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "cover_generate": {
-       "mean": 165.7258,
+       "mean": 142.6779,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "cover_prescreen": {
-       "mean": 36.851,
+       "mean": 33.4146,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "cover_selection_total": {
-       "mean": 653.4336000000001,
+       "mean": 645.1380000000001,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "embed": {
-       "mean": 397.92760000000004,
+       "mean": 421.1857,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "extract": {
-       "mean": 20.290100000000002,
+       "mean": 53.7623,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "load_cover": {
-       "mean": 3.3408,
+       "mean": 3.1721999999999997,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "plan": {
-       "mean": 450.69090000000006,
+       "mean": 468.9112999999999,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "read": {
-       "mean": 0.11019999999999999,
+       "mean": 0.09839999999999999,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "save": {
-       "mean": 1.6585,
+       "mean": 1.3053000000000001,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "total": {
-       "mean": 1183.0489,
+       "mean": 1230.8975,
        "n": 10,
        "p50": null,
        "p95": null
       },
       "verify": {
-       "mean": 0.013000000000000001,
+       "mean": 0.011599999999999997,
        "n": 10,
        "p50": null,
        "p95": null
       }
      },
      "used_patches": {
-      "mean": 11.5,
+      "mean": 11.6,
       "n": 10,
       "p50": null,
       "p95": null
@@ -1476,46 +1387,16 @@
     },
     "per_algorithm": [
      {
-      "algorithm": "dct",
-      "events": 1,
-      "patches": 1,
-      "payload_bytes": 262
-     },
-     {
-      "algorithm": "hugo",
-      "events": 1,
-      "patches": 2,
-      "payload_bytes": 646
-     },
-     {
-      "algorithm": "lsb_matching",
-      "events": 7,
-      "patches": 25,
-      "payload_bytes": 8511
-     },
-     {
-      "algorithm": "lsb_replacement",
-      "events": 8,
-      "patches": 22,
-      "payload_bytes": 7763
-     },
-     {
       "algorithm": "pvd",
-      "events": 4,
-      "patches": 5,
-      "payload_bytes": 2607
+      "events": 10,
+      "patches": 35,
+      "payload_bytes": 12540
      },
      {
       "algorithm": "s_uniward",
       "events": 10,
-      "patches": 58,
-      "payload_bytes": 21479
-     },
-     {
-      "algorithm": "wow",
-      "events": 2,
-      "patches": 2,
-      "payload_bytes": 672
+      "patches": 81,
+      "payload_bytes": 29400
      }
     ],
     "schema": "stego-report-3",
@@ -1571,702 +1452,663 @@
    "runs": [
     {
      "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 1,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "f8292097d42b497e8f74491b06fb1078",
-      "family": "strata",
-      "generation_ms": 1609.802,
-      "height": 480,
-      "quality_score": 0.9301,
-      "seed_fingerprint": "41532aa4a7ef1b1c",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 43,
-     "iteration": 0,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 2315.604
-    },
-    {
-     "algorithms_used": {
-      "dct": 3,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "019c947d496a4236bbf6151dbdfffb01",
-      "family": "strata",
-      "generation_ms": 1300.648,
-      "height": 480,
-      "quality_score": 0.9113,
-      "seed_fingerprint": "68bd6010425c1eb3",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 44,
-     "iteration": 1,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 1882.337
-    },
-    {
-     "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 1,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "9d04c013661c40a2b734f428829a1de5",
-      "family": "terrain",
-      "generation_ms": 1538.145,
-      "height": 480,
-      "quality_score": 1,
-      "seed_fingerprint": "9575a51582bf7440",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 45,
-     "iteration": 2,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 2082.557
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 2,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "1435c4e8c3504cf88e2fb1c02f28fb93",
-      "family": "terrain",
-      "generation_ms": 1610.29,
-      "height": 480,
-      "quality_score": 0.9847,
-      "seed_fingerprint": "c20963e63747c636",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 46,
-     "iteration": 3,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 2153.074
-    },
-    {
-     "algorithms_used": {
-      "dct": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "0c5f720506be4b3bb1ae611714198ed1",
-      "family": "clouds",
-      "generation_ms": 1053.588,
-      "height": 480,
-      "quality_score": 0.9378,
-      "seed_fingerprint": "43f87f658f2d74d0",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 47,
-     "iteration": 4,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 1428.427
-    },
-    {
-     "algorithms_used": {
-      "dct": 4
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "780a7873b77b4da8b0837b73e85098a8",
-      "family": "cells",
-      "generation_ms": 1023.366,
-      "height": 480,
-      "quality_score": 0.9926,
-      "seed_fingerprint": "6556c6f14d060964",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 48,
-     "iteration": 5,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 1437.292
-    },
-    {
-     "algorithms_used": {
-      "dct": 3,
-      "s_uniward": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "ddd5927bd8e748339a0552f76808495a",
-      "family": "terrain",
-      "generation_ms": 1525.433,
-      "height": 480,
-      "quality_score": 0.9479,
-      "seed_fingerprint": "dbd3738cd8125379",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 49,
-     "iteration": 6,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 2119.626
-    },
-    {
-     "algorithms_used": {
-      "dct": 1,
-      "lsb_matching": 1,
-      "wow": 2
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "c947b45dc34b4fdcaff45b49ce50e9bd",
-      "family": "terrain",
-      "generation_ms": 1496.419,
-      "height": 480,
-      "quality_score": 0.966,
-      "seed_fingerprint": "1753ae6395c77d6e",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 50,
-     "iteration": 7,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 2059.391
-    },
-    {
-     "algorithms_used": {
-      "dct": 2,
-      "s_uniward": 2
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "6173a97f5f08435d87010a3f14f7d36b",
-      "family": "strata",
-      "generation_ms": 1587.918,
-      "height": 480,
-      "quality_score": 0.9139,
-      "seed_fingerprint": "8cd3f8068785dcb4",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 51,
-     "iteration": 8,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 2197.687
-    },
-    {
-     "algorithms_used": {
-      "dct": 3,
-      "lsb_matching": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "892b22e816b345bab6450c30445b2016",
-      "family": "cells",
-      "generation_ms": 1276.32,
-      "height": 480,
-      "quality_score": 0.9611,
-      "seed_fingerprint": "f7fcd2ee315b1b87",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 52,
-     "iteration": 9,
-     "ok": true,
-     "payload_bytes": 64,
-     "total_ms": 1626.202
-    },
-    {
-     "algorithms_used": {
-      "dct": 5,
-      "s_uniward": 3
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "6c6290a84f7b43f99519b8148d6da83d",
-      "family": "cells",
-      "generation_ms": 1457.67,
-      "height": 480,
-      "quality_score": 0.9944,
-      "seed_fingerprint": "b79e653c92c94bae",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 53,
-     "iteration": 0,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 2087.788
-    },
-    {
-     "algorithms_used": {
-      "dct": 5,
-      "s_uniward": 3
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "cd6ef2bf4d9948178d9d649d2d2e99e2",
-      "family": "cells",
-      "generation_ms": 1336.479,
-      "height": 480,
-      "quality_score": 1,
-      "seed_fingerprint": "a9e1bbd313de0a06",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 54,
-     "iteration": 1,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 2048.405
-    },
-    {
-     "algorithms_used": {
-      "dct": 4,
-      "lsb_matching": 1,
-      "s_uniward": 3
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "174a0a26721e49ac9f64bdd30dd0d21c",
-      "family": "strata",
-      "generation_ms": 1686.211,
-      "height": 480,
-      "quality_score": 0.9633,
-      "seed_fingerprint": "7bacb63d258c626a",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 55,
-     "iteration": 2,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 2291.731
-    },
-    {
-     "algorithms_used": {
-      "dct": 8
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "a7af266b17f4472d81b6054eb580f53a",
-      "family": "terrain",
-      "generation_ms": 1107.276,
-      "height": 480,
-      "quality_score": 0.9036,
-      "seed_fingerprint": "06374c5065976495",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 56,
-     "iteration": 3,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 1490.011
-    },
-    {
-     "algorithms_used": {
-      "dct": 4,
-      "lsb_matching": 2,
-      "s_uniward": 1,
-      "wow": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "e9bd4649ac5a46c5a2bff1d9e88df6f0",
-      "family": "strata",
-      "generation_ms": 1664.493,
-      "height": 480,
-      "quality_score": 0.9995,
-      "seed_fingerprint": "e948213571af7539",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 57,
-     "iteration": 4,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 2462.91
-    },
-    {
-     "algorithms_used": {
-      "dct": 5,
-      "s_uniward": 3
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "495a8d200549468fb9617183e1e3b242",
-      "family": "cells",
-      "generation_ms": 1314.329,
-      "height": 480,
-      "quality_score": 0.9488,
-      "seed_fingerprint": "24528de5289a1793",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 58,
-     "iteration": 5,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 1921.589
-    },
-    {
-     "algorithms_used": {
-      "dct": 7,
-      "lsb_matching": 1
-     },
-     "cover": {
-      "budget_exceeded": false,
-      "candidates": 2,
-      "cover_id": "b84067be908c4a75b70df1b5eb956730",
-      "family": "clouds",
-      "generation_ms": 1249.932,
-      "height": 480,
-      "quality_score": 0.9686,
-      "seed_fingerprint": "c8a835d6a53e24cb",
-      "width": 640
-     },
-     "error_code": null,
-     "event_id": 59,
-     "iteration": 6,
-     "ok": true,
-     "payload_bytes": 256,
-     "total_ms": 1696.973
-    },
-    {
-     "algorithms_used": {
-      "dct": 4,
       "s_uniward": 4
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "12ecf69344d8469aa03b03132d29d80e",
-      "family": "terrain",
-      "generation_ms": 1448.77,
+      "cover_id": "6db35522cfe34c9fb605b68729c5eea8",
+      "family": "strata",
+      "generation_ms": 1331.229,
       "height": 480,
-      "quality_score": 1,
-      "seed_fingerprint": "0acd8204e5f40046",
+      "quality_score": 0.9407,
+      "seed_fingerprint": "0e00dea5af5f3313",
       "width": 640
      },
      "error_code": null,
-     "event_id": 60,
+     "event_id": 73,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 2012.356
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "c6355a155bca4f108220e8287c5ec618",
+      "family": "cells",
+      "generation_ms": 1222.203,
+      "height": 480,
+      "quality_score": 0.9805,
+      "seed_fingerprint": "e66aab64fa8bb8ba",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 74,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 1932.414
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "dde96d04a2044181b98e77ad7fd11db9",
+      "family": "terrain",
+      "generation_ms": 1334.532,
+      "height": 480,
+      "quality_score": 0.9386,
+      "seed_fingerprint": "6b2e9a9ae14287f5",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 75,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 2036.094
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "9423586d9fed407998321e0544eeeea6",
+      "family": "cells",
+      "generation_ms": 1310.405,
+      "height": 480,
+      "quality_score": 0.9686,
+      "seed_fingerprint": "b0ba0ff3bfbb4fa6",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 76,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 2093.636
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "eabadd2d4b354052a20b57ee9fb1e227",
+      "family": "cells",
+      "generation_ms": 1398.223,
+      "height": 480,
+      "quality_score": 1,
+      "seed_fingerprint": "e770fff9bc4aff3a",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 77,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 2041.726
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "3a4b41916ec64edca3c8465d4a390ca1",
+      "family": "terrain",
+      "generation_ms": 1139.423,
+      "height": 480,
+      "quality_score": 0.9146,
+      "seed_fingerprint": "0a00fcc61bd94966",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 78,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 1768.432
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "d208e70bbac241c1988539c56a96333e",
+      "family": "strata",
+      "generation_ms": 1291.755,
+      "height": 480,
+      "quality_score": 0.9878,
+      "seed_fingerprint": "de4de8dcc6899165",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 79,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 1898.717
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "44c8f9a9402740fabfa15904b0e0f493",
+      "family": "cells",
+      "generation_ms": 1338.231,
+      "height": 480,
+      "quality_score": 0.9972,
+      "seed_fingerprint": "50358128332a6531",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 80,
+     "iteration": 7,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 1973.797
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "653fc329d2f24dcf824092566d51a59b",
+      "family": "cells",
+      "generation_ms": 1227.537,
+      "height": 480,
+      "quality_score": 0.9992,
+      "seed_fingerprint": "015f9a88a990f8cf",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 81,
+     "iteration": 8,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 1920.875
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 4
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "02f042afff71418387c15947413bf1ed",
+      "family": "cells",
+      "generation_ms": 1130.91,
+      "height": 480,
+      "quality_score": 0.9811,
+      "seed_fingerprint": "9f599fd77be2af07",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 82,
+     "iteration": 9,
+     "ok": true,
+     "payload_bytes": 64,
+     "total_ms": 1856.12
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "566ab31cd4004bc99ad76807ec402351",
+      "family": "cells",
+      "generation_ms": 1400.314,
+      "height": 480,
+      "quality_score": 0.9918,
+      "seed_fingerprint": "973de979c37095ad",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 83,
+     "iteration": 0,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 2074.11
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "bba0596f3cc34f9d8fe2810419029b03",
+      "family": "cells",
+      "generation_ms": 1233.21,
+      "height": 480,
+      "quality_score": 0.9923,
+      "seed_fingerprint": "197b5c1bf755c492",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 84,
+     "iteration": 1,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 1950.441
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "3d4cb9fed0344d09a3961369bc8f6f77",
+      "family": "terrain",
+      "generation_ms": 1314.873,
+      "height": 480,
+      "quality_score": 0.9774,
+      "seed_fingerprint": "0cf2950b7cd4d564",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 85,
+     "iteration": 2,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 2020.755
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "a5c5ab577af849de9935a048296047f0",
+      "family": "cells",
+      "generation_ms": 1348.904,
+      "height": 480,
+      "quality_score": 1,
+      "seed_fingerprint": "5dc882cf78734d88",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 86,
+     "iteration": 3,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 2078.002
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "6a93ae93ae57489e866067876abcab4f",
+      "family": "terrain",
+      "generation_ms": 1493.885,
+      "height": 480,
+      "quality_score": 0.9725,
+      "seed_fingerprint": "cfba78bbcc47e3be",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 87,
+     "iteration": 4,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 2227.09
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "21fbf4ae6fca43ecb025ac2ff0e929fe",
+      "family": "terrain",
+      "generation_ms": 1439.089,
+      "height": 480,
+      "quality_score": 0.9444,
+      "seed_fingerprint": "90450d0ae82c38de",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 88,
+     "iteration": 5,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 2126.291
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "7cba679d461c487d9a7e65cb430718a5",
+      "family": "cells",
+      "generation_ms": 1155.236,
+      "height": 480,
+      "quality_score": 0.9679,
+      "seed_fingerprint": "2f549529b8d2b741",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 89,
+     "iteration": 6,
+     "ok": true,
+     "payload_bytes": 256,
+     "total_ms": 1951.004
+    },
+    {
+     "algorithms_used": {
+      "s_uniward": 8
+     },
+     "cover": {
+      "budget_exceeded": false,
+      "candidates": 2,
+      "cover_id": "c9721225e0f042b7a69eb88bac0573fe",
+      "family": "terrain",
+      "generation_ms": 1389.314,
+      "height": 480,
+      "quality_score": 0.9229,
+      "seed_fingerprint": "03f334c101cbed63",
+      "width": 640
+     },
+     "error_code": null,
+     "event_id": 90,
      "iteration": 7,
      "ok": true,
      "payload_bytes": 256,
-     "total_ms": 2083.75
+     "total_ms": 2067.614
     },
     {
      "algorithms_used": {
-      "dct": 8
+      "s_uniward": 8
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "29ce48943fcc4296b7403e346faa8e0c",
-      "family": "terrain",
-      "generation_ms": 1200.771,
+      "cover_id": "1090c2f7fa664e5d93e332b145fd339b",
+      "family": "cells",
+      "generation_ms": 1392.951,
       "height": 480,
-      "quality_score": 0.9495,
-      "seed_fingerprint": "52bc17d7e6c59d7d",
+      "quality_score": 0.9608,
+      "seed_fingerprint": "5e1c5894d0c33986",
       "width": 640
      },
      "error_code": null,
-     "event_id": 61,
+     "event_id": 91,
      "iteration": 8,
      "ok": true,
      "payload_bytes": 256,
-     "total_ms": 1626.811
+     "total_ms": 2144.36
     },
     {
      "algorithms_used": {
-      "dct": 2,
-      "lsb_matching": 4,
-      "s_uniward": 2
+      "s_uniward": 8
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "eed7520687c343f6bea728a6263e9049",
-      "family": "strata",
-      "generation_ms": 1456.323,
+      "cover_id": "b268295d221e4e9d9b8cd951272be925",
+      "family": "terrain",
+      "generation_ms": 1415.466,
       "height": 480,
-      "quality_score": 0.9552,
-      "seed_fingerprint": "6b35bec7930941d6",
+      "quality_score": 1,
+      "seed_fingerprint": "1f903135c3e019db",
       "width": 640
      },
      "error_code": null,
-     "event_id": 62,
+     "event_id": 92,
      "iteration": 9,
      "ok": true,
      "payload_bytes": 256,
-     "total_ms": 2032.918
+     "total_ms": 2083.172
     },
     {
      "algorithms_used": {
-      "dct": 11,
-      "lsb_matching": 3,
-      "s_uniward": 6
+      "s_uniward": 16
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "f6b00829d93c431d934a894abe686ebc",
-      "family": "strata",
-      "generation_ms": 1472.67,
+      "cover_id": "99318638da614e9eb9cb761508b0b1bb",
+      "family": "clouds",
+      "generation_ms": 1669.889,
       "height": 480,
-      "quality_score": 1,
-      "seed_fingerprint": "53f5cd143dfb90a3",
+      "quality_score": 0.948,
+      "seed_fingerprint": "bd801a065e6c7c78",
       "width": 640
      },
      "error_code": null,
-     "event_id": 63,
+     "event_id": 93,
      "iteration": 0,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2209.643
+     "total_ms": 2755.385
     },
     {
      "algorithms_used": {
-      "dct": 7,
-      "s_uniward": 3
+      "s_uniward": 19
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "a1900bb14cc9482f85f370621c0707fc",
+      "cover_id": "5bb0ec6d96ff47ce88d01578501bca06",
       "family": "cells",
-      "generation_ms": 1433.649,
+      "generation_ms": 1667.995,
       "height": 480,
-      "quality_score": 0.9659,
-      "seed_fingerprint": "dd0c2e29e24b6464",
+      "quality_score": 0.9947,
+      "seed_fingerprint": "400b52f16909b07e",
       "width": 640
      },
      "error_code": null,
-     "event_id": 64,
+     "event_id": 94,
      "iteration": 1,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2111.595
+     "total_ms": 2657.455
     },
     {
      "algorithms_used": {
-      "dct": 4,
-      "s_uniward": 11
+      "s_uniward": 18
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "8672edd1cde24a628b5fbc6c8fea7605",
-      "family": "clouds",
-      "generation_ms": 1435.743,
+      "cover_id": "4600ddfbd1b84ee28198cf2a31d5768e",
+      "family": "terrain",
+      "generation_ms": 1641.904,
       "height": 480,
-      "quality_score": 0.9174,
-      "seed_fingerprint": "000cd7c95068547a",
+      "quality_score": 0.9721,
+      "seed_fingerprint": "71afc384b21bb37a",
       "width": 640
      },
      "error_code": null,
-     "event_id": 65,
+     "event_id": 95,
      "iteration": 2,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2319.981
+     "total_ms": 2728.013
     },
     {
      "algorithms_used": {
-      "dct": 14,
-      "s_uniward": 6
+      "s_uniward": 17
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "9bdebed4469449dbbcc5cad7bd4b6c1c",
+      "cover_id": "d390a667c8524243ab0565c1be608d52",
       "family": "terrain",
-      "generation_ms": 1407.791,
+      "generation_ms": 1761.863,
       "height": 480,
-      "quality_score": 0.9593,
-      "seed_fingerprint": "8748c6b79aa6d0f2",
+      "quality_score": 0.9848,
+      "seed_fingerprint": "51c9292afe16e3de",
       "width": 640
      },
      "error_code": null,
-     "event_id": 66,
+     "event_id": 96,
      "iteration": 3,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2166.304
+     "total_ms": 2720.103
     },
     {
      "algorithms_used": {
-      "dct": 10,
-      "lsb_matching": 2,
-      "s_uniward": 7
+      "s_uniward": 23
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "61dc423400c24ad4ae9c192d065032af",
-      "family": "cells",
-      "generation_ms": 1318.95,
+      "cover_id": "5fe46aed84c245ad80bb6219332dfbfa",
+      "family": "terrain",
+      "generation_ms": 1638.291,
       "height": 480,
-      "quality_score": 0.9948,
-      "seed_fingerprint": "9a507e57768bdf99",
+      "quality_score": 0.9999,
+      "seed_fingerprint": "5d1c5507d1ab5481",
       "width": 640
      },
      "error_code": null,
-     "event_id": 67,
+     "event_id": 97,
      "iteration": 4,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2078.889
+     "total_ms": 2601.684
     },
     {
      "algorithms_used": {
-      "dct": 6,
-      "lsb_matching": 1,
-      "s_uniward": 9
+      "s_uniward": 16
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "79bf36bd62b8459785f801d17743ea2b",
-      "family": "strata",
-      "generation_ms": 1706.212,
+      "cover_id": "0d9f7eb7b34b4b3b9f6c33945e9f5518",
+      "family": "terrain",
+      "generation_ms": 1760.201,
       "height": 480,
-      "quality_score": 0.9929,
-      "seed_fingerprint": "4ef38705fd91f23d",
+      "quality_score": 0.9243,
+      "seed_fingerprint": "9e1121bc17d029fb",
       "width": 640
      },
      "error_code": null,
-     "event_id": 68,
+     "event_id": 98,
      "iteration": 5,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2473.14
+     "total_ms": 2729.794
     },
     {
      "algorithms_used": {
-      "dct": 12,
-      "s_uniward": 6
+      "s_uniward": 12
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "c3efc85a3b4048318309189cb4e0c75a",
-      "family": "terrain",
-      "generation_ms": 1648.45,
+      "cover_id": "12996e7161c047538c967e3385d38bbb",
+      "family": "clouds",
+      "generation_ms": 1681.899,
       "height": 480,
-      "quality_score": 0.9993,
-      "seed_fingerprint": "d558ab2e5569959d",
+      "quality_score": 0.922,
+      "seed_fingerprint": "ef97398da4e2d5ae",
       "width": 640
      },
      "error_code": null,
-     "event_id": 69,
+     "event_id": 99,
      "iteration": 6,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2345.03
+     "total_ms": 2639.448
     },
     {
      "algorithms_used": {
-      "dct": 12,
-      "lsb_matching": 2,
-      "s_uniward": 7,
-      "wow": 1
+      "s_uniward": 15
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "5cd36b8f2ada431eaba8d85cc47caef8",
-      "family": "strata",
-      "generation_ms": 1998.976,
+      "cover_id": "ba861990bf55459eba521ca466450eb4",
+      "family": "terrain",
+      "generation_ms": 1702.823,
       "height": 480,
-      "quality_score": 0.9096,
-      "seed_fingerprint": "170b7de835cbff18",
+      "quality_score": 0.9451,
+      "seed_fingerprint": "9e7e1c3528d873f4",
       "width": 640
      },
      "error_code": null,
-     "event_id": 70,
+     "event_id": 100,
      "iteration": 7,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2963.077
+     "total_ms": 2667.899
     },
     {
      "algorithms_used": {
-      "dct": 3,
-      "s_uniward": 10
+      "s_uniward": 17
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "859f4173ab9343ddb477c9ac6195cea6",
-      "family": "clouds",
-      "generation_ms": 1719.75,
+      "cover_id": "15a7a8ce641048b4b722bb671f133324",
+      "family": "strata",
+      "generation_ms": 1910.251,
       "height": 480,
-      "quality_score": 0.9269,
-      "seed_fingerprint": "6d3480865e608b68",
+      "quality_score": 0.9818,
+      "seed_fingerprint": "6b410ade27728833",
       "width": 640
      },
      "error_code": null,
-     "event_id": 71,
+     "event_id": 101,
      "iteration": 8,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2590.56
+     "total_ms": 2960.578
     },
     {
      "algorithms_used": {
-      "dct": 6,
-      "s_uniward": 10
+      "s_uniward": 22
      },
      "cover": {
       "budget_exceeded": false,
       "candidates": 2,
-      "cover_id": "a66b6554b7814720be3dec069ec99224",
-      "family": "cells",
-      "generation_ms": 1578.315,
+      "cover_id": "cd28cbca0fa44ac1b754966fbe9ae40e",
+      "family": "terrain",
+      "generation_ms": 1510.362,
       "height": 480,
-      "quality_score": 0.9729,
-      "seed_fingerprint": "758509cc801e205e",
+      "quality_score": 1,
+      "seed_fingerprint": "3999683b55a5bea2",
       "width": 640
      },
      "error_code": null,
-     "event_id": 72,
+     "event_id": 102,
      "iteration": 9,
      "ok": true,
      "payload_bytes": 1024,
-     "total_ms": 2393.524
+     "total_ms": 2553.378
     }
    ],
    "samples": 30,
@@ -2281,24 +2123,24 @@
       "p95": 2
      },
      "cover_quality_score": {
-      "mean": 0.9622433333333333,
+      "mean": 0.9703666666666667,
       "n": 30,
-      "p50": 0.9646,
+      "p50": 0.97895,
       "p95": 1
      },
      "covers_generated": 30,
      "failures": {},
      "families": {
-      "cells": 8,
-      "clouds": 4,
-      "strata": 9,
-      "terrain": 9
+      "cells": 12,
+      "clouds": 2,
+      "strata": 3,
+      "terrain": 13
      },
      "generation_used_ms": {
-      "mean": 1455.4896333333334,
+      "mean": 1441.7722666666664,
       "n": 30,
-      "p50": 1456.9965000000002,
-      "p95": 1713.6579
+      "p50": 1395.587,
+      "p95": 1761.1151
      },
      "metric_kinds": {
       "cover_quality_score": "heuristic coherence of the cover before embedding (not a steganalysis detector)",
@@ -2313,7 +2155,7 @@
     "environment": {
      "scope": "benchmark_run"
     },
-    "generated_ms": 1794774923894,
+    "generated_ms": 1795106901867,
     "limitations": [
      "Host-simulation measurements on one machine; not representative of drone hardware. A resource profile such as raspberry_pi_5_cpu enforces that device's LIMITS on this host; it does not reproduce its speed, and these figures are not Raspberry Pi measurements.",
      "Covers are procedurally generated images (no pretrained model). The cover quality score is a documented heuristic, not a steganalysis detector, and no generated cover or embedding is claimed to be undetectable.",
@@ -2326,41 +2168,41 @@
     ],
     "overall": {
      "frame_bytes": {
-      "mean": 1899.2,
+      "mean": 1866.9666666666667,
       "n": 30,
-      "p50": 1786,
-      "p95": 2535
+      "p50": 1709,
+      "p95": 2644.3999999999996
      },
      "image_bytes": {
-      "mean": 386918.2,
+      "mean": 372035.36666666664,
       "n": 30,
-      "p50": 380489.5,
-      "p95": 467706.0499999998
+      "p50": 369083,
+      "p95": 417647.64999999997
      },
      "manifest_bytes": {
-      "mean": 1337.2,
+      "mean": 1304.9666666666667,
       "n": 30,
-      "p50": 1278,
-      "p95": 1682.7999999999997
+      "p50": 1315,
+      "p95": 1581.1999999999998
      },
      "mse": {
-      "mean": 0.13507676666666668,
+      "mean": 0.0036078000000000004,
       "n": 30,
-      "p50": 0.103866,
-      "p95": 0.3367604
+      "p50": 0.0033889999999999997,
+      "p95": 0.004994899999999999
      },
      "n_ok": 30,
      "patch_count": {
-      "mean": 19.3,
+      "mean": 17.833333333333332,
       "n": 30,
-      "p50": 19.5,
-      "p95": 26.099999999999994
+      "p50": 18,
+      "p95": 22
      },
      "psnr": {
-      "mean": 58.034146666666665,
+      "mean": 72.66103,
       "n": 30,
-      "p50": 57.96675,
-      "p95": 63.384615
+      "p50": 72.8305,
+      "p95": 73.95677
      },
      "refinement_level": {
       "mean": 0,
@@ -2369,122 +2211,104 @@
       "p95": 0
      },
      "ssim": {
-      "mean": 0.9990783086966667,
+      "mean": 0.9999709908266667,
       "n": 30,
-      "p50": 0.9993852545999999,
-      "p95": 0.999912388025
+      "p50": 0.99997146885,
+      "p95": 0.99998109134
      },
      "timings_ms": {
       "aead_open": {
-       "mean": 0.012866666666666672,
+       "mean": 0.010966666666666671,
        "n": 30,
-       "p50": 0.012,
-       "p95": 0.017649999999999992
+       "p50": 0.01,
+       "p95": 0.014
       },
       "aead_seal": {
-       "mean": 0.11589999999999999,
+       "mean": 0.46456666666666663,
        "n": 30,
-       "p50": 0.0115,
-       "p95": 0.4373499999999999
+       "p50": 0.363,
+       "p95": 0.6533999999999999
       },
       "cover_generate": {
-       "mean": 762.4744666666667,
+       "mean": 682.8681333333334,
        "n": 30,
-       "p50": 763.4780000000001,
-       "p95": 901.21565
+       "p50": 701.684,
+       "p95": 794.6389499999999
       },
       "cover_prescreen": {
-       "mean": 155.94916666666668,
+       "mean": 145.37936666666667,
        "n": 30,
-       "p50": 154.028,
-       "p95": 173.55194999999998
+       "p50": 140.756,
+       "p95": 175.05885
       },
       "cover_selection_total": {
-       "mean": 1455.4896333333334,
+       "mean": 1441.7722666666664,
        "n": 30,
-       "p50": 1456.9965000000002,
-       "p95": 1713.6579
+       "p50": 1395.587,
+       "p95": 1761.1151
       },
       "embed": {
-       "mean": 252.4048333333333,
+       "mean": 350.18376666666666,
        "n": 30,
-       "p50": 255.2765,
-       "p95": 445.47554999999994
+       "p50": 284.71450000000004,
+       "p95": 600.4816999999999
       },
       "extract": {
-       "mean": 30.022000000000002,
+       "mean": 86.15666666666667,
        "n": 30,
-       "p50": 28.014000000000003,
-       "p95": 40.13824999999999
+       "p50": 83.8895,
+       "p95": 104.4952
       },
       "load_cover": {
-       "mean": 10.757966666666666,
+       "mean": 11.266433333333334,
        "n": 30,
-       "p50": 10.2625,
-       "p95": 13.11775
+       "p50": 10.7775,
+       "p95": 14.370349999999998
       },
       "plan": {
-       "mean": 536.8879666666667,
+       "mean": 613.3790333333333,
        "n": 30,
-       "p50": 546.4325,
-       "p95": 765.8953499999999
+       "p50": 551.6975,
+       "p95": 819.0464
       },
       "read": {
-       "mean": 0.3310000000000001,
+       "mean": 0.3000666666666667,
        "n": 30,
-       "p50": 0.3205,
-       "p95": 0.41955
+       "p50": 0.278,
+       "p95": 0.3862499999999999
       },
       "save": {
-       "mean": 2.2978,
+       "mean": 2.0175333333333336,
        "n": 30,
-       "p50": 2.2765,
-       "p95": 2.8945
+       "p50": 1.9325,
+       "p95": 2.55725
       },
       "total": {
-       "mean": 2087.4198666666666,
+       "mean": 2239.7443333333335,
        "n": 30,
-       "p50": 2097.2690000000002,
-       "p95": 2534.8491499999996
+       "p50": 2078.1499999999996,
+       "p95": 2742.1257
       },
       "verify": {
-       "mean": 0.01363333333333334,
+       "mean": 0.013800000000000008,
        "n": 30,
-       "p50": 0.0125,
-       "p95": 0.019
+       "p50": 0.014,
+       "p95": 0.017099999999999994
       }
      },
      "used_patches": {
-      "mean": 9.633333333333333,
+      "mean": 9.833333333333334,
       "n": 30,
       "p50": 8,
-      "p95": 20
+      "p95": 20.64999999999999
      }
     },
     "per_algorithm": [
      {
-      "algorithm": "dct",
-      "events": 30,
-      "patches": 162,
-      "payload_bytes": 8827
-     },
-     {
-      "algorithm": "lsb_matching",
-      "events": 13,
-      "patches": 22,
-      "payload_bytes": 1060
-     },
-     {
       "algorithm": "s_uniward",
-      "events": 23,
-      "patches": 101,
-      "payload_bytes": 6316
-     },
-     {
-      "algorithm": "wow",
-      "events": 3,
-      "patches": 4,
-      "payload_bytes": 177
+      "events": 30,
+      "patches": 295,
+      "payload_bytes": 16380
      }
     ],
     "schema": "stego-report-3",

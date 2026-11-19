@@ -1,115 +1,118 @@
 # Patch-wise, knowledge-base-guided steganography transport
 
-Format identifier: `frame-v2/appwire-v1/bootstrap-v2/manifest-v1`
-Segmentation `arg-cells-1` · selector `kb-bm25-1` · knowledge base `patch-kb-1`
+Format identifier: `frame-v3/appwire-v1/bootstrap-v3/manifest-v2`
+Segmentation `arg-cells-1` · selector `kb-risk-1` · risk table `risk-table-1` · knowledge base `patch-kb-1` · default policy `low_detectability`
 
-This document describes the system **as implemented**. It replaces the earlier whole-image transport
-(one algorithm per image, Frame v1). M1–M8 and K1–K3 are unchanged; only the transport of K4
+This document describes the system **as implemented**. M1–M8 and K1–K3 are unchanged; only the transport of K4
 application messages is described here. The cover of every transmission is a **fresh, locally generated
 procedural image** selected with knowledge of the payload length only; there is no camera, upload or
-client-selected cover. The generator, its quality pre-screen, the resource profiles and the configuration
-are specified in `cover-generation.md`.
+client-selected cover (`cover-generation.md`). The keyed bootstrap-v3 carrier and the reasons for choosing it
+over deterministic receiver-side reconstruction are in `bootstrap-v3-design.md`.
 
 ## 1. Roles
 
 | Component | Responsibility | Never does |
 |---|---|---|
-| Rust core (`rust-core/src/transport/`) | AEAD seal/open, AppWire, manifest validation, Frame v2, HMAC, channel/direction/replay, acceptance, event log | pixel work |
-| Python image service (`python-service/src/stego/`) | payload-aware cover generation, segmentation, patch features, knowledge-base retrieval, allocation, embedding, PNG save/re-read, extraction | holds keys, creates or checks the MAC, sees plaintext |
-| Node gateway (`node-server/`) | relays `/api/stego/*` and `/api/learn/*` to the Rust core | talks to Python, selects, validates crypto |
+| Rust core (`rust-core/src/transport/`) | AEAD seal/open, AppWire, manifest validation, operational algorithm policy check, Frame v3 + HMAC, bootstrap-v3 placement key / value stream / sync word / carrier encryption, discovery, channel/direction/replay, acceptance, event log | pixel work |
+| Python image service (`python-service/src/stego/`) | payload-aware cover generation, segmentation, patch features, knowledge-base retrieval within the policy, allocation, embedding, mapping value streams to pixels, carrier bit I/O, PNG save/re-read, extraction with a given manifest | holds keys, derives positions from a key, creates or checks the MAC, decrypts the carrier, sees plaintext |
+| Node gateway (`node-server/`) | relays `/api/stego/*`, `/api/learn/*`, `/api/system/*` to the Rust core | talks to Python, selects, validates crypto |
 | React UI (`web-ui/`) | renders values returned by the backend | computes or invents results |
 
-The image service is **not trusted** by the core: every response is validated (manifest parsed
-strictly, lengths and geometry cross-checked, saved file hashed by the core itself).
+The image service is **not trusted** by the core: every response is validated (manifest parsed strictly, lengths,
+geometry and policy cross-checked, the compressed manifest must inflate to the planned one, the saved file is hashed
+by the core itself, every receive-side read is tied to that hash).
 
 ## 2. Sequence
 
-Sender (direction D1→D2 or D2→D1; both use the same code path with direction-specific keys):
+Sender (direction D1→D2 or D2→D1; same code path with direction-specific keys):
 
-1. Core checks the session (key-issued, both members active), reserves the next sequence number.
-2. Core seals the plaintext: `AppWire = header(28) | ciphertext | AEAD tag(16)`. Let `W = len(AppWire)`.
-0. Core resolves the request's optional `cover_generation` object against the process profile
-   (tighten-only; unknown fields such as a seed, a file or a source are rejected) **before** a sequence
-   number is reserved.
-3. Core → Python `POST /stego/plan {payload_bytes: W + 32, cover_generation, limits, segmentation, min_level, target_chunk_bytes}`.
-   Only the **length** and the validated generation settings are sent. Python generates a bounded number of
-   candidate covers from OS randomness, pre-screens them with the quality heuristics, and runs the planner on
-   them best-first: it segments the candidate, computes patch features and measured capacities, allocates
-   chunks, selects one algorithm per used patch and dry-runs every patch on a copy with pseudo-random bytes.
-   The first candidate that plans is stored (PNG + generation sidecar) and its **manifest** is returned with
-   the plan and generation diagnostics. If no candidate is acceptable the request fails; no other cover
-   source exists.
-4. Core parses the manifest strictly and checks it against the sealed length, the reported cover geometry,
-   the generator ceilings and `cover.source == "generated"`.
-5. Core builds **Frame v2** and computes the HMAC over header, manifest and AppWire.
-6. Core → Python `POST /stego/encode {frame_b64, cover_id}`. Python loads that exact stored cover (it never
-   generates here; a cover without a matching generation sidecar is refused), embeds exactly as the
-   manifest says, writes the bootstrap carrier, saves the PNG, **re-reads the saved file**, extracts the frame
-   again and compares it byte for byte. Any mismatch → nothing is kept.
-7. Core reads the saved PNG itself and compares its SHA-256 with the reported one.
+1. Core resolves the optional `cover_generation` object against the process profile (tighten-only; unknown fields
+   such as a seed, a file or a source are rejected) **before** a sequence number is reserved.
+2. Core checks the session (key-issued, both members active), reserves the next sequence number `s` and seals the
+   plaintext: `AppWire = header(28) | ciphertext | AEAD tag(16)`, `W = len(AppWire)`.
+3. Core derives the placement key `PK(s)` from the directional key (section 5) and its value stream `V(s)`.
+4. Core → Python `POST /stego/plan {payload_bytes: W + 32, cover_generation, limits, segmentation, min_level,
+   target_chunk_bytes, carrier: {version: 3, values_b64: V(s)}, policy: {name, allowed}}`. Python generates a bounded
+   number of candidate covers, pre-screens them and plans best-first: it maps `V(s)` to carrier pixels, reserves the
+   first `R` of them (R from the manifest size), segments, computes features and capacities without those pixels,
+   allocates chunks, selects one **permitted** algorithm per used patch, dry-runs every patch and returns the
+   **manifest-v2** plus its raw DEFLATE form (`manifest_deflate_b64`). No other cover source exists.
+5. Core parses the manifest strictly; checks it against the sealed length, cover geometry, generator ceilings,
+   `cover.source == "generated"`, the plan diagnostics and the **operational policy** (`POLICY_VIOLATION`); checks that
+   the DEFLATE form inflates (bounded) to exactly that manifest.
+6. Core builds **Frame v3** (HMAC over header, manifest and AppWire) and the **carrier**
+   `sync(PK) | E(header) | E(DEFLATE(manifest) | CRC32)`.
+7. Core → Python `POST /stego/encode {frame_b64, cover_id, carrier: {values_b64, bits_b64, n_bits}}`. Python loads that
+   exact stored cover, embeds the payload section patch by patch, writes the carrier bits by ±1 LSB matching into the
+   first `ceil(n_bits / C)` reserved carrier pixels, checks that nothing outside the patches and those pixels changed,
+   saves the PNG, **re-reads the saved file**, reads the carrier back and extracts the frame again. Any mismatch →
+   nothing is kept.
+8. Core reads the saved PNG itself and compares its SHA-256 with the reported one.
 
-Receiver (input: session, recipient, artifact id — nothing else):
+Receiver (input: session, recipient, artifact id; plus its own replay state `L` for that direction):
 
-8. Core reads the PNG from the shared artifact directory and hashes it.
-9. Core → Python `POST /stego/extract {artifact_id}`. Python reads the bootstrap preamble, the manifest and its
-   CRC from the reserved rows, parses the manifest strictly, rebuilds the patch masks **from the manifest**
-   (no segmentation is run), extracts each chunk and returns the reconstructed frame. All of it is untrusted.
-10. Core verifies the frame MAC, then parses the (now authenticated) manifest strictly again, checks it against
-    the payload length and the image geometry, decodes AppWire, checks channel/direction/replay and opens the AEAD.
-11. Any failure is recorded as a failed event with a stable error code. No plaintext is returned on failure and
-    there is no fallback transport.
+9. Core reads the PNG from the artifact directory and hashes it.
+10. **Discovery** (section 5.3): for every candidate `s' ∈ [max(1, L − 63), L + W_sync]` the core sends the first
+    128 values of `V(s')` (`POST /stego/carrier/probe`); Python returns 96 locator bits per candidate; the core
+    compares them with `sync(PK(s'))`. Exactly one match is required; a match with `s' ≤ L` is a `REPLAY`.
+11. Core decrypts the 32-bit header, reads the body (`POST /stego/carrier/read`), decrypts it, checks the CRC,
+    inflates with a 64 KiB limit and parses manifest-v2 strictly (geometry checked against the image).
+12. Core → Python `POST /stego/extract {artifact_id, manifest_b64, values_b64}`. Python rebuilds the masks **from that
+    manifest** without the reserved carrier pixels (no segmentation is run), extracts each chunk and returns the frame.
+13. Core verifies the frame MAC, requires the frame's manifest to equal the decoded one, parses it strictly again,
+    decodes AppWire, requires `AppWire.seq == s'` (`SEQUENCE_MISMATCH`), checks channel/direction/replay and opens
+    the AEAD. Only then is `L` advanced.
+14. Any failure is recorded as a failed event with a stable error code. No plaintext is returned on failure, the replay
+    state is unchanged, and there is no fallback transport.
 
-If step 6 fails with `PATCH_EMBED_FAILED` (a real payload did not survive a patch although the dry run did),
-the core re-plans **the same stored cover** — `POST /stego/plan {payload_bytes, replan_cover_id, min_level = level + 1, …}`,
-no `cover_generation`, nothing is generated — at most `IOD_STEGO_MAX_REPLANS` (default 2) times, then fails.
-The core rejects a re-plan response whose cover id or SHA-256 differs from the cover generated for this
-transmission, and an encode response that names another cover. No other algorithm and no other cover is
-substituted. The receiver never generates or plans anything.
+If step 7 fails with `PATCH_EMBED_FAILED`, the core re-plans **the same stored cover** with the **same sequence number
+and value stream** — `POST /stego/plan {payload_bytes, replan_cover_id, min_level = level + 1, carrier, policy, …}`,
+nothing is generated — at most `IOD_STEGO_MAX_REPLANS` (default 2) times, then fails. No other algorithm and no other
+cover is substituted. The receiver never generates or plans anything.
 
-## 3. Frame v2 (built and authenticated by the Rust core)
+## 3. Frame v3 (built and authenticated by the Rust core)
 
 All integers big-endian.
 
 ```text
 offset  size  field
-0       4     magic "IOD2"
-4       1     version = 2
+0       4     magic "IOD3"
+4       1     version = 3
 5       1     flags = 0
 6       2     reserved = 0
 8       4     manifest_len  (M)
 12      4     wire_len      (W)
-16      M     manifest (section 4)
+16      M     manifest-v2 (section 4, uncompressed)
 16+M    W     AppWire v1 (unchanged: 28-byte header | ciphertext | 16-byte AEAD tag)
-16+M+W  32    tag = HMAC-SHA256(k_meta, "IOD-STEGO-FRAME-v2" | bytes[0 .. 16+M+W))
+16+M+W  32    tag = HMAC-SHA256(k_meta, "IOD-STEGO-FRAME-v3" | bytes[0 .. 16+M+W))
 ```
 
-`k_meta = HKDF(directional AEAD key, info = "IOD-STEGO-META-v1" | channel_tag(16) | direction(1))` — the same
-derivation as before; only the MAC domain string changed, so a v1 tag can never verify as v2.
+`k_meta = HKDF(directional AEAD key, info = "IOD-STEGO-META-v1" | channel_tag(16) | direction(1))`. The MAC domain
+string is versioned, so no v2 tag verifies as v3; a v2 header (`"IOD2"`) is rejected before any MAC work.
 
-**MAC coverage.** The tag covers the header and the *complete* manifest: image width/height/channels,
-cell size, segmentation and selector version ids, the patch map (hence every patch id and its region),
-every patch's algorithm id, parameter, payload offset and payload length, and the AppWire payload. Changing any
-of these makes `FRAME_AUTH_FAILED`. The image service never receives `k_meta`.
+**MAC coverage.** The tag covers the header and the *complete* manifest: image width/height/channels, cell size,
+segmentation and selector version ids, `carrier_pixels`, the patch map (hence every patch id and its region), every
+patch's algorithm id, parameter, payload offset and payload length, and the AppWire payload. Changing any of these
+makes `FRAME_AUTH_FAILED`. The image service never receives `k_meta`.
 
-**Where the bytes live in the image.** The header is not embedded (it is regenerated from the bootstrap
-preamble). The manifest travels in the bootstrap carrier. The patches carry the *payload section*
-`AppWire | tag` (`payload_len = W + 32`), cut into chunks. The receiver concatenates
-`header | manifest | payload section` and hands that to the core.
+**Where the bytes live in the image.** The header is not embedded (the receiver's service rebuilds it from the
+manifest Rust hands back). The manifest travels compressed and encrypted in the bootstrap-v3 carrier. The patches
+carry the *payload section* `AppWire | tag` (`payload_len = W + 32`), cut into chunks.
 
-## 4. Patch manifest v1
+## 4. Patch manifest v2
 
 ```text
 offset  size  field
 0       4     magic "IOPM"
-4       1     manifest version = 1
+4       1     manifest version = 2
 5       1     segmentation version id = 1   (arg-cells-1)
-6       1     selector version id = 1       (kb-bm25-1)
+6       1     selector version id = 2       (kb-risk-1)
 7       1     channels (1 = L, 3 = RGB)
 8       2     width
 10      2     height
 12      1     cell size (4, 8 or 16)
 13      1     n = patch count (1..255)
-14      2     reserved_rows
+14      2     carrier_pixels R
 16      4     payload_len (= sum of chunk lengths = W + 32)
 20      4     map_len
 24      12n   patch table, entry i = patch id i:
@@ -121,71 +124,94 @@ offset  size  field
 24+12n  map_len  cell map
 ```
 
-*Cell map.* The image is covered by a grid of `ceil(H/cell) × ceil(W/cell)` cells; each cell belongs to one
-patch. The map is the row-major label sequence, run-length coded as `(label u8, run LEB128)` pairs. Runs may
-span rows. The encoding is canonical: adjacent runs have different labels, run lengths are > 0 and minimally
-encoded, the runs cover the grid exactly, every label is `< n`, and every patch id occurs. A pixel `(y, x)`
-belongs to patch `map[y // cell][x // cell]`.
+*carrier_pixels* is canonical: `R = ceil((96 + 8·(manifest_len + 64 + 4)) / channels)` and `R ≤ width·height / 8`.
+It is an upper bound for the carrier (raw DEFLATE never grows a manifest of this size by more than 64 bytes). The
+first `R` distinct pixels of the frame's value stream are removed from every patch mask; only the first
+`ceil(carrier_bits / channels)` of them are written, the rest stay untouched. No rows are reserved.
 
-*Chunks.* Used patches, taken in ascending patch id, must have `offset` equal to the running sum of the
-previous lengths, `length ≥ 1`, and the sum must equal `payload_len`: contiguous, non-overlapping, covering the
-payload exactly once. Unused patches have all-zero entries.
+*Cell map.* The image is covered by a grid of `ceil(H/cell) × ceil(W/cell)` cells; each cell belongs to one patch. The
+map is the row-major label sequence, run-length coded as `(label u8, run LEB128)` pairs. Runs may span rows. The
+encoding is canonical: adjacent runs have different labels, run lengths are > 0 and minimally encoded, the runs cover
+the grid exactly, every label is `< n`, and every patch id occurs. A pixel `(y, x)` belongs to patch
+`map[y // cell][x // cell]` unless it is a reserved carrier pixel.
 
-*Parameters* (explicit, no implied defaults): ids 1–3 `0`; edge-adaptive threshold `1..255`; DCT step `4..64`;
-DWT step `4..64`; DCT-SVD step `8..64`; HUGO/WOW/S-UNIWARD STC inverse rate `w = 2..64`.
+*Chunks.* Used patches, taken in ascending patch id, must have `offset` equal to the running sum of the previous
+lengths, `length ≥ 1`, and the sum must equal `payload_len`: contiguous, non-overlapping, covering the payload exactly
+once. Unused patches have all-zero entries.
+
+*Parameters* (explicit, no implied defaults): ids 1–3 `0`; edge-adaptive threshold `1..255`; DCT step `4..64`; DWT step
+`4..64`; DCT-SVD step `8..64`; HUGO/WOW/S-UNIWARD STC inverse rate `w = 2..64`.
 
 Limits: manifest ≤ 65 536 bytes, ≤ 255 patches, dimensions ≤ configured maximum. Both parsers
-(`rust-core/src/transport/manifest.rs`, `python-service/src/stego/patch/manifest.py`) reject everything else
-with `MANIFEST_INVALID`, `MANIFEST_TOO_LARGE`, `UNSUPPORTED_VERSION` or `UNKNOWN_ALGORITHM`; length arithmetic
-is overflow-checked.
+(`rust-core/src/transport/manifest.rs`, `python-service/src/stego/patch/manifest.py`) reject everything else with
+`MANIFEST_INVALID`, `MANIFEST_TOO_LARGE`, `UNSUPPORTED_VERSION` or `UNKNOWN_ALGORITHM`; length arithmetic is
+overflow-checked. Manifest v1 (with `reserved_rows`) is rejected as `UNSUPPORTED_VERSION`.
 
-## 5. Bootstrap v2 (in the image, unauthenticated)
+## 5. Bootstrap v3 (keyed, distributed; in the image, unauthenticated until the frame MAC verifies)
+
+Full design, alternatives and discovery rationale: `bootstrap-v3-design.md`. Summary:
 
 ```text
-preamble (16 bytes) = "SB" | version=2 | flags=0 | manifest_len u32 | frame_len u32 | crc32(first 12 bytes)
-carrier             = preamble | manifest | crc32(manifest)
+PK   = HKDF-SHA256(directional AEAD key, info = "IOD-STEGO-PLACE-v3" | channel_tag(16) | direction(1) | seq u32)
+V    = SHAKE-256("IOD-BOOT3-VALUES" | PK) as big-endian u32 values (8192 sent for embedding and reads)
+S    = HMAC-SHA256(PK, "IOD-BOOT3-SYNC")[0..8]
+KS   = SHAKE-256("IOD-BOOT3-STREAM" | PK)
+P    = first distinct values of (V_i mod (W·H)), in stream order                (Python maps; flat pixel index)
+slot k = pixel P[k div C], channel k mod C
+carrier = S (64 bits) | header XOR KS[0..4] (32 bits) | body XOR KS[4..]
+header  = version 3 | flags 0 | body_len u16
+body    = raw DEFLATE(manifest-v2) | CRC32(DEFLATE output)
+write   = ±1 LSB matching where the LSB differs (random sign; 0 → +1, 255 → −1)
 ```
 
-The carrier is written one bit per sample into the **least significant bits of the flat sample array from
-index 0** (row-major, channel-interleaved, MSB of each byte first). It occupies
-`reserved_rows = ceil(8·(16 + M + 4) / (width·channels))` whole image rows. These rows are excluded from
-every patch (masks are cleared there) so no algorithm ever modifies or reads a carrier sample; the manifest
-states `reserved_rows` and the parsers recompute and compare it.
+`PK`, `S` and `KS` never leave Rust. Python receives value streams (pseudo-random u32 values) and already encrypted
+carrier bits; neither reveals a key, and neither is logged.
 
-The manifest size is fixed once the segmentation is known (fixed-size patch table + map), so the reserved rows
-are known before capacities are measured — there is no circular dependency.
+### 5.1 Size
 
-CRC-32 detects accidental damage only. **It is not authentication**: an attacker can rewrite the manifest with a
-valid CRC; the frame MAC then fails (tests do exactly this).
+Measured on 72 plans (24 generated 320×240 RGB covers × payload 288 / 1056 / 3032 B): manifest 550 B mean, DEFLATE
+280 B mean → carrier ≈ 2,350 bits instead of ≈ 4,560 bits for bootstrap-v2, about 2–3 % of the pixels reserved.
+
+### 5.2 Why there is no circular dependency
+
+The receiver needs the carrier positions before it knows anything in the image. They depend only on the session key,
+the direction and the sequence number, which the receiver knows up to the bounded window of section 5.3. The manifest
+size (hence `R`) is fixed by the segmentation before capacities are measured, and `R` is an upper bound for the
+compressed carrier, so planning never depends on the compression result.
+
+### 5.3 Discovery window
+
+Candidates `s ∈ [max(1, L − 63), L + W_sync]`, `W_sync = IOD_STEGO_SYNC_WINDOW` (default 64, 1…1024). The lookback
+exists only to report replays explicitly; the forward window covers sequence numbers consumed by failed sends. Outcomes:
+none → `BOOTSTRAP_NOT_FOUND` (wrong recipient or key, out of window, not a v3 image; `BOOTSTRAP_VERSION_UNSUPPORTED` if a
+valid retired bootstrap-v2 preamble is present), one with `s ≤ L` → `REPLAY`, more than one → `BOOTSTRAP_AMBIGUOUS`.
+A random 64-bit sync match has probability 2⁻⁶⁴ per candidate.
+
+CRC-32 only separates accidental damage from a wrong key in diagnostics. **It is not authentication**: an adversary with
+the placement key could rewrite the manifest with a valid CRC; the frame MAC then fails (tests do exactly this).
 
 ## 6. Test vectors
 
-Pinned byte-for-byte in `python-service/tests/test_patch_manifest.py` and
-`rust-core/src/transport/manifest.rs` (both encoders must produce it, both parsers must accept it).
-
-Manifest: 64×64 gray image, cell 16 (4×4 cells), 2 patches, patch 0 unused, patch 1 = LSB replacement
-carrying 40 bytes; cell labels `0011 / 0111 / 0111 / 0001`:
+Manifest (pinned byte-for-byte in `python-service/tests/test_patch_manifest.py` and
+`rust-core/src/transport/manifest.rs`; both encoders must produce it, both parsers must accept it): 64×64 RGB image,
+cell 16 (4×4 cells), 2 patches, patch 0 unused, patch 1 = LSB replacement carrying 40 bytes; cell labels
+`0011 / 0111 / 0111 / 0001`:
 
 ```text
-494f504d 01 01 01 01 0040 0040 10 02 000b 00000028 00000010     fixed part (24)
+494f504d 02 01 02 03 0040 0040 10 02 0180 00000028 00000010     fixed part (24)
 00 00 0000 00000000 00000000                                     patch 0 (unused)
 01 00 0000 00000000 00000028                                     patch 1: alg 1, offset 0, length 40
 00 02 01 02 00 01 01 03 00 01 01 03 00 03 01 01                  map: 0×2 1×2 0×1 1×3 0×1 1×3 0×3 1×1
 ```
 
-64 bytes; carrier = 16 + 64 + 4 = 84 bytes = 672 bits → `reserved_rows = ceil(672 / 64) = 11 = 0x000b`.
+64 bytes; `R = ceil((96 + 8·(64 + 64 + 4)) / 3) = 384 = 0x0180` (≤ 64·64/8 = 512).
 
-Preamble for that manifest with an 8-byte AppWire (frame = 16 + 64 + 8 + 32 = 120 bytes):
-`5342 02 00 00000040 00000078 bccc9fc7`.
-
-Frame header for the same frame: `494f4432 02 00 0000 00000040 00000008`; the tag is
-`HMAC-SHA256(k_meta, "IOD-STEGO-FRAME-v2" | header | manifest | wire)` (checked against an independent
-computation in `frame.rs::test_vector_tag_is_hmac_over_domain_header_manifest_wire`).
-
-A complete real transaction (plan, manifest, per-patch results) is in `docs/samples/patchwise-run-report.json`
-with its cover, segmentation overlay, stego PNG and difference map next to it. In that run (first transaction): a
-generated `strata` cover of 320×240 RGB with quality score 0.996; AppWire 313 B, manifest 686 B, frame 1047 B,
-13 patches of which 8 carry 43–44 B each (`lsb_matching` ×6, `dct` ×1, `s_uniward` ×1); PSNR 58.7 dB.
+Frame header for that manifest with an 8-byte AppWire: `494f4433 03 00 0000 00000040 00000008`; the tag is
+`HMAC-SHA256(k_meta, "IOD-STEGO-FRAME-v3" | header | manifest | wire)` (checked against an independent computation in
+`frame.rs`). Bootstrap-v3 derivations (placement key, value-stream prefix property, sync word, keystream, CRC, bounded
+inflate, decompression-bomb rejection, reserve bound) are unit-tested in `rust-core/src/transport/bootstrap.rs`; the
+pixel mapping is cross-checked by an independent reader (`rust-core/tests/helpers/tamper_png.py`) in
+`stego_e2e_python.rs`.
 
 ## 7. Segmentation `arg-cells-1` (adaptive region growing)
 
@@ -233,7 +259,7 @@ Settings (defaults; environment variable on the Rust core; bounds enforced in bo
 
 ## 8. Patch features
 
-Per patch (`patch/features.py`): id, pixel count, usable pixel count (outside the reserved rows), bounding box,
+Per patch (`patch/features.py`): id, pixel count, usable pixel count (without the reserved carrier pixels), bounding box,
 width, height, aspect ratio, perimeter, compactness (`4π·area/perimeter²`), centroid, mean intensity, mean
 colour, variance, entropy, gradient mean/std, edge density (fraction of pixels with gradient ≥ 24), texture (mean absolute 4-neighbour Laplacian),
 smoothness (`1/(1+variance)`), high-frequency energy ratio and mean AC energy (8×8 DCT of complete blocks), saturation (fraction of
@@ -250,26 +276,55 @@ source), `implementation` (property of this code) or `local_heuristic` (maintain
 thresholds are local heuristics. The file is validated at service start (`KB_INVALID` otherwise) and shown in the
 UI. Reference DOIs were typed from a reference list and are flagged as not machine-verified.
 
-Selection for a patch that was allocated `B` bytes (`patch/kb.py`), no LLM, no embeddings, no network:
+Selection for a patch that was allocated `B` bytes (`patch/kb.py`, selector `kb-risk-1`), no LLM, no embeddings,
+no network:
 
+0. **Operational policy** (`operational_policy` filter): an algorithm the policy excludes is never eligible
+   (section 9a). The educational workbench does not apply a policy.
 1. **Structured hard filters** per entry: `geometry_support` (the implementation's own check, e.g. at least one
    complete block), `min_usable_pixels`, `min_blocks`, the entry's `hard_avoid` rules (currently: DCT is excluded
-   when saturation ≥ 0.02 because rounding at 0/255 breaks its round trip), and `measured_capacity ≥ 8·B`.
-2. **BM25** over the entries that passed. Documents are the tokens of `suitable_terms` (weight 3), `summary`
-   (1) and `suitable_when` (1); `k1 = 1.5`, `b = 0.75`, IDF over all ten entries
-   (`ln(1 + (N − df + 0.5)/(df + 0.5))`). The query is the set of descriptive terms whose threshold rule holds
-   for the patch (`flat`, `smooth`, `moderate-texture`, `textured`, `noisy`, `edge-rich`, `few-edges`,
-   `high-entropy`, `low-entropy`, `saturated`, `binary`, `dark`, `bright`, `large/medium/small-region`,
-   `compact`, `elongated`, `ragged`, `block-aligned`, `high/low-frequency`, `low/medium/high-rate`, `color`,
-   `grayscale`).
-3. **Top-1.** Highest score wins; ties go to the lower algorithm id.
+   when saturation ≥ 0.02 because rounding at 0/255 breaks its round trip), and `measured_capacity ≥ 8·B`
+   (capacity is the hard constraint).
+2. **Risk-aware ranking** of the eligible entries with the versioned risk table
+   `python-service/src/stego/kb/risk_table.json` (`risk-table-1`, measured on the **validation** split only by
+   `scripts/eval_detectability.py --stage risk-table`): (a) risk tier (`low` AUC < 0.65, `medium` 0.65–0.80,
+   `high` ≥ 0.80; thresholds fixed before measuring), (b) expected distortion = measured changes per embedded bit,
+   (c) processing cost = measured ms per KiB, (d) **BM25** suitability of the entry text for the patch's
+   descriptive terms (higher first), (e) lower algorithm id.
+   BM25: documents are the tokens of `suitable_terms` (weight 3), `summary` (1) and `suitable_when` (1);
+   `k1 = 1.5`, `b = 0.75`, IDF over all ten entries (`ln(1 + (N − df + 0.5)/(df + 0.5))`). The query is the set of
+   descriptive terms whose threshold rule holds for the patch (`flat`, `smooth`, `moderate-texture`, `textured`,
+   `noisy`, `edge-rich`, `few-edges`, `high-entropy`, `low-entropy`, `saturated`, `binary`, `dark`, `bright`,
+   `large/medium/small-region`, `compact`, `elongated`, `ragged`, `block-aligned`, `high/low-frequency`,
+   `low/medium/high-rate`, `color`, `grayscale`).
+3. **Top-1.** The first entry of that ranking wins.
+
+Consequence (stated, not hidden): with `risk-table-1` the low tier is HUGO/WOW/S-UNIWARD and S-UNIWARD has the
+fewest changes per bit, so S-UNIWARD is chosen for every patch where it is eligible; another algorithm is chosen
+only where S-UNIWARD is filtered out (capacity, geometry). Diversity across patches is therefore a result of
+eligibility, not a goal. The risk table is a whole-image, single-algorithm proxy measured with the detectors of
+`detectability-evaluation.md`; it is versioned and must be rebuilt (new version) when algorithms or detectors change.
 
 Recorded per patch: every entry id, each filter result with its detail, matched terms, BM25 score, measured
 capacity, rank, and the final choice. If nothing is eligible, or the chosen algorithm fails its dry run, there is
 **no fallback**: the planner moves to the next refinement level or rejects.
 
-There are no message priority classes; the request has no such field and old clients that send `priority`,
-`algorithm`, `param` or `policy` get `400 INVALID_REQUEST`.
+There are no message priority classes; a client request to the core has no such field, and old clients that send
+`priority`, `algorithm`, `param` or `policy` get `400 INVALID_REQUEST`. The operational policy is configured on the core
+(section 9a) and sent by the core to the image service, never chosen by a client.
+
+## 9a. Operational algorithm policy
+
+| Policy | Allowed | Excluded |
+|---|---|---|
+| `low_detectability` (default) | `lsb_matching`, `pvd`, `edge_adaptive_lsb`, `hugo`, `wow`, `s_uniward` | `dct`, `dwt`, `dct_svd` (by rule, pending an independent evaluation); `lsb_replacement` (high tier in risk table `risk-table-1`, validation split) |
+| `all_algorithms` | all ten | none (comparison and research runs only) |
+
+`IOD_STEGO_ALGORITHM_POLICY` selects the policy; `IOD_STEGO_ALGORITHM_ALLOW` (comma list) can only narrow it. The
+allowed algorithms are *candidates*, not "safe" algorithms. If no permitted plan fits the payload, planning fails
+(`NO_ELIGIBLE_ALGORITHM` / `PATCH_CAPACITY_INSUFFICIENT`); nothing falls back to an excluded algorithm. Rust re-checks
+every planned manifest (`POLICY_VIOLATION`). `GET /api/stego/status` (`config.algorithm_policy`) shows the active policy
+and its exclusions; `config.bootstrap` shows the bootstrap version and the sync window.
 
 ## 10. Sequential chunk allocation
 
@@ -312,10 +367,12 @@ Cover generation: `GENERATOR_CONFIG_INVALID`, `GENERATOR_MEMORY_LIMIT`, `COVER_Q
 `GENERATION_BUDGET_EXCEEDED`, `COVER_GENERATION_FAILED` (and `PATCH_CAPACITY_INSUFFICIENT` when no cover within
 the allowed size can carry the payload). Planning: `PATCH_CAPACITY_INSUFFICIENT`, `NO_ELIGIBLE_ALGORITHM`, `SEGMENTATION_FAILED`, `MANIFEST_INVALID`,
 `KB_INVALID`. Embedding: `PATCH_EMBED_FAILED`, `PATCH_UNSUPPORTED`, `ENCODE_VERIFY_FAILED`, `IMAGE_WRITE_FAILED`.
-Reading: `ARTIFACT_NOT_FOUND`, `IMAGE_DECODE_ERROR`, `BOOTSTRAP_MISSING`, `BOOTSTRAP_CORRUPT`,
-`UNSUPPORTED_VERSION`, `FRAME_LENGTH_INVALID`, `MANIFEST_INVALID`, `MANIFEST_TOO_LARGE`, `UNKNOWN_ALGORITHM`,
-`EXTRACT_FAILED`. Verification (core): `FRAME_MALFORMED`, `FRAME_VERSION_UNSUPPORTED`, `FRAME_TOO_LARGE`,
-`FRAME_LENGTH_MISMATCH`, `FRAME_AUTH_FAILED`, `WRONG_CHANNEL`, `REPLAY`, `AEAD_FAILED`. Infrastructure:
+Policy (core): `POLICY_VIOLATION`.
+Reading: `ARTIFACT_NOT_FOUND`, `IMAGE_DECODE_ERROR`, `BOOTSTRAP_NOT_FOUND`, `BOOTSTRAP_AMBIGUOUS`,
+`BOOTSTRAP_VERSION_UNSUPPORTED`, `BOOTSTRAP_CORRUPT`, `UNSUPPORTED_VERSION`, `MANIFEST_INVALID`, `MANIFEST_TOO_LARGE`,
+`UNKNOWN_ALGORITHM`, `EXTRACT_FAILED`. Verification (core): `FRAME_MALFORMED`, `FRAME_VERSION_UNSUPPORTED`,
+`FRAME_TOO_LARGE`, `FRAME_LENGTH_MISMATCH`, `FRAME_AUTH_FAILED`, `SEQUENCE_MISMATCH`, `WRONG_CHANNEL`, `REPLAY`,
+`AEAD_FAILED`. Infrastructure:
 `STEGO_BACKEND_UNAVAILABLE`, `BACKEND_MALFORMED_RESPONSE`, `ARTIFACT_HASH_MISMATCH`.
 
 ## 13. Limitations
@@ -324,13 +381,15 @@ Reading: `ARTIFACT_NOT_FOUND`, `IMAGE_DECODE_ERROR`, `BOOTSTRAP_MISSING`, `BOOTS
   message; robustness is not claimed (the learning workbench measures it and reports the failures).
 * Steganography here is an obscurity layer on top of AEAD. No steganalysis resistance is claimed for any
   algorithm; LSB-class methods and the QIM transform methods are detectable.
-* The bootstrap carrier is plain LSB data in the top rows; its presence is detectable and it is not secret.
-  The offline evaluation (`detectability-evaluation.md`) measures this: a small classical detector separates
-  transport images from covers almost perfectly because of the carrier rows, and far less well when those
-  rows are hidden from it.
+* Keyed placement hides *where* the bootstrap-v3 carrier is from anyone without the session key; it does not make
+  the ±1 changes statistically invisible. Detectability of the whole transport (carrier included) is measured, not
+  assumed (`detectability-evaluation.md`); no undetectability is claimed.
+* A receiver whose replay state lags the sender by more than `IOD_STEGO_SYNC_WINDOW` sequence numbers cannot locate
+  the carrier (`BOOTSTRAP_NOT_FOUND`); after a core restart a new K1–K3 run is needed (channel keys are in memory).
 * Covers are synthetic procedural images (`cover-generation.md`): coherent and varied, but not photographs,
   and produced by a public generator.
-* The patch map is carried in clear inside the image (authenticated, not encrypted).
+* The patch map is carried compressed and XOR-encrypted with a per-frame keystream inside the image; its integrity
+  comes from the frame MAC, not from the encryption or the CRC.
 * Capacities are measured on the cover; a real payload can still fail a patch that passed the dry run. This is
   handled by the bounded re-plan, not by substituting an algorithm.
 * The knowledge base is hand-curated; its thresholds are heuristics validated only by this repository's tests.
@@ -348,12 +407,19 @@ override and the explanation stage.
 
 ## 15. Migration from camera / upload covers
 
-The image formats did not change (`frame-v2/appwire-v1/bootstrap-v2/manifest-v1`): images written before
-this change are still received. What changed is where a cover comes from. Removed: `POST /api/stego/camera/probe`,
-`POST /api/stego/cover/upload`, the Python routes `/stego/camera/probe`, `/stego/cover/upload`, `/stego/capture`,
-the request object `cover {source: webcam | browser_webcam | uploaded | test_cover | procedural, …}`, the
-`seed` field, the OpenCV adapter and `requirements-camera.txt`, the `IOD_STEGO_CAMERA*` /
-`IOD_STEGO_CAPTURE_TIMEOUT_MS` variables, the webcam and upload components of the dashboard and the
-`procedural_fallback` cover label. Old requests are answered with 400 / 404, never silently reinterpreted.
-Event fields `cover_fallback_reason` and timing `capture` are gone; events carry the generation fields listed
-in `cover-generation.md` §8. Report schema is now `stego-report-3`.
+What changed is where a cover comes from. Removed: `POST /api/stego/camera/probe`, `POST /api/stego/cover/upload`, the
+Python routes `/stego/camera/probe`, `/stego/cover/upload`, `/stego/capture`, the request object
+`cover {source: webcam | browser_webcam | uploaded | test_cover | procedural, …}`, the `seed` field, the OpenCV adapter
+and `requirements-camera.txt`, the `IOD_STEGO_CAMERA*` / `IOD_STEGO_CAPTURE_TIMEOUT_MS` variables, the webcam and
+upload components of the dashboard and the `procedural_fallback` cover label. Old requests are answered with 400 / 404,
+never silently reinterpreted. Events carry the generation fields listed in `cover-generation.md` §8.
+
+## 16. Migration from bootstrap-v2 / Frame v2 / manifest-v1
+
+`frame-v2/appwire-v1/bootstrap-v2/manifest-v1` images (top-row `"SB"` preamble, `"IOD2"` frame, `reserved_rows`) are
+**not accepted**: the receiver reports `BOOTSTRAP_VERSION_UNSUPPORTED` when it recognises a valid v2 preamble, otherwise
+`BOOTSTRAP_NOT_FOUND`. There is no conversion. The Python `/stego/extract` endpoint now requires `manifest_b64` and
+`values_b64`; `/stego/plan` requires `carrier` and accepts `policy`; `/stego/encode` requires `carrier`; the new
+endpoints are `/stego/carrier/probe` and `/stego/carrier/read`. Plan diagnostics report `carrier_pixels`,
+`bootstrap_carrier_bits`, `manifest_deflate_bytes`, `bootstrap_version` and `operational_policy` instead of
+`reserved_rows`. Stored v2 artifacts and events remain readable as files/rows but cannot be received.

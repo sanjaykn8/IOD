@@ -16,6 +16,16 @@
 //! corrupting). Append-only logs (protocol events, trace records) use
 //! one row per entry instead, since those are naturally row-shaped.
 //!
+//! ## Cryptographic-suite tag (FIPS 203/204 migration)
+//!
+//! Both snapshot kinds carry a required `suite` field. Rows written by earlier
+//! releases (Round-3 Kyber768 / Dilithium2, no `suite` field) or by any other suite
+//! are never deserialized into live state: at start-up
+//! [`crate::storage::Database::quarantine_incompatible`] moves them into the
+//! `legacy_snapshots` table (kept for inspection, reported by `/api/system/crypto`)
+//! and the simulation starts with fresh, current-suite identities. Drones then have
+//! to be registered again. Key bytes are never converted between suites.
+//!
 //! ## Documented design decision: two separate "sides" of storage
 //!
 //! `GcsSnapshot` holds exactly what a real GCS server would persist:
@@ -46,6 +56,8 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize)]
 pub struct GcsSnapshot {
+    /// Required; see module docs.
+    pub suite: String,
     pub kem_pk: KemPublicKey,
     pub kem_sk: KemSecretKey,
     pub sign_pk: SignPublicKey,
@@ -65,6 +77,7 @@ pub struct GcsSnapshot {
 impl GcsState {
     pub fn to_snapshot(&self) -> GcsSnapshot {
         GcsSnapshot {
+            suite: crate::crypto::suite::SUITE_ID.to_string(),
             kem_pk: self.kem_pk.clone(),
             kem_sk: self.kem_sk.clone(),
             sign_pk: self.sign_pk.clone(),
@@ -77,6 +90,7 @@ impl GcsState {
         }
     }
 
+    /// Callers must have checked `snap.suite` (see `Database::load_gcs`).
     pub fn from_snapshot(snap: GcsSnapshot) -> Self {
         let mut groups = std::collections::HashMap::new();
         for g in snap.groups {
@@ -110,6 +124,8 @@ impl GcsState {
 
 #[derive(Serialize, Deserialize)]
 pub struct DroneLocalSnapshot {
+    /// Required; see module docs.
+    pub suite: String,
     pub drone_id: String,
     pub group_id: Option<String>,
     /// See module docs: simulated hardware secret, device-local table
@@ -135,6 +151,7 @@ pub struct DroneLocalSnapshot {
 impl DroneState {
     pub fn to_local_snapshot(&self) -> DroneLocalSnapshot {
         DroneLocalSnapshot {
+            suite: crate::crypto::suite::SUITE_ID.to_string(),
             drone_id: self.drone_id.clone(),
             group_id: self.group_id.clone(),
             golden_pattern_hex: hex::encode(self.puf.export_golden_pattern()),
@@ -157,6 +174,10 @@ impl DroneState {
     }
 
     pub fn from_local_snapshot(snap: DroneLocalSnapshot) -> anyhow::Result<Self> {
+        crate::crypto::suite::require(&snap.suite)?;
+        if let Some(k) = &snap.keys {
+            k.validate()?;
+        }
         let golden_bytes = hex::decode(&snap.golden_pattern_hex)?;
         let mut golden = [0u8; crate::puf::sram_puf::PUF_BYTES];
         if golden_bytes.len() != golden.len() {

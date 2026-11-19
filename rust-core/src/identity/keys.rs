@@ -1,50 +1,44 @@
 //! Device key management: domain-separated seed derivation, plus the
-//! ML-KEM-768/Kyber768 and ML-DSA-44/Dilithium2 keypairs used by a drone.
+//! ML-KEM-768 (FIPS 203) and ML-DSA-44 (FIPS 204) keypairs used by a drone.
 //!
-//! ## Documented limitation: deterministic `seed -> keypair` regeneration
+//! ## What is (and is not) derived from the PUF
 //!
-//! The specification's pseudocode calls a `KeyGen_from_seed(s_D, domain)`
-//! function, implying the drone can regenerate identical Kyber768 and
-//! Dilithium2 keys on demand purely from its PUF-reconstructed seed,
-//! never persisting the keys themselves. The audited Rust bindings we
-//! use (`pqcrypto-kyber`, `pqcrypto-dilithium`, themselves wrapping the
-//! PQClean reference C implementations) do **not** expose a
-//! seeded/deterministic keygen entry point through their public API —
-//! their `keypair()` functions draw randomness directly from the OS
-//! CSPRNG (`getrandom`) internally, with no caller-supplied RNG or seed
-//! injection point. Re-implementing PQClean's internal KAT-only
-//! deterministic RNG hook ourselves would mean re-deriving/re-vendoring
-//! security-critical C code outside of the audited crate boundary, which
-//! is a materially worse trade-off than documenting the gap honestly.
+//! The specification's pseudocode calls `KeyGen_from_seed(s_D, domain)`, i.e. the
+//! drone would regenerate its ML-KEM / ML-DSA keys from its PUF-reconstructed seed
+//! and never store them. The final-standard libraries now used DO offer the
+//! standard deterministic entry points (FIPS 203 `ML-KEM.KeyGen_internal(d, z)`,
+//! FIPS 204 `ML-DSA.KeyGen_internal(xi)`; exposed here as
+//! `kem::keypair_from_seed` / `sign::keypair_from_seed` and exercised by the NIST
+//! known-answer tests). They are deliberately **not** wired to the simulated PUF:
 //!
-//! **Implementation-level correction actually applied** (preserves the
-//! intended security properties; documented per project ground rules):
-//! - The domain-separated seed material required by the specification
-//!   (`SEED_DOMAIN_KEM`, `SEED_DOMAIN_DILITHIUM`) IS derived via HKDF
-//!   from the PUF-reconstructed seed and IS distinct per domain — this
-//!   is real and tested below.
-//! - Because that material cannot be fed into the vendored keygen, the
-//!   actual Kyber768/Dilithium2 keypairs are generated once, using the
-//!   library's own secure `keypair()`, at drone registration time, and
-//!   the private key material is then persisted **only in the drone's
-//!   own local device state** (never sent to or stored at GCS — see
-//!   `docs/cryptography.md`, "GCS never receives private drone keys").
-//!   The security property the specification cares about — GCS does not
-//!   hold long-term drone private keys, and re-registration/PUF-seed
-//!   loss invalidates the old identity rather than silently reusing a
-//!   recoverable secret — is preserved; only the specific mechanism
-//!   ("regenerate identical keys from the seed with zero persistent
-//!   storage, every single boot") is not literally achievable with this
-//!   library and is replaced by "generate once from real device entropy,
-//!   persist only on-device."
+//! * the PUF in this repository is a software simulation; deriving long-term keys
+//!   from it would present simulated entropy as hardware-rooted key material;
+//! * the behaviour of the previous releases ("generate once from real OS entropy,
+//!   persist only on the device") is preserved, so no persisted semantics change.
+//!
+//! What actually happens:
+//! - The domain-separated seed material (`SEED_DOMAIN_KEM`, `SEED_DOMAIN_DILITHIUM`)
+//!   IS derived with HKDF from the PUF-reconstructed seed and is distinct per domain.
+//!   It is kept for inspection/tests only and is NOT fed into key generation.
+//! - The ML-KEM-768 and ML-DSA-44 keypairs are generated at registration with the
+//!   operating-system CSPRNG and persisted, in seed form, **only in the drone's own
+//!   local device state** (never sent to or stored at the GCS).
+//! - The future seam: a physical PUF-backed provisioning step can produce `d || z`
+//!   and `xi` and call the `*_from_seed` functions; nothing else would change.
+//!   Physical PUF integration is deferred.
 
 use crate::crypto::domains::{SEED_DOMAIN_DILITHIUM, SEED_DOMAIN_KEM};
 use crate::crypto::kdf::hkdf_expand;
 use crate::crypto::kem::{self, KemPublicKey, KemSecretKey};
 use crate::crypto::sign::{self, SignPublicKey, SignSecretKey};
+use crate::crypto::suite::SUITE_ID;
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DeviceKeys {
+    /// Cryptographic suite of all four keys. Required when deserializing: key sets
+    /// from earlier releases (no field, Round-3 keys) fail to load instead of being
+    /// reinterpreted.
+    pub suite: String,
     pub kem_pk: KemPublicKey,
     pub kem_sk: KemSecretKey,
     pub dil_pk: SignPublicKey,
@@ -57,6 +51,17 @@ pub struct DeviceKeys {
     pub dil_domain_seed: Vec<u8>,
 }
 
+impl DeviceKeys {
+    /// Check a loaded key set: right suite, right lengths, and each public key
+    /// re-derived from its stored private seed.
+    pub fn validate(&self) -> anyhow::Result<()> {
+        crate::crypto::suite::require(&self.suite)?;
+        anyhow::ensure!(kem::public_from_secret(&self.kem_sk)? == self.kem_pk, "ML-KEM public key does not match the stored private key");
+        anyhow::ensure!(sign::public_from_secret(&self.dil_sk)? == self.dil_pk, "ML-DSA public key does not match the stored private key");
+        Ok(())
+    }
+}
+
 pub fn derive_device_keys(puf_seed: &[u8; 32]) -> DeviceKeys {
     let kem_domain_seed = hkdf_expand(puf_seed, None, SEED_DOMAIN_KEM, 32);
     let dil_domain_seed = hkdf_expand(puf_seed, None, SEED_DOMAIN_DILITHIUM, 32);
@@ -65,6 +70,7 @@ pub fn derive_device_keys(puf_seed: &[u8; 32]) -> DeviceKeys {
     let (dil_pk, dil_sk) = sign::keypair();
 
     DeviceKeys {
+        suite: SUITE_ID.to_string(),
         kem_pk,
         kem_sk,
         dil_pk,
@@ -91,6 +97,25 @@ mod tests {
         let k1 = hkdf_expand(&seed, None, SEED_DOMAIN_KEM, 32);
         let k2 = hkdf_expand(&seed, None, SEED_DOMAIN_KEM, 32);
         assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn stored_keys_validate_and_mismatches_are_detected() {
+        let k = derive_device_keys(&[4u8; 32]);
+        k.validate().unwrap();
+        let mut legacy = k.clone();
+        legacy.suite = crate::crypto::suite::LEGACY_SUITE_ID.into();
+        assert!(legacy.validate().is_err());
+        let mut swapped = k.clone();
+        swapped.kem_pk = derive_device_keys(&[5u8; 32]).kem_pk;
+        assert!(swapped.validate().is_err());
+        let mut round3 = k.clone();
+        round3.dil_sk = SignSecretKey(vec![0; 2528]);
+        assert!(round3.validate().is_err(), "a Dilithium2-sized private key is not an ML-DSA seed");
+        // a key set serialized without a suite (earlier releases) does not deserialize
+        let mut v = serde_json::to_value(&k).unwrap();
+        v.as_object_mut().unwrap().remove("suite");
+        assert!(serde_json::from_value::<DeviceKeys>(v).is_err());
     }
 
     #[test]

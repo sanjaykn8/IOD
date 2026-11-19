@@ -78,6 +78,16 @@ def encode():
     return jsonify(service.encode(_body()))
 
 
+@bp.post("/carrier/probe")
+def carrier_probe():
+    return jsonify(service.carrier_probe(_body()))
+
+
+@bp.post("/carrier/read")
+def carrier_read():
+    return jsonify(service.carrier_read(_body()))
+
+
 @bp.post("/extract")
 def extract():
     return jsonify(service.extract_artifact(_body()))

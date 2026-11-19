@@ -35,7 +35,6 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
-*.pdf
 
 # Local runtime data (stego artifacts, databases)
 /data/

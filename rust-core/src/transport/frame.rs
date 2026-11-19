@@ -1,9 +1,9 @@
-//! Transport Frame v2 (docs/patchwise-transport.md section 3).
+//! Transport Frame v3 (docs/patchwise-transport.md section 3, docs/bootstrap-v3-design.md).
 //!
 //! ```text
-//! frame = "IOD2" | ver=2 | flags=0 | reserved u16=0 | manifest_len u32 | wire_len u32   (16 bytes, BE)
-//!         | manifest | wire | tag(32)
-//! tag      = HMAC-SHA256(meta_key, "IOD-STEGO-FRAME-v2" | header | manifest | wire)
+//! frame = "IOD3" | ver=3 | flags=0 | reserved u16=0 | manifest_len u32 | wire_len u32   (16 bytes, BE)
+//!         | manifest-v2 | wire | tag(32)
+//! tag      = HMAC-SHA256(meta_key, "IOD-STEGO-FRAME-v3" | header | manifest | wire)
 //! meta_key = HKDF(directional AEAD key, info = "IOD-STEGO-META-v1" | channel_tag | direction)
 //! ```
 //! The MAC therefore covers the complete patch manifest (image dimensions, segmentation and selector
@@ -11,19 +11,19 @@
 //! and the AppWire payload. The MAC key is domain-separated from the AEAD key and never leaves Rust;
 //! the image service neither creates nor checks the tag.
 //!
-//! Frame v1 ("IODF", one algorithm per image) is not accepted: there is no interoperability
-//! between v1 and v2 images (see the migration note in the documentation).
+//! Frame v3 has the v2 layout; the version bump marks manifest-v2 + bootstrap-v3. Frame v1 ("IODF")
+//! and Frame v2 ("IOD2", top-row bootstrap) images are not accepted.
 
 use crate::crypto::aead::AeadKey;
 use crate::crypto::kdf::{hkdf_expand, hmac_sha256, hmac_verify};
 use crate::transport::error::{stage, StegoError};
 use crate::transport::manifest::{FIXED_LEN, ENTRY_LEN, MAX_MANIFEST_BYTES};
 
-pub const FRAME_MAGIC: &[u8; 4] = b"IOD2";
-pub const FRAME_VERSION: u8 = 2;
+pub const FRAME_MAGIC: &[u8; 4] = b"IOD3";
+pub const FRAME_VERSION: u8 = 3;
 pub const HEADER_LEN: usize = 16;
 pub const TAG_LEN: usize = 32;
-const MAC_DOMAIN: &[u8] = b"IOD-STEGO-FRAME-v2";
+const MAC_DOMAIN: &[u8] = b"IOD-STEGO-FRAME-v3";
 const META_INFO: &[u8] = b"IOD-STEGO-META-v1";
 
 /// Dedicated metadata-authentication key. No `Debug`/`Clone`/`Serialize` on purpose.
@@ -91,7 +91,7 @@ pub fn parse_and_verify<'a>(key: &MetaKey, frame: &'a [u8], max_frame: usize) ->
         return Err(err("FRAME_MALFORMED", "frame shorter than the minimum frame"));
     }
     if &frame[..4] != FRAME_MAGIC {
-        return Err(err("FRAME_MALFORMED", "bad frame magic (Frame v1 images are not accepted)"));
+        return Err(err("FRAME_MALFORMED", "bad frame magic (Frame v1/v2 images are not accepted)"));
     }
     if frame[4] != FRAME_VERSION {
         return Err(err("FRAME_VERSION_UNSUPPORTED", "unsupported frame version"));
@@ -134,7 +134,7 @@ mod tests {
         let m = man(10 + 32);
         let f = build_frame(&k, &m, b"wire-bytes", 4096).unwrap();
         assert_eq!(f.len(), frame_len_for(m.len(), 10));
-        assert_eq!(&f[..8], b"IOD2\x02\x00\x00\x00");
+        assert_eq!(&f[..8], b"IOD3\x03\x00\x00\x00");
         assert_eq!(u32::from_be_bytes(f[8..12].try_into().unwrap()) as usize, m.len());
         assert_eq!(u32::from_be_bytes(f[12..16].try_into().unwrap()), 10);
         let (pm, w) = parse_and_verify(&k, &f, 4096).unwrap();
@@ -148,7 +148,7 @@ mod tests {
         let k = key(1, 1);
         let m = man(40);
         let f = build_frame(&k, &m, &[0xAB; 8], 4096).unwrap();
-        let mut input = b"IOD-STEGO-FRAME-v2".to_vec();
+        let mut input = b"IOD-STEGO-FRAME-v3".to_vec();
         input.extend_from_slice(&f[..f.len() - 32]);
         assert_eq!(&f[f.len() - 32..], &hmac_sha256(&k.0, &input)[..]);
     }
@@ -206,6 +206,10 @@ mod tests {
         let mut v1 = f.clone();
         v1[..4].copy_from_slice(b"IODF");
         assert_eq!(parse_and_verify(&k, &v1, 4096).unwrap_err().code, "FRAME_MALFORMED");
+        // a Frame v2 header ("IOD2", version 2) is rejected before the MAC is even computed
+        let mut v2 = f.clone();
+        v2[..5].copy_from_slice(b"IOD2\x02");
+        assert_eq!(parse_and_verify(&k, &v2, 4096).unwrap_err().code, "FRAME_MALFORMED");
         let mut big = f.clone();
         big[8..12].copy_from_slice(&0xFFFF_FFF0u32.to_be_bytes());
         assert_eq!(parse_and_verify(&k, &big, 4096).unwrap_err().code, "FRAME_MALFORMED");

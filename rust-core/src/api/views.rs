@@ -11,9 +11,13 @@ use crate::protocol::entities::{DroneState, GcsState};
 use crate::protocol::messages::VerificationReport;
 use serde::Serialize;
 
+/// 8-byte SHAKE-256 fingerprint of a public key, domain-separated and bound to the
+/// suite (v2), so fingerprints of Round-3 keys and of current keys never coincide.
 fn fingerprint(bytes: &[u8]) -> String {
-    let digest = crate::crypto::kdf::shake256_bytes(b"IOD-API-FINGERPRINT-v1", bytes, 8);
-    hex::encode(digest)
+    let mut input = crate::crypto::suite::SUITE_ID.as_bytes().to_vec();
+    input.push(0);
+    input.extend_from_slice(bytes);
+    hex::encode(crate::crypto::kdf::shake256_bytes(b"IOD-API-FINGERPRINT-v2", &input, 8))
 }
 
 #[derive(Serialize)]
@@ -23,8 +27,12 @@ pub struct DroneView {
     pub registered: bool,
     pub active: bool,
     pub revoked_flag: bool,
+    /// Suite of this drone's keys (None until registered).
+    pub crypto_suite: Option<String>,
+    /// ML-KEM-768 public-key fingerprint.
     pub kem_pk_fingerprint: Option<String>,
-    pub dil_pk_fingerprint: Option<String>,
+    /// ML-DSA-44 public-key fingerprint.
+    pub sig_pk_fingerprint: Option<String>,
     pub role: Option<String>,
     pub leaf_index: Option<usize>,
     pub cached_root_hex: Option<String>,
@@ -39,8 +47,9 @@ pub fn drone_view(gcs: &GcsState, d: &DroneState) -> DroneView {
         registered: d.is_registered(),
         active: record.map(|r| r.active).unwrap_or(false),
         revoked_flag: d.revoked,
+        crypto_suite: d.keys.as_ref().map(|k| k.suite.clone()),
         kem_pk_fingerprint: d.keys.as_ref().map(|k| fingerprint(&k.kem_pk.0)),
-        dil_pk_fingerprint: d.keys.as_ref().map(|k| fingerprint(&k.dil_pk.0)),
+        sig_pk_fingerprint: d.keys.as_ref().map(|k| fingerprint(&k.dil_pk.0)),
         role: d.metadata.as_ref().map(|m| m.role.clone()),
         leaf_index: d
             .group_id

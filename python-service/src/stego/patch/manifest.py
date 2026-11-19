@@ -1,16 +1,20 @@
-"""Manifest v1 and Frame v2 layout (untrusted-input parser; no keys, no MAC here).
+"""Manifest v2 and Frame v3 layout (untrusted-input parser; no keys, no MAC here).
 
-All integers big-endian. The manifest is authenticated by Rust as part of Frame v2;
+All integers big-endian. The manifest is authenticated by Rust as part of Frame v3;
 this module only parses it defensively (bounds, versions, whitelists, exact coverage)
 before any pixel is touched.
 
-Frame v2      = "IOD2" | ver=2 | flags=0 | reserved(2)=0 | manifest_len u32 | wire_len u32
+Frame v3      = "IOD3" | ver=3 | flags=0 | reserved(2)=0 | manifest_len u32 | wire_len u32
                 | manifest | wire | tag(32)                       (header = 16 bytes)
-Manifest v1   = "IOPM" | ver=1 | seg_ver | sel_ver | channels | width u16 | height u16
-                | cell u8 | n_patches u8 | reserved_rows u16 | payload_len u32 | map_len u32
+Manifest v2   = "IOPM" | ver=2 | seg_ver | sel_ver | channels | width u16 | height u16
+                | cell u8 | n_patches u8 | carrier_pixels u16 | payload_len u32 | map_len u32
                 | n_patches x (alg_id u8 | param u8 | flags u16=0 | offset u32 | length u32)
                 | map (row-major cell labels as (label u8, run LEB128) pairs)
 payload section (carried by patches) = wire | tag  -> payload_len = wire_len + 32
+
+carrier_pixels R is canonical: R = bootstrap.reserve_pixels_for(manifest_len, channels) and R <= W*H/8.
+The first R distinct pixels of the frame's bootstrap-v3 value stream are removed from every patch mask
+(label 255); no rows are reserved. Manifest v1 (reserved_rows) and Frame v2 are not accepted.
 """
 
 import struct
@@ -18,15 +22,16 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from .. import bootstrap as B
 from ..errors import StegoError
 from . import SEGMENTATION_VERSION_ID, SELECTOR_VERSION_ID
 
-FRAME_MAGIC = b"IOD2"
-FRAME_VERSION = 2
+FRAME_MAGIC = b"IOD3"
+FRAME_VERSION = 3
 FRAME_HEADER_LEN = 16
 TAG_LEN = 32
 MANIFEST_MAGIC = b"IOPM"
-MANIFEST_VERSION = 1
+MANIFEST_VERSION = 2
 MANIFEST_FIXED = 24
 PATCH_ENTRY = 12
 MAX_PATCHES = 255
@@ -56,7 +61,7 @@ class Manifest:
     width: int
     height: int
     cell: int
-    reserved_rows: int
+    carrier_pixels: int
     payload_len: int
     patches: tuple          # tuple[PatchEntry]
     cell_labels: np.ndarray  # (rows, cols) uint8
@@ -135,13 +140,9 @@ def manifest_len_for(n_patches, map_len):
     return MANIFEST_FIXED + PATCH_ENTRY * n_patches + map_len
 
 
-def carrier_bits(manifest_len):
-    """Bootstrap carrier = preamble(16) | manifest | crc32(manifest)(4), one bit per sample LSB."""
-    return 8 * (16 + manifest_len + 4)
-
-
-def reserved_rows_for(manifest_len, width, channels):
-    return -(-carrier_bits(manifest_len) // (width * channels))
+def carrier_pixels_for(manifest_len, channels):
+    """Canonical number of reserved bootstrap-v3 carrier pixels (an upper bound on the carrier)."""
+    return B.reserve_pixels_for(manifest_len, channels)
 
 
 def pack(m):
@@ -150,7 +151,7 @@ def pack(m):
     if not 1 <= n <= MAX_PATCHES:
         raise _bad("patch count out of range")
     out = bytearray(_FIXED.pack(MANIFEST_MAGIC, MANIFEST_VERSION, m.seg_version, m.sel_version, m.channels,
-                                m.width, m.height, m.cell, n, m.reserved_rows, m.payload_len, len(mp)))
+                                m.width, m.height, m.cell, n, m.carrier_pixels, m.payload_len, len(mp)))
     for p in m.patches:
         out += _ENTRY.pack(p.alg_id, p.param, 0, p.offset, p.length)
     out += mp
@@ -169,7 +170,7 @@ def parse(data, max_dim=4096):
         raise _bad("manifest too large", "MANIFEST_TOO_LARGE")
     if len(data) < MANIFEST_FIXED + PATCH_ENTRY:
         raise _bad("manifest truncated")
-    (magic, ver, seg, sel, ch, w, h, cell, n, rrows, plen, mlen) = _FIXED.unpack_from(data, 0)
+    (magic, ver, seg, sel, ch, w, h, cell, n, cpix, plen, mlen) = _FIXED.unpack_from(data, 0)
     if magic != MANIFEST_MAGIC:
         raise _bad("bad manifest magic")
     if ver != MANIFEST_VERSION:
@@ -184,8 +185,8 @@ def parse(data, max_dim=4096):
         raise _bad("patch count out of range")
     if len(data) != manifest_len_for(n, mlen):
         raise _bad("manifest length does not match its declared sizes")
-    if rrows != reserved_rows_for(len(data), w, ch) or rrows >= h:
-        raise _bad("reserved_rows inconsistent with the manifest size")
+    if cpix != carrier_pixels_for(len(data), ch) or cpix > (w * h) // 8:
+        raise _bad("carrier_pixels inconsistent with the manifest size or the image")
     if plen < TAG_LEN + 1:
         raise _bad("payload length too small")
     entries, expect = [], 0
@@ -212,7 +213,7 @@ def parse(data, max_dim=4096):
     present = np.bincount(labels, minlength=n)
     if np.any(present == 0):
         raise _bad("a patch id has no cells in the map")
-    return Manifest(ch, w, h, cell, rrows, plen, tuple(entries), labels.reshape(rows, cols), seg, sel)
+    return Manifest(ch, w, h, cell, cpix, plen, tuple(entries), labels.reshape(rows, cols), seg, sel)
 
 
 def pixel_labels(m):
@@ -221,14 +222,23 @@ def pixel_labels(m):
     return np.ascontiguousarray(big[:m.height, :m.width])
 
 
-def effective_masks(m):
-    """label map with bootstrap-reserved rows set to 255 (never a patch id: ids <= 254)."""
+def carrier_positions(m, values):
+    """The manifest's R reserved carrier pixels (flat indices) for a frame's value stream."""
+    pos = B.positions(values, m.width * m.height)
+    if len(pos) < m.carrier_pixels:
+        raise _bad("value stream yields fewer distinct pixels than carrier_pixels", "BOOTSTRAP_CORRUPT",
+                   {"carrier_pixels": m.carrier_pixels, "available": int(len(pos))})
+    return pos[:m.carrier_pixels]
+
+
+def effective_masks(m, carrier):
+    """label map with the reserved carrier pixels set to 255 (never a patch id: ids <= 254)."""
     lab = pixel_labels(m).copy()
-    lab[:m.reserved_rows, :] = 255
+    lab.reshape(-1)[np.asarray(carrier, dtype=np.int64)] = 255
     return lab
 
 
-# ------------------------------------------------------------------ frame v2 (structure only)
+# ------------------------------------------------------------------ frame v3 (structure only)
 def frame_len_for(manifest_len, wire_len):
     return FRAME_HEADER_LEN + manifest_len + wire_len + TAG_LEN
 
@@ -238,7 +248,7 @@ def frame_header(manifest_len, wire_len):
 
 
 def split_frame(frame, max_frame_bytes):
-    """Structural split of an (unauthenticated) Frame v2 -> (manifest_bytes, payload_section)."""
+    """Structural split of an (unauthenticated) Frame v3 -> (manifest_bytes, payload_section)."""
     if not isinstance(frame, (bytes, bytearray)) or len(frame) > max_frame_bytes:
         raise StegoError("FRAME_TOO_LARGE", "frame exceeds maximum")
     frame = bytes(frame)

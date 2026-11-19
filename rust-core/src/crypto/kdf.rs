@@ -1,7 +1,7 @@
 //! KDF (HKDF-SHA256), HMAC-SHA256, and SHAKE256 helpers.
 //!
 //! `hkdf_expand` is used for every domain-separated key/seed derivation
-//! in the system (KEM domain, Dilithium domain, PID domain, PUF-MAC
+//! in the system (KEM domain, ML-DSA signing-key domain, PID domain, PUF-MAC
 //! domain, AEAD-key domain, fuzzy-extractor domain — see
 //! `crypto::domains`). Per-domain outputs are cryptographically
 //! independent even though they all originate from the same underlying
@@ -73,8 +73,8 @@ pub fn shake256_bytes(domain: &[u8], data: &[u8], out_len: usize) -> Vec<u8> {
 }
 
 /// Length-prefix every segment then concatenate. Used to build canonical
-/// byte transcripts for objects that get Dilithium-signed directly
-/// (Dilithium hashes its input internally, so no separate pre-hash is
+/// byte transcripts for objects that get ML-DSA-signed directly
+/// (ML-DSA hashes its input internally, so no separate pre-hash is
 /// required — we only need an unambiguous byte encoding of the fields).
 pub fn length_prefixed_concat(segments: &[&[u8]]) -> Vec<u8> {
     let mut out = Vec::new();

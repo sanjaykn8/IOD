@@ -21,16 +21,18 @@ name = "iod-bench"
 path = "src/bin/bench.rs"
 
 [dependencies]
-# NOTE: pqcrypto-kyber / pqcrypto-dilithium implement the NIST Round-3
-# submissions (Kyber768, Dilithium2) via PQClean C sources. They are the
-# direct predecessors of the standardized ML-KEM-768 (FIPS 203) and
-# ML-DSA-44 (FIPS 204) but are NOT byte-compatible with the final
-# standards. They are kept because the existing protocol and vectors use
-# them; migrating to pqcrypto-mlkem/pqcrypto-mldsa is listed as a TODO in
-# docs/IMPLEMENTATION_STATUS.md and docs/dependency-rationale.md.
-pqcrypto-kyber = "0.8.1"
-pqcrypto-dilithium = "0.5.0"
-pqcrypto-traits = "0.3"
+# Post-quantum primitives: FINAL NIST standards, pure Rust (RustCrypto).
+#   ML-KEM-768 (FIPS 203)  -> ml-kem 0.3.4
+#   ML-DSA-44  (FIPS 204)  -> ml-dsa 0.1.2 (after the fixes for CVE-2026-22705 / -24850)
+# Exact versions are pinned; see docs/dependency-rationale.md for the selection
+# record (API, MSRV 1.87, NIST ACVP vectors in tests/kat/, advisories checked).
+# Using FIPS-specified algorithms does NOT make this software FIPS 140-3 validated.
+# The NIST Round-3 crates pqcrypto-kyber / pqcrypto-dilithium were removed.
+ml-kem = { version = "=0.3.4", default-features = false, features = ["alloc", "getrandom", "zeroize"] }
+ml-dsa = { version = "=0.1.2", default-features = false, features = ["alloc", "getrandom", "zeroize"] }
+getrandom04 = { package = "getrandom", version = "0.4", features = ["sys_rng"] }
+# Bounded DEFLATE inflation of the bootstrap-v3 manifest body (receive side only). Pure Rust.
+miniz_oxide = { version = "=0.9.1", default-features = false, features = ["with-alloc"] }
 sha3 = "0.10"
 sha2 = "0.10"
 hmac = "0.12"
@@ -68,3 +70,15 @@ p3-uni-stark = "=0.9.0-rc.1"
 # Plonky3 uses rand 0.10; kept under a different name from our rand 0.8.
 rand10 = { package = "rand", version = "0.10" }
 postcard = { version = "1", features = ["use-std"] }
+
+[dev-dependencies]
+# Independent second implementation (PQClean C, final FIPS 203/204 formats), used ONLY by
+# tests/fips_interop.rs for cross-implementation interoperability. Not linked into any binary.
+# Both crates carry RustSec "unmaintained" notices (RUSTSEC-2026-0161 / -0166) because PQClean
+# is being archived; that is acceptable for a test oracle and is why they are not runtime deps.
+pqcrypto-mlkem = "=0.1.1"
+pqcrypto-mldsa = "=0.1.2"
+pqcrypto-traits = "0.3"
+# KAT tests feed the NIST-given `rnd` through the crate's RNG interface (rand_core 0.10).
+hybrid-array = "0.4"
+rand_core010 = { package = "rand_core", version = "0.10" }

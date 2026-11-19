@@ -3,11 +3,13 @@
 //! * `TransportProvider` / `PassthroughTransport` -- the original minimal
 //!   interface, retained for unit tests of the sealing layer only. The live
 //!   application-message path does NOT use passthrough.
-//! * `pipeline` -- the patch-wise image transport (Frame v2 + patch manifest v1 +
-//!   bootstrap v2 over a Python image service). See `docs/patchwise-transport.md`.
+//! * `pipeline` -- the patch-wise image transport (Frame v3 + patch manifest v2 +
+//!   bootstrap v3 over a Python image service). See `docs/patchwise-transport.md`
+//!   and `docs/bootstrap-v3-design.md`.
 
 pub mod b64;
 pub mod backend;
+pub mod bootstrap;
 pub mod config;
 pub mod error;
 pub mod fake;
@@ -16,6 +18,7 @@ pub mod generator;
 pub mod http;
 pub mod manifest;
 pub mod pipeline;
+pub mod policy;
 pub mod report;
 pub mod wire;
 

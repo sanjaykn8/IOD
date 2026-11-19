@@ -38,6 +38,9 @@ pub struct SimulationState {
     /// Image-transport configuration and the (replaceable) image-service backend.
     pub stego_cfg: StegoConfig,
     pub backend: Arc<dyn StegoBackend>,
+    /// What the start-up suite guard archived in THIS process (see
+    /// `Database::quarantine_incompatible`); the durable record is `legacy_snapshots`.
+    pub crypto_migration: serde_json::Value,
 }
 
 fn pair_key(a: &str, b: &str) -> (String, String) {
@@ -58,6 +61,9 @@ impl SimulationState {
     /// Construct with an explicit image-service backend (tests inject a fake).
     pub fn with_backend(db_path: &str, stego_cfg: StegoConfig, backend: Arc<dyn StegoBackend>) -> anyhow::Result<Self> {
         let db = Database::open(db_path)?;
+        // FIPS 203/204 migration guard: identities written under another suite are
+        // archived before anything is loaded; they are never reinterpreted.
+        let crypto_migration = db.quarantine_incompatible()?;
         let gcs = db.load_gcs()?.unwrap_or_else(GcsState::new);
         let mut drones = HashMap::new();
         for id in db.load_all_drone_ids()? {
@@ -83,6 +89,7 @@ impl SimulationState {
             recv_seen: HashMap::new(),
             stego_cfg,
             backend,
+            crypto_migration,
         })
     }
 

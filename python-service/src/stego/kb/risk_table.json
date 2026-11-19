@@ -1,0 +1,176 @@
+{
+ "version": "risk-table-1",
+ "label": "Built from the VALIDATION split only (seed namespace 'val'); never from the test split. Offline measurement, not a security claim.",
+ "generator_version": "procgen-1",
+ "cover": {
+  "width": 320,
+  "height": 240,
+  "mode": "RGB",
+  "families": [
+   "terrain",
+   "clouds",
+   "strata",
+   "cells"
+  ],
+  "val_seeds_per_family": 20,
+  "accepted": 80,
+  "rejection_reasons": {}
+ },
+ "condition": "each algorithm alone over the whole image, uniformly random payload, requested rate 0.05 payload bits per cover sample (algorithms that cannot reach it embed their maximum; see achieved_rate_bps)",
+ "detector": "L2 logistic regression (l2 = 10, NumPy, Newton/IRLS) on basic + srm-lite features; grouped 4-fold cross-validation over validation seeds",
+ "tiers": {
+  "high": "AUC >= 0.8",
+  "medium": "0.65 <= AUC < 0.8",
+  "low": "AUC < 0.65"
+ },
+ "selection_use": "operational selector kb-risk-1: tier, then changes_per_bit (expected distortion), then ms_per_kib (processing cost); policy low_detectability excludes the high tier (and DCT/DWT/DCT-SVD by rule)",
+ "algorithms": {
+  "lsb_replacement": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.802,
+   "auc_ci95": [
+    0.7542,
+    0.8564
+   ],
+   "tier": "high",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 0.499,
+   "ms_per_kib": 0.6,
+   "reached_reference_rate": true
+  },
+  "lsb_matching": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.7453,
+   "auc_ci95": [
+    0.6994,
+    0.8005
+   ],
+   "tier": "medium",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 0.5,
+   "ms_per_kib": 0.9,
+   "reached_reference_rate": true
+  },
+  "pvd": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.7934,
+   "auc_ci95": [
+    0.7447,
+    0.8506
+   ],
+   "tier": "medium",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 0.41,
+   "ms_per_kib": 7.03,
+   "reached_reference_rate": true
+  },
+  "edge_adaptive_lsb": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.6986,
+   "auc_ci95": [
+    0.6508,
+    0.7574
+   ],
+   "tier": "medium",
+   "achieved_rate_bps": 0.04803,
+   "changes_per_bit": 0.4998,
+   "ms_per_kib": 4.51,
+   "reached_reference_rate": false
+  },
+  "dct": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.9803,
+   "auc_ci95": [
+    0.9609,
+    0.9939
+   ],
+   "tier": "high",
+   "achieved_rate_bps": 0.03125,
+   "changes_per_bit": 8.6038,
+   "ms_per_kib": 3.99,
+   "reached_reference_rate": false
+  },
+  "dwt": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.9997,
+   "auc_ci95": [
+    0.9986,
+    1.0
+   ],
+   "tier": "high",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 2.5507,
+   "ms_per_kib": 4.5,
+   "reached_reference_rate": true
+  },
+  "dct_svd": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.9623,
+   "auc_ci95": [
+    0.9372,
+    0.9844
+   ],
+   "tier": "high",
+   "achieved_rate_bps": 0.00521,
+   "changes_per_bit": 30.2383,
+   "ms_per_kib": 108.84,
+   "reached_reference_rate": false
+  },
+  "hugo": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.6389,
+   "auc_ci95": [
+    0.6103,
+    0.6803
+   ],
+   "tier": "low",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 0.2222,
+   "ms_per_kib": 1859.97,
+   "reached_reference_rate": true
+  },
+  "wow": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.6278,
+   "auc_ci95": [
+    0.5978,
+    0.6675
+   ],
+   "tier": "low",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 0.2364,
+   "ms_per_kib": 297.61,
+   "reached_reference_rate": true
+  },
+  "s_uniward": {
+   "n_pairs": 80,
+   "requested_rate_bps": 0.05,
+   "auc": 0.6295,
+   "auc_ci95": [
+    0.602,
+    0.6705
+   ],
+   "tier": "low",
+   "achieved_rate_bps": 0.05,
+   "changes_per_bit": 0.1822,
+   "ms_per_kib": 295.33,
+   "reached_reference_rate": true
+  }
+ },
+ "command": "python3 scripts/eval_detectability.py --stage risk-table --val-seeds 20 --width 320 --height 240",
+ "environment": {
+  "python": "3.13.18",
+  "numpy": "2.5.3",
+  "machine": "x86_64"
+ },
+ "wall_seconds": 180.7
+}

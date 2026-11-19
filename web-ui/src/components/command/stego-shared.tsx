@@ -18,35 +18,116 @@ export function fmtNum(v: unknown, digits = 3, unit = ""): string {
 export function fmtMetric(v: StegoNum, digits = 3, unit = ""): string {
   return isNil(v) ? "undefined" : fmtNum(v, digits, unit);
 }
-export const fmtPct = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "n/a");
-export const fmtMs = (v: unknown) => (typeof v === "number" && Number.isFinite(v) ? `${v < 10 ? v.toFixed(2) : v.toFixed(1)} ms` : "n/a");
-export const fmtTime = (ms?: number) => (typeof ms === "number" ? new Date(ms).toLocaleString() : "n/a");
-export const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
-export const short = (s?: string | null, n = 8) => (s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "—");
-export const ALGORITHMS = ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct", "dwt", "dct_svd", "hugo", "wow", "s_uniward"] as const;
+export const fmtPct = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v) ? `${(v * 100).toFixed(1)}%` : "n/a";
+export const fmtMs = (v: unknown) =>
+  typeof v === "number" && Number.isFinite(v)
+    ? `${v < 10 ? v.toFixed(2) : v.toFixed(1)} ms`
+    : "n/a";
+export const fmtTime = (ms?: number) =>
+  typeof ms === "number" ? new Date(ms).toLocaleString() : "n/a";
+export const num = (v: unknown): number | null =>
+  typeof v === "number" && Number.isFinite(v) ? v : null;
+export const short = (s?: string | null, n = 8) =>
+  s ? (s.length > n ? `${s.slice(0, n)}…` : s) : "—";
+export const ALGORITHMS = [
+  "lsb_replacement",
+  "lsb_matching",
+  "pvd",
+  "edge_adaptive_lsb",
+  "dct",
+  "dwt",
+  "dct_svd",
+  "hugo",
+  "wow",
+  "s_uniward",
+] as const;
 
-export function Bar({ value, max, tone = "info" }: { value: number | null; max: number; tone?: Tone }) {
+export function Bar({
+  value,
+  max,
+  tone = "info",
+}: {
+  value: number | null;
+  max: number;
+  tone?: Tone;
+}) {
   const pct = value === null || max <= 0 ? 0 : Math.max(0, Math.min(100, (value / max) * 100));
-  return <span className={`stego-bar stego-bar-${tone}`} aria-hidden="true"><i style={{ width: `${pct}%` }} /></span>;
+  return (
+    <span className={`stego-bar stego-bar-${tone}`} aria-hidden="true">
+      <i style={{ width: `${pct}%` }} />
+    </span>
+  );
 }
 export function KV({ rows }: { rows: [string, ReactNode][] }) {
-  return <dl className="stego-kv">{rows.map(([k, v]) => <div key={k}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>;
+  return (
+    <dl className="stego-kv">
+      {rows.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
 }
-export function Notice({ tone, title, children }: { tone: "danger" | "warning" | "info"; title: string; children: ReactNode }) {
-  return <div className={`notice notice-${tone === "info" ? "info" : tone}`} role={tone === "danger" ? "alert" : "status"}><Info aria-hidden="true" /><div><strong>{title}</strong><p>{children}</p></div></div>;
+export function Notice({
+  tone,
+  title,
+  children,
+}: {
+  tone: "danger" | "warning" | "info";
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={`notice notice-${tone === "info" ? "info" : tone}`}
+      role={tone === "danger" ? "alert" : "status"}
+    >
+      <Info aria-hidden="true" />
+      <div>
+        <strong>{title}</strong>
+        <p>{children}</p>
+      </div>
+    </div>
+  );
 }
 export function Flag({ label, v }: { label: string; v: boolean | null | undefined }) {
-  return <Status tone={v === true ? "success" : v === false ? "danger" : "neutral"}>{label}: {v === true ? "OK" : v === false ? "FAILED" : "n/a"}</Status>;
+  return (
+    <Status tone={v === true ? "success" : v === false ? "danger" : "neutral"}>
+      {label}: {v === true ? "OK" : v === false ? "Failed" : "n/a"}
+    </Status>
+  );
 }
-export function Preview({ id, kind, label, note }: { id?: string | undefined; kind: ArtifactKind; label: string; note?: string }) {
+export function Preview({
+  id,
+  kind,
+  label,
+  note,
+}: {
+  id?: string | undefined;
+  kind: ArtifactKind;
+  label: string;
+  note?: string;
+}) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [id, kind]);
   return (
     <figure className="stego-preview">
       <figcaption>{label}</figcaption>
-      {id && !failed
-        ? <img src={stegoUrl.artifact(id, kind)} alt={`${label} image`} onError={() => setFailed(true)} />
-        : <div className="stego-preview-missing"><ImageOff aria-hidden="true" /><span>{id ? "preview unavailable (image failed to load)" : "no image yet"}</span></div>}
+      {id && !failed ? (
+        <img
+          src={stegoUrl.artifact(id, kind)}
+          alt={`${label} image`}
+          onError={() => setFailed(true)}
+        />
+      ) : (
+        <div className="stego-preview-missing">
+          <ImageOff aria-hidden="true" />
+          <span>{id ? "preview unavailable (image failed to load)" : "no image yet"}</span>
+        </div>
+      )}
       {note ? <small className="stego-muted">{note}</small> : null}
     </figure>
   );

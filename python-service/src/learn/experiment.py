@@ -304,7 +304,7 @@ def run(req):
     imgs = bool(req.get("include_images", True))
     t0 = time.perf_counter()
     seg = S.segment(cover, seg_cfg, 0)
-    feats = PF.compute(cover, seg.labels, seg.n_regions, 0)
+    feats = PF.compute(cover, seg.labels, seg.n_regions)
     regions, caps, sups = _patch_tables(cover, seg.labels, feats, seg.n_regions)
     pid, how = _choose_patch(req, feats)
     ctx = CoverCtx(cover)

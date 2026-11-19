@@ -1,4 +1,5 @@
-"""Static knowledge base: schema validation, BM25 retrieval, structured filters, determinism, no network/LLM."""
+"""Static knowledge base + risk table: schema validation, risk-aware ranking with BM25 tie-break, structured filters,
+determinism, no network/LLM, policy consistency with the versioned risk table."""
 import copy
 import json
 import math
@@ -22,7 +23,7 @@ def raw():
 def patch_inputs(arr, mask=None):
     lab = np.zeros(arr.shape[:2], np.uint8) if mask is None else np.where(mask, 0, 1).astype(np.uint8)
     n = int(lab.max()) + 1
-    f = PF.compute(arr, lab, n, 0)[0]
+    f = PF.compute(arr, lab, n)[0]
     reg = Region(0, lab == 0)
     sups = {x: BY_NAME[x].support(arr, reg) for x in NAMES}
     caps = {x: int(BY_NAME[x].capacity_bits(arr, reg, 2 if x in ("hugo", "wow", "s_uniward") else 0)) if sups[x][0] else 0 for x in NAMES}
@@ -33,7 +34,7 @@ def test_kb_loads_validates_and_covers_the_ten_algorithms():
     kb = KB.load()
     assert [e["id"] for e in kb["entries"]] == list(range(1, 11))
     assert [e["name"] for e in kb["entries"]] == list(NAMES)
-    assert kb["selector"]["version"] == "kb-bm25-1"
+    assert kb["selector"]["version"] == "kb-risk-1"
     for e in kb["entries"]:
         assert e["variant"] and e["domain"] and e["limitations"] and e["extraction"] and e["assumptions"]
         assert {ev["kind"] for ev in e["evidence"]} <= {"published", "implementation", "local_heuristic"}
@@ -106,7 +107,7 @@ def test_retrieval_is_deterministic_inspectable_and_top1():
     a = KB.retrieve(f, 40, caps, sups)
     b = KB.retrieve(copy.deepcopy(f), 40, dict(caps), dict(sups))
     assert a == b
-    assert a["selector_version"] == "kb-bm25-1" and a["required_bits"] == 320
+    assert a["selector_version"] == "kb-risk-1" and a["required_bits"] == 320
     assert len(a["candidates"]) == 10 and a["selected"] == a["ranking"][0]
     for c in a["candidates"]:
         assert c["kb_entry"].endswith(f"#{c['alg_id']}") and isinstance(c["bm25"], float)
@@ -114,21 +115,60 @@ def test_retrieval_is_deterministic_inspectable_and_top1():
         assert (c["exclusion_reason"] is None) == c["eligible"]
         assert {x["filter"] for x in c["filters"]} >= {"geometry_support", "min_usable_pixels", "measured_capacity"}
     elig = [c for c in a["candidates"] if c["eligible"]]
-    assert [c["algorithm"] for c in sorted(elig, key=lambda c: (-c["bm25"], c["alg_id"]))] == a["ranking"]
+    key = lambda c: (*KB.risk_key(c["algorithm"]), -c["bm25"], c["alg_id"])
+    assert [c["algorithm"] for c in sorted(elig, key=key)] == a["ranking"]
+    assert a["risk_table"] == "risk-table-1"
+    for c in a["candidates"]:
+        r = KB.risk_table()["algorithms"][c["algorithm"]]
+        assert c["risk"]["tier"] == r["tier"] and c["risk"]["changes_per_bit"] == r["changes_per_bit"]
+        assert c["expected_changes"] == int(round(r["changes_per_bit"] * 320))
 
 
-def test_tie_break_is_the_lower_algorithm_id():
+def test_ranking_order_is_tier_then_distortion_then_cost_then_bm25_then_id(monkeypatch):
     arr = natural_cover(64, 64, channels=1)
     f, caps, sups = patch_inputs(arr)
-    # a query with no descriptive term at all -> every BM25 score is 0 -> lowest eligible id wins
-    f = {k: v for k, v in f.items()}
-    f.update(variance=-1, gradient_mean=-1, edge_density=-1, entropy=-1, saturation=-1, mean=128, usable_pixels=f["usable_pixels"],
-             compactness=-1, aspect_ratio=-1, block8_fill=-1, hf_energy_ratio=-1, bits_per_sample=-1, channels=0)
-    assert KB.query_terms(f) == [] or True
+    f = dict(f, bits_per_sample=0.01)
+    caps = {k: 10 ** 6 for k in caps}
+    sups = {k: (True, None) for k in sups}
+    f.update(blocks8=99, blocks2=999, saturation=0.0)
+    base = KB.risk_table()
+    fake = {"version": "risk-table-test", "algorithms": {n: {"tier": "medium", "auc": 0.7, "changes_per_bit": 0.5, "ms_per_kib": 1.0} for n in NAMES}}
+    fake["algorithms"]["dwt"]["tier"] = "low"                       # tier dominates everything
+    fake["algorithms"]["pvd"]["changes_per_bit"] = 0.1              # then distortion
+    fake["algorithms"]["wow"]["ms_per_kib"] = 0.5                   # then cost
+    monkeypatch.setattr(KB, "risk_table", lambda: fake)
     r = KB.retrieve(f, 4, caps, sups)
-    top = [c for c in r["candidates"] if c["eligible"] and c["bm25"] == max(x["bm25"] for x in r["candidates"] if x["eligible"])]
-    assert r["selected"] == min(top, key=lambda c: c["alg_id"])["algorithm"]
-    assert r["tie"] == (len(top) > 1)
+    assert r["ranking"][:3] == ["dwt", "pvd", "wow"], r["ranking"]
+    rest = r["ranking"][3:]
+    # equal risk, distortion and cost: higher BM25 first, then the lower algorithm id
+    bm = {c["algorithm"]: c["bm25"] for c in r["candidates"]}
+    ids = {c["algorithm"]: c["alg_id"] for c in r["candidates"]}
+    assert rest == sorted(rest, key=lambda n: (-bm[n], ids[n]))
+    assert r["tie"] is False
+    del base
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda t: t.pop("version"), lambda t: t["algorithms"].pop("wow"), lambda t: t["algorithms"]["wow"].update(tier="safe"),
+    lambda t: t["algorithms"]["pvd"].update(changes_per_bit=-1), lambda t: t["algorithms"]["pvd"].pop("ms_per_kib"),
+    lambda t: t["algorithms"]["hugo"].update(auc=None),
+])
+def test_risk_table_validation_rejects_broken_tables(mutate):
+    t = copy.deepcopy(KB.risk_table())
+    mutate(t)
+    with pytest.raises(StegoError) as e:
+        KB.validate_risk(t)
+    assert e.value.code == "KB_INVALID"
+
+
+def test_policy_risk_exclusions_match_the_versioned_risk_table():
+    from stego.patch import policy as P
+    t = KB.risk_table()
+    assert t["version"] == P.RISK_TABLE_VERSION == "risk-table-1"
+    assert "validation" in t["label"].lower() and "never from the test split" in t["label"].lower()
+    high = {n for n, r in t["algorithms"].items() if r["tier"] == "high"}
+    assert set(P.RISK_EXCLUDED) == high - set(P.TRANSFORM_EXCLUDED)
+    assert not set(P.POLICIES["low_detectability"]) & high, "the default policy never allows a high-tier algorithm"
 
 
 def test_filters_run_before_ranking_and_nothing_eligible_means_no_selection():
@@ -137,7 +177,7 @@ def test_filters_run_before_ranking_and_nothing_eligible_means_no_selection():
     f = dict(f, bits_per_sample=0.5)
     best = KB.retrieve(f, 8, caps, sups)["selected"]
     caps2 = dict(caps)
-    caps2[best] = 0                                   # top-scoring entry cannot hold the chunk
+    caps2[best] = 0                                   # top-ranked entry cannot hold the chunk
     r = KB.retrieve(f, 8, caps2, sups)
     assert r["selected"] != best and best not in r["ranking"]
     row = next(c for c in r["candidates"] if c["algorithm"] == best)
@@ -159,14 +199,21 @@ def test_query_terms_follow_the_patch_characteristics():
     assert tf != tn
 
 
-def test_different_patches_can_select_different_algorithms():
-    flat = np.full((96, 96), 128, np.uint8)
-    noisy = np.clip(128 + np.random.default_rng(2).normal(0, 40, (96, 96)), 3, 252).astype(np.uint8)
-    picks = set()
-    for arr in (flat, noisy, natural_cover(96, 96, channels=1), mixed_cover(96, 96, 1)):
-        f, caps, sups = patch_inputs(arr)
-        picks.add(KB.retrieve(dict(f, bits_per_sample=0.02), 24, caps, sups)["selected"])
-    assert len(picks) >= 2, picks
+def test_different_patches_select_different_algorithms_when_eligibility_differs():
+    """With risk-table-1 the lowest-risk eligible algorithm wins; another one is chosen exactly when the
+    preferred one is filtered out for a patch (capacity, geometry, policy) -- never an excluded one."""
+    f, caps, sups = patch_inputs(natural_cover(96, 96, channels=1))
+    f = dict(f, bits_per_sample=0.02)
+    first = KB.retrieve(f, 24, caps, sups)
+    assert KB.risk_table()["algorithms"][first["selected"]]["tier"] == "low"
+    caps2 = dict(caps, **{n: 0 for n in ("s_uniward", "hugo", "wow")})        # e.g. a patch too small for the STC methods
+    second = KB.retrieve(f, 24, caps2, sups)
+    assert second["selected"] not in ("s_uniward", "hugo", "wow") and second["selected"] is not None
+    assert KB.risk_table()["algorithms"][second["selected"]]["tier"] == "medium"
+    from stego.patch import policy as P
+    third = KB.retrieve(f, 24, caps2, sups, allowed=set(P.POLICIES["low_detectability"]))
+    assert third["selected"] in P.POLICIES["low_detectability"]
+    assert all(c["exclusion_reason"] == "operational_policy" for c in third["candidates"] if c["algorithm"] in ("dct", "dwt", "dct_svd", "lsb_replacement"))
 
 
 def test_selection_uses_no_network_and_no_llm(monkeypatch):

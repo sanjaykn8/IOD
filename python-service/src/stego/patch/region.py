@@ -1,4 +1,4 @@
-"""A patch as the algorithms see it: an exact boolean pixel mask (bootstrap rows excluded)
+"""A patch as the algorithms see it: an exact boolean pixel mask (carrier pixels excluded)
 plus cached carrier index lists. Algorithms may read/write ONLY through these indices."""
 
 import hashlib
@@ -9,7 +9,7 @@ import numpy as np
 class Region:
     def __init__(self, rid, mask):
         self.id = int(rid)
-        self.mask = mask                      # (H, W) bool, effective (reserved rows removed)
+        self.mask = mask                      # (H, W) bool, effective (reserved carrier pixels removed)
         self.shape = mask.shape
         self._pix = None
         self._blocks = {}

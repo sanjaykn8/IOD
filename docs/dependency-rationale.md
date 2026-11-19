@@ -4,7 +4,13 @@ Licenses were read from the registries (MIT and/or Apache-2.0 for every Rust cra
 
 | Dependency | Purpose | ECC? |
 |---|---|---|
-| `pqcrypto-kyber 0.8.1`, `pqcrypto-dilithium 0.5.0`, `pqcrypto-traits` | Kyber768 / Dilithium2 (NIST Round 3 predecessors of ML-KEM-768 / ML-DSA-44), PQClean C sources. **Kept** because protocol and vectors use them; not byte-compatible with FIPS 203/204. TODO: migrate to `pqcrypto-mlkem/mldsa` (the new toolchain can build them). | no |
+| `ml-kem =0.3.4` (features `alloc, getrandom, zeroize`) | ML-KEM-768, FIPS 203 final. RustCrypto, pure Rust, MSRV 1.87, Apache-2.0/MIT. Chosen 2026-11-19: implements the final standard (not Round-3), seed-form keys, FIPS 203 §7.2 modulus check, constant-time selection for implicit rejection; passes the NIST ACVP ML-KEM-768 vectors in `tests/fips_kat.rs`; no open RustSec advisory. | no |
+| `ml-dsa =0.1.2` (features `alloc, getrandom, zeroize`; `pkcs8` off) | ML-DSA-44, FIPS 204 final. RustCrypto, pure Rust, MSRV 1.87. Contains the fixes for CVE-2026-22705 (Decompose timing, fixed rc.3) and CVE-2026-24850 (duplicate hint indices, fixed rc.4); passes the NIST ACVP ML-DSA-44 keyGen/sigGen/sigVer vectors. | no |
+| `getrandom 0.4` (`sys_rng`) | OS RNG with the `rand_core 0.10` interface used by the two crates (hedged signing `rnd`, seeds) | no |
+| dev-only: `pqcrypto-mlkem =0.1.1`, `pqcrypto-mldsa =0.1.2`, `pqcrypto-traits`, `hybrid-array`, `rand_core 0.10` | Independent PQClean C implementations of the final standards, used only as an interoperability oracle in `tests/fips_interop.rs`. Flagged unmaintained (RUSTSEC-2026-0161/-0166, PQClean archived), which is why they are not runtime dependencies. | no |
+| removed: `pqcrypto-kyber 0.8.1`, `pqcrypto-dilithium 0.5.0` | NIST Round-3 Kyber768 / Dilithium2 used until 2026-11-19 | — |
+
+Selection record for the PQ crates: versions, API and MSRV were read from crates.io and the crate sources; the advisories checked were RUSTSEC-2025-0144 / CVE-2026-22705, CVE-2026-24850 (ml-dsa, both fixed in the pinned version), RUSTSEC-2026-0161/-0166 (PQClean bindings, unmaintained) and the libcrux advisories (other crates). Using FIPS-specified algorithms does not make this software FIPS 140-3 validated.
 | `sha3`, `sha2`, `hmac`, `hkdf` | SHAKE256 transcripts/digests, HKDF/HMAC | no |
 | `chacha20poly1305 0.10` | AEAD for envelopes and channel messages | no |
 | `rand 0.8` / `rand 0.10` | OS CSPRNG (0.10 is required by Plonky3's hiding PCS RNG) | no |

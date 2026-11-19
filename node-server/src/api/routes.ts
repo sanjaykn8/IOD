@@ -17,6 +17,8 @@ function relay(res: Response, r: { status: number; body: any }) {
 
 router.post("/reset", async (_req, res) => relay(res, await rust.post("/api/reset")));
 router.get("/state", async (_req, res) => relay(res, await rust.get("/api/state")));
+// Active cryptographic suite (ML-KEM-768 / ML-DSA-44) and the legacy-state migration record.
+router.get("/system/crypto", async (_req, res) => relay(res, await rust.get("/api/system/crypto")));
 
 router.post("/groups", async (req, res) => relay(res, await rust.post("/api/groups", req.body)));
 router.get("/groups", async (_req, res) => relay(res, await rust.get("/api/groups")));

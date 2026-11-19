@@ -55,7 +55,7 @@ The GCS knows `rho`; privacy is vs. other drones, not vs. the GCS.
 Admin token (`IOD_ADMIN_TOKEN`, ≥16 chars, constant-time HMAC compare, fail closed), non-empty reason, target PID must belong to a **flagged** session; every attempt is audited with an outcome.
 
 ## Known limitations
-GCS knows `K_G,M`, `rho`, and all identities; sessions are linkable; private keys are not PUF-derived (library has no seeded keygen); CRP provisioning is simulated and there is no CRP refill; GCS does not itself verify the ZK proof; pqcrypto Round-3 Kyber/Dilithium rather than final FIPS 203/204 encodings; wire format is JSON (byte arrays as number lists), so message sizes are inflated; no real network transport.
+GCS knows `K_G,M`, `rho`, and all identities; sessions are linkable; private keys are not PUF-derived (seeded keygen exists but is deliberately not driven by the simulated PUF); CRP provisioning is simulated and there is no CRP refill; GCS does not itself verify the ZK proof; ML-KEM-768/ML-DSA-44 are the final FIPS 203/204 algorithms but the software is not FIPS 140-3 validated; wire format is JSON (byte arrays as number lists), so message sizes are inflated; no real network transport.
 
 ## Note: K4 transport (2026-10-29)
-Application messages (K4) are carried as AEAD → AppWire → Frame v2 (authenticated patch manifest + payload) → patch-wise PNG steganography; M1–M8 and K1–K3 are unchanged. See `patchwise-transport.md`.
+Application messages (K4) are carried as AEAD → AppWire → Frame v3 (authenticated patch manifest + payload) → patch-wise PNG steganography with a keyed bootstrap-v3 carrier; M1–M8 and K1–K3 are unchanged. See `patchwise-transport.md`.

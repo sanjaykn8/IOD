@@ -1,8 +1,10 @@
 {
- "schema": "detectability-eval-1",
- "label": "OFFLINE EVALUATION ONLY. Weak classical detector on synthetic generated covers. A low AUC is NOT evidence of undetectability.",
+ "schema": "detectability-eval-2",
+ "label": "OFFLINE EVALUATION ONLY. Classical detectors on synthetic generated covers. A low AUC is NOT evidence of undetectability.",
+ "transport_format": "frame-v3/appwire-v1/bootstrap-v3/manifest-v2",
  "generator_version": "procgen-1",
  "quality_version": "cover-quality-1",
+ "risk_table": "risk-table-1",
  "cover": {
   "width": 320,
   "height": 240,
@@ -13,15 +15,20 @@
    "strata",
    "cells"
   ],
-  "test_seeds_per_family": 40,
-  "accepted": 160,
-  "rejection_reasons": {},
-  "quality_score_mean": 0.9465337500000001
+  "train_seeds_per_family": 20,
+  "test_seeds_per_family": 15,
+  "train_accepted": 79,
+  "test_accepted": 60,
+  "rejection_reasons": {
+   "train": {
+    "lag8_correlation_below_0.35": 1
+   },
+   "test": {}
+  },
+  "samples_per_image": 230400
  },
- "detector": {
-  "model": "standardisation + L2 logistic regression (Newton/IRLS), implemented in this script with NumPy",
-  "l2": 1.0,
-  "features": [
+ "features": {
+  "basic": [
    {
     "name": "spam1[49]",
     "definition": "first-order co-occurrence of horizontally/vertically adjacent pixel differences truncated to [-3,3], averaged over both directions and all channels (7x7 normalised counts)"
@@ -75,1295 +82,4505 @@
     "definition": "mean run length of equal LSBs along rows"
    }
   ],
-  "feature_count": 65
+  "basic_count": 65,
+  "srm_lite": "SRM-inspired: residuals d1 (first difference, q=1), d2 (second difference, q=2), d3 (third difference, q=3) and kb (3x3 KB high-pass, q=4), quantised and truncated to [-2, 2]; third-order co-occurrence of horizontally and vertically adjacent residual triples, symmetrised under sign flip and reversal (39 classes per residual), normalised, averaged over directions and channels. A small subset of the spatial rich model, not the SRM itself.",
+  "srm_lite_count": 156
+ },
+ "detectors": {
+  "lr_basic": "L2 logistic regression (l2 = 1, NumPy, Newton/IRLS) on the basic features",
+  "lr_srm": "L2 logistic regression (l2 = 10, NumPy, Newton/IRLS) on basic + srm-lite features",
+  "trees_srm": "extremely randomised trees (scikit-learn ExtraTreesClassifier, 500 trees, min_samples_leaf 2, seed 0) on basic + srm-lite features"
  },
  "protocol": {
-  "split": "grouped 5-fold by seed; leave-one-family-out",
-  "confidence_intervals": "percentile bootstrap, 1000 resamples of seeds",
+  "splits": "seed namespaces train / val / test (disjoint); detectors are trained on train and evaluated once on test; val is used only for the risk table",
+  "pairing": "a cover and its stego image share a seed and a split",
+  "confidence_intervals": "percentile bootstrap, 1000 resamples of test seeds",
   "threshold": 0.5,
-  "payload": "uniformly random bytes (ciphertext-like)",
-  "rng_seed": 20261115
+  "tpr_at_1pct_fpr": "largest threshold with cover FPR <= 1 %; resolution 1 / #test covers",
+  "payload": "uniformly random bytes (ciphertext-like); carrier bits and value streams random (indistinguishable from the real ones)",
+  "rng_seed": 20261119,
+  "hyperparameters": "fixed a priori (see detectors); nothing tuned on the test split"
  },
  "results": [
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.9860546875,
-   "accuracy": 0.98125,
-   "precision": 0.9753086419753086,
-   "recall": 0.9875,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 156,
-    "true_cover_pred_stego": 4,
-    "true_stego_pred_cover": 2,
-    "true_stego_pred_stego": 158
-   },
-   "auc_ci95": [
-    0.9701875,
-    0.9984765625
-   ],
-   "accuracy_ci95": [
-    0.968671875,
-    0.99375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 1.0,
-     "accuracy": 0.975
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.986875,
-     "accuracy": 0.95
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.956875,
-     "accuracy": 0.975
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 1.0,
-     "accuracy": 1.0
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.9859375,
-   "condition": "patch_mixed",
-   "kind": "operational patch-wise transport (planner + KB selection + carrier)",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 58.73709792062506,
-   "seconds": 46.7,
+   "condition": "transport_low",
+   "kind": "transport",
+   "payload_bytes": 256,
+   "policy": "low_detectability",
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.008888888888888887,
+   "bytes_mean": 256.0,
+   "changed_samples_mean": 1401.0,
+   "psnr_db_mean": 70.31144259805681,
+   "short_of_rate": 0,
    "algorithms_selected_patches": {
-    "dct": 254,
-    "dct_svd": 3,
-    "hugo": 1,
-    "lsb_matching": 379,
-    "s_uniward": 283,
-    "wow": 40
+    "s_uniward": 360
+   },
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5555555555555556,
+     "accuracy": 0.5166666666666667,
+     "precision": 0.5208333333333334,
+     "recall": 0.4166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 35,
+      "true_stego_pred_stego": 25
+     },
+     "tpr_at_1pct_fpr": 0.05,
+     "auc_ci95": [
+      0.5411111111111111,
+      0.5852916666666667
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.5416666666666666
+     ],
+     "per_family_auc": {
+      "cells": 0.5822222222222222,
+      "clouds": 0.5733333333333334,
+      "strata": 0.5911111111111111,
+      "terrain": 0.5822222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.5466666666666666,
+      "clouds": 0.5422222222222223,
+      "strata": 0.5733333333333334,
+      "terrain": 0.5733333333333334
+     },
+     "held_out_family_auc_mean": 0.5588888888888889
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6702777777777778,
+     "accuracy": 0.6083333333333333,
+     "precision": 0.5915492957746479,
+     "recall": 0.7,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 31,
+      "true_cover_pred_stego": 29,
+      "true_stego_pred_cover": 18,
+      "true_stego_pred_stego": 42
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6377777777777778,
+      0.7155625
+     ],
+     "accuracy_ci95": [
+      0.5583333333333333,
+      0.6583333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.7244444444444444,
+      "clouds": 0.7466666666666667,
+      "strata": 0.6222222222222222,
+      "terrain": 0.6622222222222223
+     },
+     "held_out_family_auc": {
+      "cells": 0.6177777777777778,
+      "clouds": 0.64,
+      "strata": 0.5955555555555555,
+      "terrain": 0.6088888888888889
+     },
+     "held_out_family_auc_mean": 0.6155555555555555
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6638888888888889,
+     "accuracy": 0.6416666666666667,
+     "precision": 0.639344262295082,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 38,
+      "true_cover_pred_stego": 22,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6191597222222222,
+      0.7211111111111111
+     ],
+     "accuracy_ci95": [
+      0.5833333333333334,
+      0.7
+     ],
+     "per_family_auc": {
+      "cells": 0.8266666666666667,
+      "clouds": 0.6888888888888889,
+      "strata": 0.5422222222222223,
+      "terrain": 0.6355555555555555
+     },
+     "held_out_family_auc": {
+      "cells": 0.6488888888888888,
+      "clouds": 0.7022222222222222,
+      "strata": 0.5555555555555556,
+      "terrain": 0.56
+     },
+     "held_out_family_auc_mean": 0.6166666666666667
+    }
    }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.6114453125,
-   "accuracy": 0.575,
-   "precision": 0.573170731707317,
-   "recall": 0.5875,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 90,
-    "true_cover_pred_stego": 70,
-    "true_stego_pred_cover": 66,
-    "true_stego_pred_stego": 94
-   },
-   "auc_ci95": [
-    0.5933203125,
-    0.6373056640625
-   ],
-   "accuracy_ci95": [
-    0.549921875,
-    0.60625
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.601875,
-     "accuracy": 0.5625
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.6225,
-     "accuracy": 0.55
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.564375,
-     "accuracy": 0.5875
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.6575,
-     "accuracy": 0.6125
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.6115625,
-   "condition": "patch_mixed_below_carrier",
-   "kind": "same images as patch_mixed; the detector sees only rows >= 16 (carrier rows cropped from cover and stego)",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 58.73709792062506,
-   "seconds": 0.0
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.5266796875,
-   "accuracy": 0.525,
-   "precision": 0.5240963855421686,
-   "recall": 0.54375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 81,
-    "true_cover_pred_stego": 79,
-    "true_stego_pred_cover": 73,
-    "true_stego_pred_stego": 87
-   },
-   "auc_ci95": [
-    0.521052734375,
-    0.5376171875
-   ],
-   "accuracy_ci95": [
-    0.509375,
-    0.54375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.53,
-     "accuracy": 0.5
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.554375,
-     "accuracy": 0.5
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.506875,
-     "accuracy": 0.5
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.528125,
-     "accuracy": 0.5
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.52984375,
-   "condition": "lsb_replacement",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 71.65668863639787,
-   "seconds": 7.3
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.5324609375,
-   "accuracy": 0.534375,
-   "precision": 0.5379310344827586,
-   "recall": 0.4875,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 93,
-    "true_cover_pred_stego": 67,
-    "true_stego_pred_cover": 82,
-    "true_stego_pred_stego": 78
-   },
-   "auc_ci95": [
-    0.522146484375,
-    0.54586328125
-   ],
-   "accuracy_ci95": [
-    0.509375,
-    0.5625
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.521875,
-     "accuracy": 0.5
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.521875,
-     "accuracy": 0.5
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.5325,
-     "accuracy": 0.525
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.53625,
-     "accuracy": 0.5125
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.528125,
-   "condition": "lsb_matching",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 71.64974921761628,
-   "seconds": 7.4
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.64015625,
-   "accuracy": 0.60625,
-   "precision": 0.6148648648648649,
-   "recall": 0.56875,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 103,
-    "true_cover_pred_stego": 57,
-    "true_stego_pred_cover": 69,
-    "true_stego_pred_stego": 91
-   },
-   "auc_ci95": [
-    0.6169111328125,
-    0.669033203125
-   ],
-   "accuracy_ci95": [
-    0.575,
-    0.6375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.5775,
-     "accuracy": 0.575
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.68625,
-     "accuracy": 0.6125
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.615625,
-     "accuracy": 0.5875
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.57875,
-     "accuracy": 0.525
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.61453125,
-   "condition": "pvd",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 56.69803103570384,
-   "seconds": 8.6
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.5126171875,
-   "accuracy": 0.509375,
-   "precision": 0.5084745762711864,
-   "recall": 0.5625,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 73,
-    "true_cover_pred_stego": 87,
-    "true_stego_pred_cover": 70,
-    "true_stego_pred_stego": 90
-   },
-   "auc_ci95": [
-    0.5083974609375,
-    0.5196494140625
-   ],
-   "accuracy_ci95": [
-    0.5,
-    0.521875
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.51,
-     "accuracy": 0.5
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.52,
-     "accuracy": 0.525
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.5125,
-     "accuracy": 0.5
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.51,
-     "accuracy": 0.5125
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.513125,
-   "condition": "edge_adaptive_lsb",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 71.650008564207,
-   "seconds": 8.0
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.858828125,
-   "accuracy": 0.778125,
-   "precision": 0.7696969696969697,
-   "recall": 0.79375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 122,
-    "true_cover_pred_stego": 38,
-    "true_stego_pred_cover": 33,
-    "true_stego_pred_stego": 127
-   },
-   "auc_ci95": [
-    0.8263857421875,
-    0.8906699218749999
-   ],
-   "accuracy_ci95": [
-    0.7375,
-    0.81875
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.77625,
-     "accuracy": 0.7125
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.93125,
-     "accuracy": 0.8
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.76375,
-     "accuracy": 0.7625
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.87,
-     "accuracy": 0.725
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.8353125,
-   "condition": "dct",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 51.59095963150861,
-   "seconds": 7.6
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.97515625,
-   "accuracy": 0.959375,
-   "precision": 0.950920245398773,
-   "recall": 0.96875,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 152,
-    "true_cover_pred_stego": 8,
-    "true_stego_pred_cover": 5,
-    "true_stego_pred_stego": 155
-   },
-   "auc_ci95": [
-    0.954357421875,
-    0.99219140625
-   ],
-   "accuracy_ci95": [
-    0.9375,
-    0.978125
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.951875,
-     "accuracy": 0.85
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.868125,
-     "accuracy": 0.825
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.946875,
-     "accuracy": 0.95
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.9975,
-     "accuracy": 0.95
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.9410937500000001,
-   "condition": "dwt",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 60.26922107630704,
-   "seconds": 7.3
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.8956640625,
-   "accuracy": 0.8375,
-   "precision": 0.8375,
-   "recall": 0.8375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 134,
-    "true_cover_pred_stego": 26,
-    "true_stego_pred_cover": 26,
-    "true_stego_pred_stego": 134
-   },
-   "auc_ci95": [
-    0.866369140625,
-    0.9245810546875
-   ],
-   "accuracy_ci95": [
-    0.8,
-    0.8719531249999999
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.88,
-     "accuracy": 0.775
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.94875,
-     "accuracy": 0.825
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.79875,
-     "accuracy": 0.8125
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.905,
-     "accuracy": 0.8125
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.8831249999999999,
-   "condition": "dct_svd",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 150.0,
-   "bits_per_sample_mean": 0.005208333333333333,
-   "psnr_db_mean": 51.44757950682911,
-   "seconds": 9.3
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.511328125,
-   "accuracy": 0.5,
-   "precision": 0.5,
-   "recall": 0.49375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 81,
-    "true_cover_pred_stego": 79,
-    "true_stego_pred_cover": 81,
-    "true_stego_pred_stego": 79
-   },
-   "auc_ci95": [
-    0.5043740234375,
-    0.5182431640624999
-   ],
-   "accuracy_ci95": [
-    0.490625,
-    0.509375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.49625,
-     "accuracy": 0.5
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.498125,
-     "accuracy": 0.4875
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.515,
-     "accuracy": 0.5
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.5125,
-     "accuracy": 0.5125
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.5054687499999999,
-   "condition": "hugo",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 75.2588150934246,
-   "seconds": 71.9
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.544765625,
-   "accuracy": 0.528125,
-   "precision": 0.5294117647058824,
-   "recall": 0.50625,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 88,
-    "true_cover_pred_stego": 72,
-    "true_stego_pred_cover": 79,
-    "true_stego_pred_stego": 81
-   },
-   "auc_ci95": [
-    0.5343359375,
-    0.5600400390625
-   ],
-   "accuracy_ci95": [
-    0.509375,
-    0.550078125
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.5075,
-     "accuracy": 0.5
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.523125,
-     "accuracy": 0.525
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.545,
-     "accuracy": 0.55
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.5425,
-     "accuracy": 0.5125
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.52953125,
-   "condition": "wow",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 75.0374268347455,
-   "seconds": 24.6
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.5373046875,
-   "accuracy": 0.540625,
-   "precision": 0.5448275862068965,
-   "recall": 0.49375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 94,
-    "true_cover_pred_stego": 66,
-    "true_stego_pred_cover": 81,
-    "true_stego_pred_stego": 79
-   },
-   "auc_ci95": [
-    0.52625,
-    0.55094140625
-   ],
-   "accuracy_ci95": [
-    0.51875,
-    0.5625
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.505,
-     "accuracy": 0.5125
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.528125,
-     "accuracy": 0.525
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.545,
-     "accuracy": 0.55
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.528125,
-     "accuracy": 0.525
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.5265625,
-   "condition": "s_uniward",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 256,
-   "payload_bytes_embedded_mean": 256.0,
-   "bits_per_sample_mean": 0.008888888888888889,
-   "psnr_db_mean": 76.07429663334608,
-   "seconds": 25.3
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.98421875,
-   "accuracy": 0.978125,
-   "precision": 0.9751552795031055,
-   "recall": 0.98125,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 156,
-    "true_cover_pred_stego": 4,
-    "true_stego_pred_cover": 3,
-    "true_stego_pred_stego": 157
-   },
-   "auc_ci95": [
-    0.966833984375,
-    0.9982822265625
-   ],
-   "accuracy_ci95": [
-    0.959375,
-    0.99375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 1.0,
-     "accuracy": 0.975
-    },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.965625,
-     "accuracy": 0.825
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.95625,
-     "accuracy": 0.9625
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 1.0,
-     "accuracy": 0.9875
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.98046875,
-   "condition": "patch_mixed",
-   "kind": "operational patch-wise transport (planner + KB selection + carrier)",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 54.72500485456901,
-   "seconds": 94.3,
+   "condition": "transport_med",
+   "kind": "transport",
+   "payload_bytes": 1024,
+   "policy": "low_detectability",
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.03555555555555555,
+   "bytes_mean": 1024.0,
+   "changed_samples_mean": 2591.266666666667,
+   "psnr_db_mean": 67.63125353771122,
+   "short_of_rate": 0,
    "algorithms_selected_patches": {
-    "dct": 238,
-    "lsb_matching": 358,
-    "lsb_replacement": 180,
-    "s_uniward": 964,
-    "wow": 57
+    "s_uniward": 647
+   },
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5663888888888889,
+     "accuracy": 0.5333333333333333,
+     "precision": 0.5416666666666666,
+     "recall": 0.43333333333333335,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 38,
+      "true_cover_pred_stego": 22,
+      "true_stego_pred_cover": 34,
+      "true_stego_pred_stego": 26
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5458263888888888,
+      0.5994513888888889
+     ],
+     "accuracy_ci95": [
+      0.5083333333333333,
+      0.5666666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.5777777777777777,
+      "clouds": 0.5644444444444444,
+      "strata": 0.6044444444444445,
+      "terrain": 0.56
+     },
+     "held_out_family_auc": {
+      "cells": 0.5377777777777778,
+      "clouds": 0.5244444444444445,
+      "strata": 0.5777777777777777,
+      "terrain": 0.5244444444444445
+     },
+     "held_out_family_auc_mean": 0.5411111111111111
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7566666666666667,
+     "accuracy": 0.675,
+     "precision": 0.6567164179104478,
+     "recall": 0.7333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 16,
+      "true_stego_pred_stego": 44
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.7110902777777778,
+      0.8175138888888889
+     ],
+     "accuracy_ci95": [
+      0.6166666666666667,
+      0.7416666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.8711111111111111,
+      "clouds": 0.8266666666666667,
+      "strata": 0.6444444444444445,
+      "terrain": 0.7466666666666667
+     },
+     "held_out_family_auc": {
+      "cells": 0.68,
+      "clouds": 0.6933333333333334,
+      "strata": 0.6177777777777778,
+      "terrain": 0.6755555555555556
+     },
+     "held_out_family_auc_mean": 0.6666666666666667
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7540277777777777,
+     "accuracy": 0.6833333333333333,
+     "precision": 0.6774193548387096,
+     "recall": 0.7,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 40,
+      "true_cover_pred_stego": 20,
+      "true_stego_pred_cover": 18,
+      "true_stego_pred_stego": 42
+     },
+     "tpr_at_1pct_fpr": 0.13333333333333333,
+     "auc_ci95": [
+      0.7047152777777778,
+      0.8177951388888889
+     ],
+     "accuracy_ci95": [
+      0.625,
+      0.75
+     ],
+     "per_family_auc": {
+      "cells": 0.9511111111111111,
+      "clouds": 0.7777777777777778,
+      "strata": 0.5733333333333334,
+      "terrain": 0.7244444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.7333333333333333,
+      "clouds": 0.7822222222222223,
+      "strata": 0.56,
+      "terrain": 0.6088888888888889
+     },
+     "held_out_family_auc_mean": 0.6711111111111112
+    }
    }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.747265625,
-   "accuracy": 0.71875,
-   "precision": 0.7243589743589743,
-   "recall": 0.70625,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 117,
-    "true_cover_pred_stego": 43,
-    "true_stego_pred_cover": 47,
-    "true_stego_pred_stego": 113
+   "condition": "transport_high",
+   "kind": "transport",
+   "payload_bytes": 3072,
+   "policy": "low_detectability",
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.10666666666666666,
+   "bytes_mean": 3072.0,
+   "changed_samples_mean": 7124.033333333334,
+   "psnr_db_mean": 54.3293832092856,
+   "short_of_rate": 0,
+   "algorithms_selected_patches": {
+    "pvd": 112,
+    "s_uniward": 535
    },
-   "auc_ci95": [
-    0.712025390625,
-    0.7878525390625
-   ],
-   "accuracy_ci95": [
-    0.678125,
-    0.75625
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.77375,
-     "accuracy": 0.6625
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7158333333333333,
+     "accuracy": 0.6416666666666667,
+     "precision": 0.6666666666666666,
+     "recall": 0.5666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 43,
+      "true_cover_pred_stego": 17,
+      "true_stego_pred_cover": 26,
+      "true_stego_pred_stego": 34
+     },
+     "tpr_at_1pct_fpr": 0.11666666666666667,
+     "auc_ci95": [
+      0.6586041666666667,
+      0.7825
+     ],
+     "accuracy_ci95": [
+      0.5833333333333334,
+      0.7
+     ],
+     "per_family_auc": {
+      "cells": 0.5688888888888889,
+      "clouds": 0.7244444444444444,
+      "strata": 0.7955555555555556,
+      "terrain": 0.7644444444444445
+     },
+     "held_out_family_auc": {
+      "cells": 0.5022222222222222,
+      "clouds": 0.6355555555555555,
+      "strata": 0.7288888888888889,
+      "terrain": 0.76
+     },
+     "held_out_family_auc_mean": 0.6566666666666667
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.60625,
-     "accuracy": 0.5875
-    },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.7425,
-     "accuracy": 0.7125
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.7575,
-     "accuracy": 0.6625
-    }
-   },
-   "leave_one_family_out_mean_auc": 0.72,
-   "condition": "patch_mixed_below_carrier",
-   "kind": "same images as patch_mixed; the detector sees only rows >= 16 (carrier rows cropped from cover and stego)",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 54.72500485456901,
-   "seconds": 0.0
-  },
-  {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.7576953125,
-   "accuracy": 0.690625,
-   "precision": 0.6763005780346821,
-   "recall": 0.73125,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 104,
-    "true_cover_pred_stego": 56,
-    "true_stego_pred_cover": 43,
-    "true_stego_pred_stego": 117
-   },
-   "auc_ci95": [
-    0.7292119140625001,
-    0.787587890625
-   ],
-   "accuracy_ci95": [
-    0.653125,
-    0.728125
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.65125,
-     "accuracy": 0.5875
-    },
-    "clouds": {
-     "n_pairs": 40,
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
      "auc": 0.8675,
-     "accuracy": 0.525
+     "accuracy": 0.8166666666666667,
+     "precision": 0.7794117647058824,
+     "recall": 0.8833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 45,
+      "true_cover_pred_stego": 15,
+      "true_stego_pred_cover": 7,
+      "true_stego_pred_stego": 53
+     },
+     "tpr_at_1pct_fpr": 0.16666666666666666,
+     "auc_ci95": [
+      0.8166527777777778,
+      0.9225069444444445
+     ],
+     "accuracy_ci95": [
+      0.7583333333333333,
+      0.875
+     ],
+     "per_family_auc": {
+      "cells": 0.9555555555555556,
+      "clouds": 0.9511111111111111,
+      "strata": 0.7511111111111111,
+      "terrain": 0.8577777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.8444444444444444,
+      "clouds": 0.8622222222222222,
+      "strata": 0.7288888888888889,
+      "terrain": 0.7822222222222223
+     },
+     "held_out_family_auc_mean": 0.8044444444444444
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.680625,
-     "accuracy": 0.625
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.664375,
-     "accuracy": 0.6
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8516666666666667,
+     "accuracy": 0.775,
+     "precision": 0.7619047619047619,
+     "recall": 0.8,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 45,
+      "true_cover_pred_stego": 15,
+      "true_stego_pred_cover": 12,
+      "true_stego_pred_stego": 48
+     },
+     "tpr_at_1pct_fpr": 0.21666666666666667,
+     "auc_ci95": [
+      0.7922083333333334,
+      0.9066666666666666
+     ],
+     "accuracy_ci95": [
+      0.7083333333333334,
+      0.8333333333333334
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.8844444444444445,
+      "strata": 0.6311111111111111,
+      "terrain": 0.8222222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.8222222222222222,
+      "clouds": 0.8488888888888889,
+      "strata": 0.6755555555555556,
+      "terrain": 0.6488888888888888
+     },
+     "held_out_family_auc_mean": 0.7488888888888889
     }
-   },
-   "leave_one_family_out_mean_auc": 0.7159375,
-   "condition": "lsb_replacement",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 63.86927860509843,
-   "seconds": 7.7
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.58375,
-   "accuracy": 0.565625,
-   "precision": 0.567741935483871,
-   "recall": 0.55,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 93,
-    "true_cover_pred_stego": 67,
-    "true_stego_pred_cover": 72,
-    "true_stego_pred_stego": 88
+   "condition": "transport_med_previous_selector",
+   "kind": "transport",
+   "payload_bytes": 1024,
+   "policy": "all_algorithms+bm25",
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.03555555555555555,
+   "bytes_mean": 1024.0,
+   "changed_samples_mean": 5194.65,
+   "psnr_db_mean": 63.94033611101698,
+   "short_of_rate": 0,
+   "algorithms_selected_patches": {
+    "dct": 16,
+    "lsb_matching": 199,
+    "lsb_replacement": 71,
+    "s_uniward": 352,
+    "wow": 9
    },
-   "auc_ci95": [
-    0.5687089843750001,
-    0.6046875
-   ],
-   "accuracy_ci95": [
-    0.540625,
-    0.59375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.55875,
-     "accuracy": 0.5375
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5788888888888889,
+     "accuracy": 0.5416666666666666,
+     "precision": 0.5510204081632653,
+     "recall": 0.45,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 38,
+      "true_cover_pred_stego": 22,
+      "true_stego_pred_cover": 33,
+      "true_stego_pred_stego": 27
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5633194444444445,
+      0.6097222222222223
+     ],
+     "accuracy_ci95": [
+      0.5083333333333333,
+      0.575
+     ],
+     "per_family_auc": {
+      "cells": 0.6222222222222222,
+      "clouds": 0.5644444444444444,
+      "strata": 0.6222222222222222,
+      "terrain": 0.56
+     },
+     "held_out_family_auc": {
+      "cells": 0.6,
+      "clouds": 0.56,
+      "strata": 0.5688888888888889,
+      "terrain": 0.5555555555555556
+     },
+     "held_out_family_auc_mean": 0.5711111111111111
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.61875,
-     "accuracy": 0.5
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7611111111111111,
+     "accuracy": 0.725,
+     "precision": 0.6956521739130435,
+     "recall": 0.8,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 39,
+      "true_cover_pred_stego": 21,
+      "true_stego_pred_cover": 12,
+      "true_stego_pred_stego": 48
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.7124722222222223,
+      0.8214027777777777
+     ],
+     "accuracy_ci95": [
+      0.6583333333333333,
+      0.7916666666666666
+     ],
+     "per_family_auc": {
+      "cells": 0.8933333333333333,
+      "clouds": 0.8177777777777778,
+      "strata": 0.6933333333333334,
+      "terrain": 0.7155555555555555
+     },
+     "held_out_family_auc": {
+      "cells": 0.7111111111111111,
+      "clouds": 0.6933333333333334,
+      "strata": 0.6577777777777778,
+      "terrain": 0.6577777777777778
+     },
+     "held_out_family_auc_mean": 0.6799999999999999
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.53375,
-     "accuracy": 0.4875
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.560625,
-     "accuracy": 0.6
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.775,
+     "accuracy": 0.6833333333333333,
+     "precision": 0.6833333333333333,
+     "recall": 0.6833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 41,
+      "true_cover_pred_stego": 19,
+      "true_stego_pred_cover": 19,
+      "true_stego_pred_stego": 41
+     },
+     "tpr_at_1pct_fpr": 0.1,
+     "auc_ci95": [
+      0.7166666666666667,
+      0.8413958333333333
+     ],
+     "accuracy_ci95": [
+      0.625,
+      0.75
+     ],
+     "per_family_auc": {
+      "cells": 0.9733333333333334,
+      "clouds": 0.7644444444444445,
+      "strata": 0.6,
+      "terrain": 0.7288888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.7422222222222222,
+      "clouds": 0.76,
+      "strata": 0.5688888888888889,
+      "terrain": 0.5955555555555555
+     },
+     "held_out_family_auc_mean": 0.6666666666666666
     }
-   },
-   "leave_one_family_out_mean_auc": 0.56796875,
-   "condition": "lsb_matching",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 63.86880261802023,
-   "seconds": 7.3
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.7966015625,
-   "accuracy": 0.721875,
-   "precision": 0.7290322580645161,
-   "recall": 0.70625,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 118,
-    "true_cover_pred_stego": 42,
-    "true_stego_pred_cover": 47,
-    "true_stego_pred_stego": 113
-   },
-   "auc_ci95": [
-    0.755572265625,
-    0.837666015625
-   ],
-   "accuracy_ci95": [
-    0.684375,
-    0.759375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.48375,
-     "accuracy": 0.525
+   "condition": "bootstrap_only_med",
+   "kind": "carrier_only",
+   "payload_bytes": 1024,
+   "policy": "low_detectability",
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.009400462962962963,
+   "bytes_mean": 270.73333333333335,
+   "changed_samples_mean": 1088.9,
+   "psnr_db_mean": 71.42710682183697,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5463888888888889,
+     "accuracy": 0.525,
+     "precision": 0.5319148936170213,
+     "recall": 0.4166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 38,
+      "true_cover_pred_stego": 22,
+      "true_stego_pred_cover": 35,
+      "true_stego_pred_stego": 25
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5336041666666667,
+      0.571125
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.55
+     ],
+     "per_family_auc": {
+      "cells": 0.56,
+      "clouds": 0.5466666666666666,
+      "strata": 0.5688888888888889,
+      "terrain": 0.5555555555555556
+     },
+     "held_out_family_auc": {
+      "cells": 0.5377777777777778,
+      "clouds": 0.5155555555555555,
+      "strata": 0.5555555555555556,
+      "terrain": 0.5466666666666666
+     },
+     "held_out_family_auc_mean": 0.5388888888888889
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.9375,
-     "accuracy": 0.7375
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6461111111111111,
+     "accuracy": 0.5833333333333334,
+     "precision": 0.5714285714285714,
+     "recall": 0.6666666666666666,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 30,
+      "true_cover_pred_stego": 30,
+      "true_stego_pred_cover": 20,
+      "true_stego_pred_stego": 40
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6202777777777778,
+      0.6850069444444445
+     ],
+     "accuracy_ci95": [
+      0.5416666666666666,
+      0.6252083333333331
+     ],
+     "per_family_auc": {
+      "cells": 0.7155555555555555,
+      "clouds": 0.72,
+      "strata": 0.6222222222222222,
+      "terrain": 0.64
+     },
+     "held_out_family_auc": {
+      "cells": 0.5955555555555555,
+      "clouds": 0.64,
+      "strata": 0.5955555555555555,
+      "terrain": 0.5822222222222222
+     },
+     "held_out_family_auc_mean": 0.6033333333333333
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.679375,
-     "accuracy": 0.7
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.83625,
-     "accuracy": 0.7
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6559722222222222,
+     "accuracy": 0.6333333333333333,
+     "precision": 0.6290322580645161,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.05,
+     "auc_ci95": [
+      0.6147152777777777,
+      0.7133368055555556
+     ],
+     "accuracy_ci95": [
+      0.575,
+      0.6916666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.7866666666666666,
+      "clouds": 0.6533333333333333,
+      "strata": 0.5555555555555556,
+      "terrain": 0.6644444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.6577777777777778,
+      "clouds": 0.7111111111111111,
+      "strata": 0.5688888888888889,
+      "terrain": 0.5555555555555556
+     },
+     "held_out_family_auc_mean": 0.6233333333333333
     }
-   },
-   "leave_one_family_out_mean_auc": 0.73421875,
-   "condition": "pvd",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 48.88964220936303,
-   "seconds": 8.7
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.575859375,
-   "accuracy": 0.53125,
-   "precision": 0.5290697674418605,
-   "recall": 0.56875,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 79,
-    "true_cover_pred_stego": 81,
-    "true_stego_pred_cover": 69,
-    "true_stego_pred_stego": 91
-   },
-   "auc_ci95": [
-    0.56625,
-    0.59176171875
-   ],
-   "accuracy_ci95": [
-    0.5125,
-    0.553125
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.574375,
-     "accuracy": 0.5125
+   "condition": "transport_med_patches_only",
+   "kind": "patches_only",
+   "payload_bytes": 1024,
+   "policy": "low_detectability",
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.03555555555555555,
+   "bytes_mean": 1024.0,
+   "changed_samples_mean": 1515.55,
+   "psnr_db_mean": 69.95392503083544,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5533333333333333,
+     "accuracy": 0.525,
+     "precision": 0.5294117647058824,
+     "recall": 0.45,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 36,
+      "true_cover_pred_stego": 24,
+      "true_stego_pred_cover": 33,
+      "true_stego_pred_stego": 27
+     },
+     "tpr_at_1pct_fpr": 0.03333333333333333,
+     "auc_ci95": [
+      0.5394444444444444,
+      0.5783402777777779
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.5583333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.5866666666666667,
+      "clouds": 0.5644444444444444,
+      "strata": 0.5511111111111111,
+      "terrain": 0.6
+     },
+     "held_out_family_auc": {
+      "cells": 0.5466666666666666,
+      "clouds": 0.5422222222222223,
+      "strata": 0.5288888888888889,
+      "terrain": 0.5733333333333334
+     },
+     "held_out_family_auc_mean": 0.5477777777777778
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.55875,
-     "accuracy": 0.5125
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6386111111111111,
+     "accuracy": 0.5666666666666667,
+     "precision": 0.5571428571428572,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 29,
+      "true_cover_pred_stego": 31,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6122083333333334,
+      0.6802777777777778
+     ],
+     "accuracy_ci95": [
+      0.525,
+      0.6085416666666664
+     ],
+     "per_family_auc": {
+      "cells": 0.7244444444444444,
+      "clouds": 0.6977777777777778,
+      "strata": 0.5777777777777777,
+      "terrain": 0.6355555555555555
+     },
+     "held_out_family_auc": {
+      "cells": 0.6088888888888889,
+      "clouds": 0.6133333333333333,
+      "strata": 0.5733333333333334,
+      "terrain": 0.6222222222222222
+     },
+     "held_out_family_auc_mean": 0.6044444444444445
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.5625,
-     "accuracy": 0.5125
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.589375,
-     "accuracy": 0.5625
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6541666666666667,
+     "accuracy": 0.6,
+     "precision": 0.5882352941176471,
+     "recall": 0.6666666666666666,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 32,
+      "true_cover_pred_stego": 28,
+      "true_stego_pred_cover": 20,
+      "true_stego_pred_stego": 40
+     },
+     "tpr_at_1pct_fpr": 0.0,
+     "auc_ci95": [
+      0.6083159722222222,
+      0.7087604166666667
+     ],
+     "accuracy_ci95": [
+      0.55,
+      0.65
+     ],
+     "per_family_auc": {
+      "cells": 0.8266666666666667,
+      "clouds": 0.6444444444444445,
+      "strata": 0.5377777777777778,
+      "terrain": 0.6311111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.6666666666666666,
+      "clouds": 0.6533333333333333,
+      "strata": 0.5377777777777778,
+      "terrain": 0.5466666666666666
+     },
+     "held_out_family_auc_mean": 0.6011111111111112
     }
-   },
-   "leave_one_family_out_mean_auc": 0.57125,
-   "condition": "edge_adaptive_lsb",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1461.60625,
-   "bits_per_sample_mean": 0.05075021701388889,
-   "psnr_db_mean": 64.16791932381815,
-   "seconds": 8.4
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.9887109375,
-   "accuracy": 0.95,
-   "precision": 0.9615384615384616,
-   "recall": 0.9375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 154,
-    "true_cover_pred_stego": 6,
-    "true_stego_pred_cover": 10,
-    "true_stego_pred_stego": 150
-   },
-   "auc_ci95": [
-    0.9812080078125,
-    0.9952353515625
-   ],
-   "accuracy_ci95": [
-    0.928125,
-    0.971875
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.9825,
-     "accuracy": 0.9125
+   "condition": "single_lsb_replacement@0.02",
+   "kind": "single",
+   "algorithm": "lsb_replacement",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 2299.05,
+   "psnr_db_mean": 68.14062535287961,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6055555555555555,
+     "accuracy": 0.575,
+     "precision": 0.576271186440678,
+     "recall": 0.5666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 35,
+      "true_cover_pred_stego": 25,
+      "true_stego_pred_cover": 26,
+      "true_stego_pred_stego": 34
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5813819444444444,
+      0.6475138888888888
+     ],
+     "accuracy_ci95": [
+      0.5333333333333333,
+      0.625
+     ],
+     "per_family_auc": {
+      "cells": 0.6622222222222223,
+      "clouds": 0.6933333333333334,
+      "strata": 0.5777777777777777,
+      "terrain": 0.6222222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.5733333333333334,
+      "clouds": 0.5822222222222222,
+      "strata": 0.5511111111111111,
+      "terrain": 0.5866666666666667
+     },
+     "held_out_family_auc_mean": 0.5733333333333333
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 1.0,
-     "accuracy": 0.975
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6705555555555556,
+     "accuracy": 0.65,
+     "precision": 0.640625,
+     "recall": 0.6833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 19,
+      "true_stego_pred_stego": 41
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6344444444444445,
+      0.7311180555555556
+     ],
+     "accuracy_ci95": [
+      0.6,
+      0.7083333333333334
+     ],
+     "per_family_auc": {
+      "cells": 0.7466666666666667,
+      "clouds": 0.7333333333333333,
+      "strata": 0.6088888888888889,
+      "terrain": 0.6577777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.6222222222222222,
+      "clouds": 0.7377777777777778,
+      "strata": 0.6088888888888889,
+      "terrain": 0.6044444444444445
+     },
+     "held_out_family_auc_mean": 0.6433333333333333
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.97,
-     "accuracy": 0.8375
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.99125,
-     "accuracy": 0.9
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.635,
+     "accuracy": 0.5666666666666667,
+     "precision": 0.5625,
+     "recall": 0.6,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 32,
+      "true_cover_pred_stego": 28,
+      "true_stego_pred_cover": 24,
+      "true_stego_pred_stego": 36
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5980555555555556,
+      0.6888958333333334
+     ],
+     "accuracy_ci95": [
+      0.525,
+      0.6166666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.8088888888888889,
+      "clouds": 0.5911111111111111,
+      "strata": 0.5422222222222223,
+      "terrain": 0.6888888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.5911111111111111,
+      "clouds": 0.6266666666666667,
+      "strata": 0.5244444444444445,
+      "terrain": 0.5511111111111111
+     },
+     "held_out_family_auc_mean": 0.5733333333333334
     }
-   },
-   "leave_one_family_out_mean_auc": 0.9859374999999999,
-   "condition": "dct",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 900.0,
+   }
+  },
+  {
+   "condition": "single_lsb_replacement@0.05",
+   "kind": "single",
+   "algorithm": "lsb_replacement",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 5759.05,
+   "psnr_db_mean": 64.15230718036439,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7616666666666667,
+     "accuracy": 0.7,
+     "precision": 0.7142857142857143,
+     "recall": 0.6666666666666666,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 44,
+      "true_cover_pred_stego": 16,
+      "true_stego_pred_cover": 20,
+      "true_stego_pred_stego": 40
+     },
+     "tpr_at_1pct_fpr": 0.13333333333333333,
+     "auc_ci95": [
+      0.7180555555555556,
+      0.8202847222222223
+     ],
+     "accuracy_ci95": [
+      0.6416666666666667,
+      0.7583333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.8177777777777778,
+      "clouds": 0.84,
+      "strata": 0.7555555555555555,
+      "terrain": 0.7111111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.6222222222222222,
+      "clouds": 0.6844444444444444,
+      "strata": 0.6266666666666667,
+      "terrain": 0.64
+     },
+     "held_out_family_auc_mean": 0.6433333333333333
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8480555555555556,
+     "accuracy": 0.8166666666666667,
+     "precision": 0.7878787878787878,
+     "recall": 0.8666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 46,
+      "true_cover_pred_stego": 14,
+      "true_stego_pred_cover": 8,
+      "true_stego_pred_stego": 52
+     },
+     "tpr_at_1pct_fpr": 0.06666666666666667,
+     "auc_ci95": [
+      0.7974722222222222,
+      0.906125
+     ],
+     "accuracy_ci95": [
+      0.7583333333333333,
+      0.875
+     ],
+     "per_family_auc": {
+      "cells": 0.96,
+      "clouds": 0.9022222222222223,
+      "strata": 0.7511111111111111,
+      "terrain": 0.8222222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.8044444444444444,
+      "clouds": 0.8533333333333334,
+      "strata": 0.7066666666666667,
+      "terrain": 0.7333333333333333
+     },
+     "held_out_family_auc_mean": 0.7744444444444445
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7952777777777778,
+     "accuracy": 0.7416666666666667,
+     "precision": 0.7457627118644068,
+     "recall": 0.7333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 45,
+      "true_cover_pred_stego": 15,
+      "true_stego_pred_cover": 16,
+      "true_stego_pred_stego": 44
+     },
+     "tpr_at_1pct_fpr": 0.08333333333333333,
+     "auc_ci95": [
+      0.7355555555555555,
+      0.8625
+     ],
+     "accuracy_ci95": [
+      0.675,
+      0.8
+     ],
+     "per_family_auc": {
+      "cells": 0.9555555555555556,
+      "clouds": 0.8355555555555556,
+      "strata": 0.6177777777777778,
+      "terrain": 0.7955555555555556
+     },
+     "held_out_family_auc": {
+      "cells": 0.6622222222222223,
+      "clouds": 0.7644444444444445,
+      "strata": 0.6133333333333333,
+      "terrain": 0.6311111111111111
+     },
+     "held_out_family_auc_mean": 0.6677777777777778
+    }
+   }
+  },
+  {
+   "condition": "single_lsb_replacement@0.1",
+   "kind": "single",
+   "algorithm": "lsb_replacement",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.09999999999999996,
+   "bytes_mean": 2880.0,
+   "changed_samples_mean": 11524.566666666668,
+   "psnr_db_mean": 61.13944527474816,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9238888888888889,
+     "accuracy": 0.8166666666666667,
+     "precision": 0.8653846153846154,
+     "recall": 0.75,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 53,
+      "true_cover_pred_stego": 7,
+      "true_stego_pred_cover": 15,
+      "true_stego_pred_stego": 45
+     },
+     "tpr_at_1pct_fpr": 0.6,
+     "auc_ci95": [
+      0.8872152777777778,
+      0.9580625
+     ],
+     "accuracy_ci95": [
+      0.75,
+      0.8668749999999998
+     ],
+     "per_family_auc": {
+      "cells": 0.9822222222222222,
+      "clouds": 0.9733333333333334,
+      "strata": 0.8933333333333333,
+      "terrain": 0.8622222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.7466666666666667,
+      "clouds": 0.7911111111111111,
+      "strata": 0.7422222222222222,
+      "terrain": 0.7066666666666667
+     },
+     "held_out_family_auc_mean": 0.7466666666666667
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9369444444444445,
+     "accuracy": 0.9,
+     "precision": 0.875,
+     "recall": 0.9333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 52,
+      "true_cover_pred_stego": 8,
+      "true_stego_pred_cover": 4,
+      "true_stego_pred_stego": 56
+     },
+     "tpr_at_1pct_fpr": 0.15,
+     "auc_ci95": [
+      0.8913888888888889,
+      0.9761180555555556
+     ],
+     "accuracy_ci95": [
+      0.8416666666666667,
+      0.95
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9733333333333334,
+      "strata": 0.8444444444444444,
+      "terrain": 0.92
+     },
+     "held_out_family_auc": {
+      "cells": 0.9288888888888889,
+      "clouds": 0.9644444444444444,
+      "strata": 0.7955555555555556,
+      "terrain": 0.84
+     },
+     "held_out_family_auc_mean": 0.8822222222222222
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.905,
+     "accuracy": 0.8166666666666667,
+     "precision": 0.796875,
+     "recall": 0.85,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 47,
+      "true_cover_pred_stego": 13,
+      "true_stego_pred_cover": 9,
+      "true_stego_pred_stego": 51
+     },
+     "tpr_at_1pct_fpr": 0.43333333333333335,
+     "auc_ci95": [
+      0.8608333333333333,
+      0.9455555555555556
+     ],
+     "accuracy_ci95": [
+      0.7583333333333333,
+      0.875
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.92,
+      "strata": 0.7466666666666667,
+      "terrain": 0.8888888888888888
+     },
+     "held_out_family_auc": {
+      "cells": 0.8266666666666667,
+      "clouds": 0.9244444444444444,
+      "strata": 0.72,
+      "terrain": 0.7866666666666666
+     },
+     "held_out_family_auc_mean": 0.8144444444444444
+    }
+   }
+  },
+  {
+   "condition": "single_lsb_matching@0.02",
+   "kind": "single",
+   "algorithm": "lsb_matching",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 2300.85,
+   "psnr_db_mean": 68.13729397147645,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5419444444444445,
+     "accuracy": 0.5166666666666667,
+     "precision": 0.5185185185185185,
+     "recall": 0.4666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 34,
+      "true_cover_pred_stego": 26,
+      "true_stego_pred_cover": 32,
+      "true_stego_pred_stego": 28
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5313819444444444,
+      0.5641666666666667
+     ],
+     "accuracy_ci95": [
+      0.48333333333333334,
+      0.55
+     ],
+     "per_family_auc": {
+      "cells": 0.5866666666666667,
+      "clouds": 0.5822222222222222,
+      "strata": 0.56,
+      "terrain": 0.52
+     },
+     "held_out_family_auc": {
+      "cells": 0.5466666666666666,
+      "clouds": 0.5733333333333334,
+      "strata": 0.56,
+      "terrain": 0.5244444444444445
+     },
+     "held_out_family_auc_mean": 0.5511111111111111
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6280555555555556,
+     "accuracy": 0.6333333333333333,
+     "precision": 0.625,
+     "recall": 0.6666666666666666,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 36,
+      "true_cover_pred_stego": 24,
+      "true_stego_pred_cover": 20,
+      "true_stego_pred_stego": 40
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6011111111111112,
+      0.6802847222222222
+     ],
+     "accuracy_ci95": [
+      0.575,
+      0.6916666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.6577777777777778,
+      "clouds": 0.7333333333333333,
+      "strata": 0.6044444444444445,
+      "terrain": 0.6133333333333333
+     },
+     "held_out_family_auc": {
+      "cells": 0.5688888888888889,
+      "clouds": 0.6266666666666667,
+      "strata": 0.5777777777777777,
+      "terrain": 0.5911111111111111
+     },
+     "held_out_family_auc_mean": 0.5911111111111111
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6194444444444445,
+     "accuracy": 0.5833333333333334,
+     "precision": 0.578125,
+     "recall": 0.6166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 33,
+      "true_cover_pred_stego": 27,
+      "true_stego_pred_cover": 23,
+      "true_stego_pred_stego": 37
+     },
+     "tpr_at_1pct_fpr": 0.0,
+     "auc_ci95": [
+      0.5858333333333333,
+      0.6675138888888889
+     ],
+     "accuracy_ci95": [
+      0.5416666666666666,
+      0.6333333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.7422222222222222,
+      "clouds": 0.5955555555555555,
+      "strata": 0.5688888888888889,
+      "terrain": 0.6666666666666666
+     },
+     "held_out_family_auc": {
+      "cells": 0.5733333333333334,
+      "clouds": 0.5822222222222222,
+      "strata": 0.5377777777777778,
+      "terrain": 0.56
+     },
+     "held_out_family_auc_mean": 0.5633333333333334
+    }
+   }
+  },
+  {
+   "condition": "single_lsb_matching@0.05",
+   "kind": "single",
+   "algorithm": "lsb_matching",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 5758.85,
+   "psnr_db_mean": 64.15245767225883,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5719444444444445,
+     "accuracy": 0.5333333333333333,
+     "precision": 0.5370370370370371,
+     "recall": 0.48333333333333334,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 35,
+      "true_cover_pred_stego": 25,
+      "true_stego_pred_cover": 31,
+      "true_stego_pred_stego": 29
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5602708333333333,
+      0.6
+     ],
+     "accuracy_ci95": [
+      0.49166666666666664,
+      0.5833333333333334
+     ],
+     "per_family_auc": {
+      "cells": 0.6177777777777778,
+      "clouds": 0.64,
+      "strata": 0.5688888888888889,
+      "terrain": 0.5688888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.5955555555555555,
+      "clouds": 0.6666666666666666,
+      "strata": 0.5733333333333334,
+      "terrain": 0.5377777777777778
+     },
+     "held_out_family_auc_mean": 0.5933333333333334
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7955555555555556,
+     "accuracy": 0.75,
+     "precision": 0.7272727272727273,
+     "recall": 0.8,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 42,
+      "true_cover_pred_stego": 18,
+      "true_stego_pred_cover": 12,
+      "true_stego_pred_stego": 48
+     },
+     "tpr_at_1pct_fpr": 0.06666666666666667,
+     "auc_ci95": [
+      0.7399791666666666,
+      0.8655694444444444
+     ],
+     "accuracy_ci95": [
+      0.6916666666666667,
+      0.8085416666666665
+     ],
+     "per_family_auc": {
+      "cells": 0.88,
+      "clouds": 0.8444444444444444,
+      "strata": 0.6888888888888889,
+      "terrain": 0.7777777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.6977777777777778,
+      "clouds": 0.8088888888888889,
+      "strata": 0.6533333333333333,
+      "terrain": 0.6888888888888889
+     },
+     "held_out_family_auc_mean": 0.7122222222222223
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7683333333333333,
+     "accuracy": 0.725,
+     "precision": 0.7288135593220338,
+     "recall": 0.7166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 44,
+      "true_cover_pred_stego": 16,
+      "true_stego_pred_cover": 17,
+      "true_stego_pred_stego": 43
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.7082986111111111,
+      0.8314097222222222
+     ],
+     "accuracy_ci95": [
+      0.6666666666666666,
+      0.7833333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.9422222222222222,
+      "clouds": 0.8088888888888889,
+      "strata": 0.6266666666666667,
+      "terrain": 0.7333333333333333
+     },
+     "held_out_family_auc": {
+      "cells": 0.6577777777777778,
+      "clouds": 0.72,
+      "strata": 0.5955555555555555,
+      "terrain": 0.6133333333333333
+     },
+     "held_out_family_auc_mean": 0.6466666666666666
+    }
+   }
+  },
+  {
+   "condition": "single_lsb_matching@0.1",
+   "kind": "single",
+   "algorithm": "lsb_matching",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.09999999999999996,
+   "bytes_mean": 2880.0,
+   "changed_samples_mean": 11513.833333333334,
+   "psnr_db_mean": 61.14352082179445,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6316666666666667,
+     "accuracy": 0.5666666666666667,
+     "precision": 0.5714285714285714,
+     "recall": 0.5333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 36,
+      "true_cover_pred_stego": 24,
+      "true_stego_pred_cover": 28,
+      "true_stego_pred_stego": 32
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6074930555555556,
+      0.6730763888888889
+     ],
+     "accuracy_ci95": [
+      0.525,
+      0.6166666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.6577777777777778,
+      "clouds": 0.8266666666666667,
+      "strata": 0.6488888888888888,
+      "terrain": 0.6311111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.6088888888888889,
+      "clouds": 0.68,
+      "strata": 0.6088888888888889,
+      "terrain": 0.5822222222222222
+     },
+     "held_out_family_auc_mean": 0.62
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9047222222222222,
+     "accuracy": 0.875,
+     "precision": 0.8461538461538461,
+     "recall": 0.9166666666666666,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 50,
+      "true_cover_pred_stego": 10,
+      "true_stego_pred_cover": 5,
+      "true_stego_pred_stego": 55
+     },
+     "tpr_at_1pct_fpr": 0.08333333333333333,
+     "auc_ci95": [
+      0.8544444444444445,
+      0.9566805555555555
+     ],
+     "accuracy_ci95": [
+      0.8166666666666667,
+      0.925
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9422222222222222,
+      "strata": 0.7866666666666666,
+      "terrain": 0.8888888888888888
+     },
+     "held_out_family_auc": {
+      "cells": 0.8311111111111111,
+      "clouds": 0.9022222222222223,
+      "strata": 0.7733333333333333,
+      "terrain": 0.8088888888888889
+     },
+     "held_out_family_auc_mean": 0.8288888888888889
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8740277777777777,
+     "accuracy": 0.8166666666666667,
+     "precision": 0.7878787878787878,
+     "recall": 0.8666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 46,
+      "true_cover_pred_stego": 14,
+      "true_stego_pred_cover": 8,
+      "true_stego_pred_stego": 52
+     },
+     "tpr_at_1pct_fpr": 0.3333333333333333,
+     "auc_ci95": [
+      0.8266527777777778,
+      0.9255625000000001
+     ],
+     "accuracy_ci95": [
+      0.7583333333333333,
+      0.8752083333333331
+     ],
+     "per_family_auc": {
+      "cells": 0.9911111111111112,
+      "clouds": 0.8755555555555555,
+      "strata": 0.7155555555555555,
+      "terrain": 0.8311111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.8088888888888889,
+      "clouds": 0.8622222222222222,
+      "strata": 0.7022222222222222,
+      "terrain": 0.7333333333333333
+     },
+     "held_out_family_auc_mean": 0.7766666666666667
+    }
+   }
+  },
+  {
+   "condition": "single_pvd@0.02",
+   "kind": "single",
+   "algorithm": "pvd",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 1921.75,
+   "psnr_db_mean": 53.575721209878004,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7277777777777777,
+     "accuracy": 0.6583333333333333,
+     "precision": 0.6727272727272727,
+     "recall": 0.6166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 42,
+      "true_cover_pred_stego": 18,
+      "true_stego_pred_cover": 23,
+      "true_stego_pred_stego": 37
+     },
+     "tpr_at_1pct_fpr": 0.1,
+     "auc_ci95": [
+      0.6586041666666667,
+      0.8030625
+     ],
+     "accuracy_ci95": [
+      0.6,
+      0.7166666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.5333333333333333,
+      "clouds": 0.9022222222222223,
+      "strata": 0.6755555555555556,
+      "terrain": 0.8177777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.49777777777777776,
+      "clouds": 0.7466666666666667,
+      "strata": 0.6044444444444445,
+      "terrain": 0.8044444444444444
+     },
+     "held_out_family_auc_mean": 0.6633333333333333
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7433333333333333,
+     "accuracy": 0.675,
+     "precision": 0.7142857142857143,
+     "recall": 0.5833333333333334,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 46,
+      "true_cover_pred_stego": 14,
+      "true_stego_pred_cover": 25,
+      "true_stego_pred_stego": 35
+     },
+     "tpr_at_1pct_fpr": 0.08333333333333333,
+     "auc_ci95": [
+      0.6785833333333334,
+      0.8125069444444445
+     ],
+     "accuracy_ci95": [
+      0.625,
+      0.7416666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.6044444444444445,
+      "clouds": 0.8755555555555555,
+      "strata": 0.6711111111111111,
+      "terrain": 0.8177777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.5911111111111111,
+      "clouds": 0.8133333333333334,
+      "strata": 0.6311111111111111,
+      "terrain": 0.8222222222222222
+     },
+     "held_out_family_auc_mean": 0.7144444444444444
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7984722222222222,
+     "accuracy": 0.7083333333333334,
+     "precision": 0.6811594202898551,
+     "recall": 0.7833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 38,
+      "true_cover_pred_stego": 22,
+      "true_stego_pred_cover": 13,
+      "true_stego_pred_stego": 47
+     },
+     "tpr_at_1pct_fpr": 0.21666666666666667,
+     "auc_ci95": [
+      0.7405416666666667,
+      0.85834375
+     ],
+     "accuracy_ci95": [
+      0.65,
+      0.7668749999999999
+     ],
+     "per_family_auc": {
+      "cells": 0.8888888888888888,
+      "clouds": 0.8577777777777778,
+      "strata": 0.6355555555555555,
+      "terrain": 0.8111111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.6577777777777778,
+      "clouds": 0.7022222222222222,
+      "strata": 0.6088888888888889,
+      "terrain": 0.6044444444444445
+     },
+     "held_out_family_auc_mean": 0.6433333333333333
+    }
+   }
+  },
+  {
+   "condition": "single_pvd@0.05",
+   "kind": "single",
+   "algorithm": "pvd",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 4813.0,
+   "psnr_db_mean": 49.59122319645289,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7761111111111111,
+     "accuracy": 0.6666666666666666,
+     "precision": 0.6785714285714286,
+     "recall": 0.6333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 42,
+      "true_cover_pred_stego": 18,
+      "true_stego_pred_cover": 22,
+      "true_stego_pred_stego": 38
+     },
+     "tpr_at_1pct_fpr": 0.08333333333333333,
+     "auc_ci95": [
+      0.7027708333333332,
+      0.8488958333333334
+     ],
+     "accuracy_ci95": [
+      0.6,
+      0.7416666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.5244444444444445,
+      "clouds": 0.9555555555555556,
+      "strata": 0.7155555555555555,
+      "terrain": 0.8622222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.4577777777777778,
+      "clouds": 0.8311111111111111,
+      "strata": 0.6755555555555556,
+      "terrain": 0.8311111111111111
+     },
+     "held_out_family_auc_mean": 0.6988888888888889
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8155555555555556,
+     "accuracy": 0.7166666666666667,
+     "precision": 0.75,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 47,
+      "true_cover_pred_stego": 13,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.1,
+     "auc_ci95": [
+      0.7552708333333333,
+      0.8783402777777778
+     ],
+     "accuracy_ci95": [
+      0.6583333333333333,
+      0.775
+     ],
+     "per_family_auc": {
+      "cells": 0.6266666666666667,
+      "clouds": 0.9466666666666667,
+      "strata": 0.7644444444444445,
+      "terrain": 0.9022222222222223
+     },
+     "held_out_family_auc": {
+      "cells": 0.5555555555555556,
+      "clouds": 0.8622222222222222,
+      "strata": 0.8,
+      "terrain": 0.7822222222222223
+     },
+     "held_out_family_auc_mean": 0.7500000000000001
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8713888888888889,
+     "accuracy": 0.775,
+     "precision": 0.726027397260274,
+     "recall": 0.8833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 40,
+      "true_cover_pred_stego": 20,
+      "true_stego_pred_cover": 7,
+      "true_stego_pred_stego": 53
+     },
+     "tpr_at_1pct_fpr": 0.3,
+     "auc_ci95": [
+      0.8186111111111111,
+      0.9216805555555555
+     ],
+     "accuracy_ci95": [
+      0.7083333333333334,
+      0.8335416666666665
+     ],
+     "per_family_auc": {
+      "cells": 0.9822222222222222,
+      "clouds": 0.9333333333333333,
+      "strata": 0.7022222222222222,
+      "terrain": 0.8488888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.72,
+      "clouds": 0.7688888888888888,
+      "strata": 0.6622222222222223,
+      "terrain": 0.7111111111111111
+     },
+     "held_out_family_auc_mean": 0.7155555555555556
+    }
+   }
+  },
+  {
+   "condition": "single_pvd@0.1",
+   "kind": "single",
+   "algorithm": "pvd",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.09999999999999996,
+   "bytes_mean": 2880.0,
+   "changed_samples_mean": 9636.683333333332,
+   "psnr_db_mean": 46.51571428132829,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8080555555555555,
+     "accuracy": 0.7166666666666667,
+     "precision": 0.7321428571428571,
+     "recall": 0.6833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 45,
+      "true_cover_pred_stego": 15,
+      "true_stego_pred_cover": 19,
+      "true_stego_pred_stego": 41
+     },
+     "tpr_at_1pct_fpr": 0.1,
+     "auc_ci95": [
+      0.7427708333333333,
+      0.8705625
+     ],
+     "accuracy_ci95": [
+      0.65,
+      0.7752083333333332
+     ],
+     "per_family_auc": {
+      "cells": 0.5422222222222223,
+      "clouds": 0.9777777777777777,
+      "strata": 0.7733333333333333,
+      "terrain": 0.8622222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.4,
+      "clouds": 0.96,
+      "strata": 0.7333333333333333,
+      "terrain": 0.8488888888888889
+     },
+     "held_out_family_auc_mean": 0.7355555555555555
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9238888888888889,
+     "accuracy": 0.8583333333333333,
+     "precision": 0.864406779661017,
+     "recall": 0.85,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 52,
+      "true_cover_pred_stego": 8,
+      "true_stego_pred_cover": 9,
+      "true_stego_pred_stego": 51
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.8713888888888889,
+      0.9669583333333334
+     ],
+     "accuracy_ci95": [
+      0.8,
+      0.9083333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.8577777777777778,
+      "clouds": 0.9733333333333334,
+      "strata": 0.8755555555555555,
+      "terrain": 0.9777777777777777
+     },
+     "held_out_family_auc": {
+      "cells": 0.5644444444444444,
+      "clouds": 0.9422222222222222,
+      "strata": 0.9066666666666666,
+      "terrain": 0.8044444444444444
+     },
+     "held_out_family_auc_mean": 0.8044444444444444
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9580555555555555,
+     "accuracy": 0.8583333333333333,
+     "precision": 0.8028169014084507,
+     "recall": 0.95,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 46,
+      "true_cover_pred_stego": 14,
+      "true_stego_pred_cover": 3,
+      "true_stego_pred_stego": 57
+     },
+     "tpr_at_1pct_fpr": 0.6666666666666666,
+     "auc_ci95": [
+      0.9266597222222221,
+      0.9813958333333334
+     ],
+     "accuracy_ci95": [
+      0.8,
+      0.9166666666666666
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9733333333333334,
+      "strata": 0.92,
+      "terrain": 0.9066666666666666
+     },
+     "held_out_family_auc": {
+      "cells": 0.9644444444444444,
+      "clouds": 0.8622222222222222,
+      "strata": 0.8222222222222222,
+      "terrain": 0.7911111111111111
+     },
+     "held_out_family_auc_mean": 0.8600000000000001
+    }
+   }
+  },
+  {
+   "condition": "single_edge_adaptive_lsb@0.02",
+   "kind": "single",
+   "algorithm": "edge_adaptive_lsb",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.01976909722222223,
+   "bytes_mean": 569.35,
+   "changed_samples_mean": 2272.483333333333,
+   "psnr_db_mean": 68.20758986645679,
+   "short_of_rate": 2,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.5286111111111111,
+     "accuracy": 0.5166666666666667,
+     "precision": 0.5192307692307693,
+     "recall": 0.45,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 35,
+      "true_cover_pred_stego": 25,
+      "true_stego_pred_cover": 33,
+      "true_stego_pred_stego": 27
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5194444444444445,
+      0.5500069444444445
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.5416666666666666
+     ],
+     "per_family_auc": {
+      "cells": 0.5288888888888889,
+      "clouds": 0.5555555555555556,
+      "strata": 0.5377777777777778,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.5466666666666666,
+      "clouds": 0.5511111111111111,
+      "strata": 0.5288888888888889,
+      "terrain": 0.5333333333333333
+     },
+     "held_out_family_auc_mean": 0.5399999999999999
+    },
+    "lr_srm": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.6386111111111111,
+     "accuracy": 0.625,
+     "precision": 0.6056338028169014,
+     "recall": 0.7166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 32,
+      "true_cover_pred_stego": 28,
+      "true_stego_pred_cover": 17,
+      "true_stego_pred_stego": 43
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6033125,
+      0.6952847222222223
+     ],
+     "accuracy_ci95": [
+      0.575,
+      0.6833333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.8533333333333334,
+      "clouds": 0.6266666666666667,
+      "strata": 0.5955555555555555,
+      "terrain": 0.6533333333333333
+     },
+     "held_out_family_auc": {
+      "cells": 0.6222222222222222,
+      "clouds": 0.5911111111111111,
+      "strata": 0.5822222222222222,
+      "terrain": 0.5955555555555555
+     },
+     "held_out_family_auc_mean": 0.5977777777777777
+    },
+    "trees_srm": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.6358333333333334,
+     "accuracy": 0.5916666666666667,
+     "precision": 0.5901639344262295,
+     "recall": 0.6,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 35,
+      "true_cover_pred_stego": 25,
+      "true_stego_pred_cover": 24,
+      "true_stego_pred_stego": 36
+     },
+     "tpr_at_1pct_fpr": 0.03333333333333333,
+     "auc_ci95": [
+      0.59625,
+      0.6922430555555555
+     ],
+     "accuracy_ci95": [
+      0.5416666666666666,
+      0.6416666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.9022222222222223,
+      "clouds": 0.5666666666666667,
+      "strata": 0.5822222222222222,
+      "terrain": 0.6044444444444445
+     },
+     "held_out_family_auc": {
+      "cells": 0.5733333333333334,
+      "clouds": 0.5644444444444444,
+      "strata": 0.5111111111111111,
+      "terrain": 0.5422222222222223
+     },
+     "held_out_family_auc_mean": 0.5477777777777778
+    }
+   }
+  },
+  {
+   "condition": "single_edge_adaptive_lsb@0.05",
+   "kind": "single",
+   "algorithm": "edge_adaptive_lsb",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.0479855324074074,
+   "bytes_mean": 1381.9833333333333,
+   "changed_samples_mean": 5516.65,
+   "psnr_db_mean": 64.44741669985896,
+   "short_of_rate": 7,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.5527777777777778,
+     "accuracy": 0.5416666666666666,
+     "precision": 0.5423728813559322,
+     "recall": 0.5333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 33,
+      "true_cover_pred_stego": 27,
+      "true_stego_pred_cover": 28,
+      "true_stego_pred_stego": 32
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5430555555555555,
+      0.5800069444444444
+     ],
+     "accuracy_ci95": [
+      0.5083333333333333,
+      0.5833333333333334
+     ],
+     "per_family_auc": {
+      "cells": 0.5777777777777777,
+      "clouds": 0.5955555555555555,
+      "strata": 0.5733333333333334,
+      "terrain": 0.5688888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.5466666666666666,
+      "clouds": 0.5511111111111111,
+      "strata": 0.5733333333333334,
+      "terrain": 0.5511111111111111
+     },
+     "held_out_family_auc_mean": 0.5555555555555556
+    },
+    "lr_srm": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.7594444444444445,
+     "accuracy": 0.7333333333333333,
+     "precision": 0.6891891891891891,
+     "recall": 0.85,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 9,
+      "true_stego_pred_stego": 51
+     },
+     "tpr_at_1pct_fpr": 0.03333333333333333,
+     "auc_ci95": [
+      0.7052638888888889,
+      0.8236111111111111
+     ],
+     "accuracy_ci95": [
+      0.675,
+      0.7916666666666666
+     ],
+     "per_family_auc": {
+      "cells": 0.9866666666666667,
+      "clouds": 0.7555555555555555,
+      "strata": 0.6844444444444444,
+      "terrain": 0.6711111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.72,
+      "clouds": 0.6577777777777778,
+      "strata": 0.6577777777777778,
+      "terrain": 0.6266666666666667
+     },
+     "held_out_family_auc_mean": 0.6655555555555557
+    },
+    "trees_srm": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.7486111111111111,
+     "accuracy": 0.65,
+     "precision": 0.65,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 39,
+      "true_cover_pred_stego": 21,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.08333333333333333,
+     "auc_ci95": [
+      0.6883263888888889,
+      0.8158333333333333
+     ],
+     "accuracy_ci95": [
+      0.5916666666666667,
+      0.7083333333333334
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.68,
+      "strata": 0.5866666666666667,
+      "terrain": 0.6533333333333333
+     },
+     "held_out_family_auc": {
+      "cells": 0.6755555555555556,
+      "clouds": 0.6755555555555556,
+      "strata": 0.5955555555555555,
+      "terrain": 0.5822222222222222
+     },
+     "held_out_family_auc_mean": 0.6322222222222222
+    }
+   }
+  },
+  {
+   "condition": "single_edge_adaptive_lsb@0.1",
+   "kind": "single",
+   "algorithm": "edge_adaptive_lsb",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.08905844907407404,
+   "bytes_mean": 2564.883333333333,
+   "changed_samples_mean": 10248.95,
+   "psnr_db_mean": 61.95686842925131,
+   "short_of_rate": 13,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.605,
+     "accuracy": 0.5583333333333333,
+     "precision": 0.5573770491803278,
+     "recall": 0.5666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 33,
+      "true_cover_pred_stego": 27,
+      "true_stego_pred_cover": 26,
+      "true_stego_pred_stego": 34
+     },
+     "tpr_at_1pct_fpr": 0.03333333333333333,
+     "auc_ci95": [
+      0.5852777777777778,
+      0.6405625
+     ],
+     "accuracy_ci95": [
+      0.525,
+      0.6
+     ],
+     "per_family_auc": {
+      "cells": 0.6577777777777778,
+      "clouds": 0.5955555555555555,
+      "strata": 0.6533333333333333,
+      "terrain": 0.5955555555555555
+     },
+     "held_out_family_auc": {
+      "cells": 0.5644444444444444,
+      "clouds": 0.5866666666666667,
+      "strata": 0.6577777777777778,
+      "terrain": 0.5733333333333334
+     },
+     "held_out_family_auc_mean": 0.5955555555555556
+    },
+    "lr_srm": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.8347222222222223,
+     "accuracy": 0.8,
+     "precision": 0.7571428571428571,
+     "recall": 0.8833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 43,
+      "true_cover_pred_stego": 17,
+      "true_stego_pred_cover": 7,
+      "true_stego_pred_stego": 53
+     },
+     "tpr_at_1pct_fpr": 0.03333333333333333,
+     "auc_ci95": [
+      0.7819375,
+      0.8972361111111111
+     ],
+     "accuracy_ci95": [
+      0.7414583333333333,
+      0.8583333333333333
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.8133333333333334,
+      "strata": 0.7911111111111111,
+      "terrain": 0.7244444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.8888888888888888,
+      "clouds": 0.7333333333333333,
+      "strata": 0.7333333333333333,
+      "terrain": 0.6355555555555555
+     },
+     "held_out_family_auc_mean": 0.7477777777777778
+    },
+    "trees_srm": {
+     "n_train_pairs": 78,
+     "n_test_pairs": 60,
+     "auc": 0.8119444444444445,
+     "accuracy": 0.725,
+     "precision": 0.7142857142857143,
+     "recall": 0.75,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 42,
+      "true_cover_pred_stego": 18,
+      "true_stego_pred_cover": 15,
+      "true_stego_pred_stego": 45
+     },
+     "tpr_at_1pct_fpr": 0.18333333333333332,
+     "auc_ci95": [
+      0.7558333333333334,
+      0.8750138888888889
+     ],
+     "accuracy_ci95": [
+      0.6666666666666666,
+      0.7916666666666666
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.7288888888888889,
+      "strata": 0.6533333333333333,
+      "terrain": 0.68
+     },
+     "held_out_family_auc": {
+      "cells": 0.7644444444444445,
+      "clouds": 0.6977777777777778,
+      "strata": 0.6577777777777778,
+      "terrain": 0.6266666666666667
+     },
+     "held_out_family_auc_mean": 0.6866666666666668
+    }
+   }
+  },
+  {
+   "condition": "single_dct@0.02",
+   "kind": "single",
+   "algorithm": "dct",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 39623.1,
+   "psnr_db_mean": 48.06282457146459,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9672222222222222,
+     "accuracy": 0.925,
+     "precision": 0.9180327868852459,
+     "recall": 0.9333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 55,
+      "true_cover_pred_stego": 5,
+      "true_stego_pred_cover": 4,
+      "true_stego_pred_stego": 56
+     },
+     "tpr_at_1pct_fpr": 0.45,
+     "auc_ci95": [
+      0.938048611111111,
+      0.9902777777777778
+     ],
+     "accuracy_ci95": [
+      0.8833333333333333,
+      0.9666666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.9066666666666666,
+      "clouds": 0.9911111111111112,
+      "strata": 0.9733333333333334,
+      "terrain": 0.9955555555555555
+     },
+     "held_out_family_auc": {
+      "cells": 0.9155555555555556,
+      "clouds": 0.9866666666666667,
+      "strata": 0.9511111111111111,
+      "terrain": 0.9422222222222222
+     },
+     "held_out_family_auc_mean": 0.9488888888888889
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9819444444444444,
+     "accuracy": 0.9416666666666667,
+     "precision": 0.9344262295081968,
+     "recall": 0.95,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 56,
+      "true_cover_pred_stego": 4,
+      "true_stego_pred_cover": 3,
+      "true_stego_pred_stego": 57
+     },
+     "tpr_at_1pct_fpr": 0.36666666666666664,
+     "auc_ci95": [
+      0.9574930555555555,
+      0.9991666666666666
+     ],
+     "accuracy_ci95": [
+      0.9,
+      0.9833333333333333
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.96,
+      "terrain": 0.9822222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.9155555555555556,
+      "clouds": 1.0,
+      "strata": 0.92,
+      "terrain": 0.9688888888888889
+     },
+     "held_out_family_auc_mean": 0.9511111111111111
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9711111111111111,
+     "accuracy": 0.8916666666666667,
+     "precision": 0.8405797101449275,
+     "recall": 0.9666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 49,
+      "true_cover_pred_stego": 11,
+      "true_stego_pred_cover": 2,
+      "true_stego_pred_stego": 58
+     },
+     "tpr_at_1pct_fpr": 0.5,
+     "auc_ci95": [
+      0.9455555555555556,
+      0.9913888888888889
+     ],
+     "accuracy_ci95": [
+      0.8416666666666667,
+      0.9416666666666667
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.9111111111111111,
+      "terrain": 0.9288888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.7555555555555555,
+      "clouds": 0.7288888888888889,
+      "strata": 0.8088888888888889,
+      "terrain": 0.7955555555555556
+     },
+     "held_out_family_auc_mean": 0.7722222222222223
+    }
+   }
+  },
+  {
+   "condition": "single_dct@0.05",
+   "kind": "single",
+   "algorithm": "dct",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
    "bits_per_sample_mean": 0.03125,
-   "psnr_db_mean": 46.13993609728648,
-   "seconds": 8.1
+   "bytes_mean": 900.0,
+   "changed_samples_mean": 61966.65,
+   "psnr_db_mean": 46.12183468132943,
+   "short_of_rate": 60,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9902777777777778,
+     "accuracy": 0.95,
+     "precision": 0.921875,
+     "recall": 0.9833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 55,
+      "true_cover_pred_stego": 5,
+      "true_stego_pred_cover": 1,
+      "true_stego_pred_stego": 59
+     },
+     "tpr_at_1pct_fpr": 0.7666666666666667,
+     "auc_ci95": [
+      0.9780486111111111,
+      0.9988888888888889
+     ],
+     "accuracy_ci95": [
+      0.9083333333333333,
+      0.9833333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.9777777777777777,
+      "clouds": 1.0,
+      "strata": 0.9866666666666667,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.9777777777777777,
+      "terrain": 0.9511111111111111
+     },
+     "held_out_family_auc_mean": 0.9822222222222222
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9888888888888889,
+     "accuracy": 0.9666666666666667,
+     "precision": 0.9375,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 56,
+      "true_cover_pred_stego": 4,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 0.5666666666666667,
+     "auc_ci95": [
+      0.9688819444444444,
+      1.0
+     ],
+     "accuracy_ci95": [
+      0.925,
+      0.9916666666666667
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.9644444444444444,
+      "terrain": 0.9911111111111112
+     },
+     "held_out_family_auc": {
+      "cells": 0.96,
+      "clouds": 1.0,
+      "strata": 0.9511111111111111,
+      "terrain": 0.9777777777777777
+     },
+     "held_out_family_auc_mean": 0.9722222222222222
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9841666666666666,
+     "accuracy": 0.925,
+     "precision": 0.8805970149253731,
+     "recall": 0.9833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 52,
+      "true_cover_pred_stego": 8,
+      "true_stego_pred_cover": 1,
+      "true_stego_pred_stego": 59
+     },
+     "tpr_at_1pct_fpr": 0.7,
+     "auc_ci95": [
+      0.9655555555555555,
+      0.9966666666666667
+     ],
+     "accuracy_ci95": [
+      0.8747916666666666,
+      0.9666666666666667
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.9511111111111111,
+      "terrain": 0.9644444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.9688888888888889,
+      "clouds": 0.8288888888888889,
+      "strata": 0.8488888888888889,
+      "terrain": 0.8666666666666667
+     },
+     "held_out_family_auc_mean": 0.8783333333333333
+    }
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 1.0,
-   "accuracy": 1.0,
-   "precision": 1.0,
-   "recall": 1.0,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 160,
-    "true_cover_pred_stego": 0,
-    "true_stego_pred_cover": 0,
-    "true_stego_pred_stego": 160
-   },
-   "auc_ci95": [
-    1.0,
-    1.0
-   ],
-   "accuracy_ci95": [
-    1.0,
-    1.0
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
+   "condition": "single_dct@0.1",
+   "kind": "single",
+   "algorithm": "dct",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.03125,
+   "bytes_mean": 900.0,
+   "changed_samples_mean": 61945.066666666666,
+   "psnr_db_mean": 46.121715967037495,
+   "short_of_rate": 60,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9883333333333333,
+     "accuracy": 0.9416666666666667,
+     "precision": 0.9076923076923077,
+     "recall": 0.9833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 54,
+      "true_cover_pred_stego": 6,
+      "true_stego_pred_cover": 1,
+      "true_stego_pred_stego": 59
+     },
+     "tpr_at_1pct_fpr": 0.7666666666666667,
+     "auc_ci95": [
+      0.9752708333333333,
+      0.9980555555555556
+     ],
+     "accuracy_ci95": [
+      0.9,
+      0.9833333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.9644444444444444,
+      "clouds": 0.9955555555555555,
+      "strata": 0.9822222222222222,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9955555555555555,
+      "strata": 0.9777777777777777,
+      "terrain": 0.96
+     },
+     "held_out_family_auc_mean": 0.9833333333333333
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9880555555555556,
+     "accuracy": 0.975,
+     "precision": 0.9523809523809523,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 57,
+      "true_cover_pred_stego": 3,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 0.5333333333333333,
+     "auc_ci95": [
+      0.9688888888888889,
+      1.0
+     ],
+     "accuracy_ci95": [
+      0.9416666666666667,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.9644444444444444,
+      "terrain": 0.9866666666666667
+     },
+     "held_out_family_auc": {
+      "cells": 0.9466666666666667,
+      "clouds": 1.0,
+      "strata": 0.9555555555555556,
+      "terrain": 0.9733333333333334
+     },
+     "held_out_family_auc_mean": 0.9688888888888889
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9833333333333333,
+     "accuracy": 0.9333333333333333,
+     "precision": 0.90625,
+     "recall": 0.9666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 54,
+      "true_cover_pred_stego": 6,
+      "true_stego_pred_cover": 2,
+      "true_stego_pred_stego": 58
+     },
+     "tpr_at_1pct_fpr": 0.7333333333333333,
+     "auc_ci95": [
+      0.9663819444444444,
+      0.9952777777777778
+     ],
+     "accuracy_ci95": [
+      0.8916666666666667,
+      0.975
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.9422222222222222,
+      "terrain": 0.9511111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.9022222222222223,
+      "clouds": 0.7866666666666666,
+      "strata": 0.84,
+      "terrain": 0.8444444444444444
+     },
+     "held_out_family_auc_mean": 0.8433333333333334
+    }
+   }
+  },
+  {
+   "condition": "single_dwt@0.02",
+   "kind": "single",
+   "algorithm": "dwt",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 11592.0,
+   "psnr_db_mean": 56.70547374581951,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
      "auc": 1.0,
-     "accuracy": 0.925
+     "accuracy": 0.9916666666666667,
+     "precision": 1.0,
+     "recall": 0.9833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 60,
+      "true_cover_pred_stego": 0,
+      "true_stego_pred_cover": 1,
+      "true_stego_pred_stego": 59
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      0.975,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9911111111111112,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 0.9977777777777778
     },
-    "clouds": {
-     "n_pairs": 40,
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9994444444444445,
+     "accuracy": 0.9833333333333333,
+     "precision": 0.967741935483871,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 58,
+      "true_cover_pred_stego": 2,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 0.9833333333333333,
+     "auc_ci95": [
+      0.9975,
+      1.0
+     ],
+     "accuracy_ci95": [
+      0.9583333333333334,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9955555555555555,
+      "strata": 0.9377777777777778,
+      "terrain": 0.96
+     },
+     "held_out_family_auc_mean": 0.9733333333333334
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9986111111111111,
+     "accuracy": 0.9583333333333334,
+     "precision": 0.9365079365079365,
+     "recall": 0.9833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 56,
+      "true_cover_pred_stego": 4,
+      "true_stego_pred_cover": 1,
+      "true_stego_pred_stego": 59
+     },
+     "tpr_at_1pct_fpr": 0.9833333333333333,
+     "auc_ci95": [
+      0.9944444444444445,
+      1.0
+     ],
+     "accuracy_ci95": [
+      0.9166666666666666,
+      0.9916666666666667
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
+    }
+   }
+  },
+  {
+   "condition": "single_dwt@0.05",
+   "kind": "single",
+   "algorithm": "dwt",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 29013.933333333334,
+   "psnr_db_mean": 52.72553688146469,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
      "auc": 1.0,
-     "accuracy": 1.0
+     "accuracy": 1.0,
+     "precision": 1.0,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 60,
+      "true_cover_pred_stego": 0,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      1.0,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
     },
-    "strata": {
-     "n_pairs": 40,
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
      "auc": 1.0,
-     "accuracy": 0.9875
+     "accuracy": 1.0,
+     "precision": 1.0,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 60,
+      "true_cover_pred_stego": 0,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      1.0,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
     },
-    "terrain": {
-     "n_pairs": 40,
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
      "auc": 1.0,
-     "accuracy": 1.0
+     "accuracy": 0.9916666666666667,
+     "precision": 0.9836065573770492,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 59,
+      "true_cover_pred_stego": 1,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      0.975,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
     }
-   },
-   "leave_one_family_out_mean_auc": 1.0,
-   "condition": "dwt",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 52.49603431871053,
-   "seconds": 8.1
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.8978515625,
-   "accuracy": 0.84375,
-   "precision": 0.8353658536585366,
-   "recall": 0.85625,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 133,
-    "true_cover_pred_stego": 27,
-    "true_stego_pred_cover": 23,
-    "true_stego_pred_stego": 137
-   },
-   "auc_ci95": [
-    0.8677626953125,
-    0.926615234375
-   ],
-   "accuracy_ci95": [
-    0.80625,
-    0.878125
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.876875,
-     "accuracy": 0.775
+   "condition": "single_dwt@0.1",
+   "kind": "single",
+   "algorithm": "dwt",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.0833333333333333,
+   "bytes_mean": 2400.0,
+   "changed_samples_mean": 48486.13333333333,
+   "psnr_db_mean": 50.50588300052372,
+   "short_of_rate": 60,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 1.0,
+     "accuracy": 1.0,
+     "precision": 1.0,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 60,
+      "true_cover_pred_stego": 0,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      1.0,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.940625,
-     "accuracy": 0.8
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 1.0,
+     "accuracy": 1.0,
+     "precision": 1.0,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 60,
+      "true_cover_pred_stego": 0,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      1.0,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.796875,
-     "accuracy": 0.8
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.906875,
-     "accuracy": 0.8
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 1.0,
+     "accuracy": 1.0,
+     "precision": 1.0,
+     "recall": 1.0,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 60,
+      "true_cover_pred_stego": 0,
+      "true_stego_pred_cover": 0,
+      "true_stego_pred_stego": 60
+     },
+     "tpr_at_1pct_fpr": 1.0,
+     "auc_ci95": [
+      1.0,
+      1.0
+     ],
+     "accuracy_ci95": [
+      1.0,
+      1.0
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 1.0,
+      "terrain": 1.0
+     },
+     "held_out_family_auc_mean": 1.0
     }
-   },
-   "leave_one_family_out_mean_auc": 0.8803124999999999,
-   "condition": "dct_svd",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 150.0,
-   "bits_per_sample_mean": 0.005208333333333333,
-   "psnr_db_mean": 51.45000679882041,
-   "seconds": 9.8
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.5420703125,
-   "accuracy": 0.515625,
-   "precision": 0.5170068027210885,
-   "recall": 0.475,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 89,
-    "true_cover_pred_stego": 71,
-    "true_stego_pred_cover": 84,
-    "true_stego_pred_stego": 76
-   },
-   "auc_ci95": [
-    0.5294873046875,
-    0.559140625
-   ],
-   "accuracy_ci95": [
-    0.496875,
-    0.5375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.52375,
-     "accuracy": 0.5
+   "condition": "single_dct_svd@0.02",
+   "kind": "single",
+   "algorithm": "dct_svd",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.005208333333333331,
+   "bytes_mean": 150.0,
+   "changed_samples_mean": 36418.38333333333,
+   "psnr_db_mean": 51.471746906649976,
+   "short_of_rate": 60,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9172222222222223,
+     "accuracy": 0.8416666666666667,
+     "precision": 0.847457627118644,
+     "recall": 0.8333333333333334,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 51,
+      "true_cover_pred_stego": 9,
+      "true_stego_pred_cover": 10,
+      "true_stego_pred_stego": 50
+     },
+     "tpr_at_1pct_fpr": 0.23333333333333334,
+     "auc_ci95": [
+      0.8727569444444444,
+      0.9597222222222223
+     ],
+     "accuracy_ci95": [
+      0.775,
+      0.9
+     ],
+     "per_family_auc": {
+      "cells": 0.8444444444444444,
+      "clouds": 0.9466666666666667,
+      "strata": 0.9244444444444444,
+      "terrain": 0.9555555555555556
+     },
+     "held_out_family_auc": {
+      "cells": 0.8044444444444444,
+      "clouds": 0.9066666666666666,
+      "strata": 0.8933333333333333,
+      "terrain": 0.9022222222222223
+     },
+     "held_out_family_auc_mean": 0.8766666666666667
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.51625,
-     "accuracy": 0.525
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9613888888888888,
+     "accuracy": 0.9166666666666666,
+     "precision": 0.890625,
+     "recall": 0.95,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 53,
+      "true_cover_pred_stego": 7,
+      "true_stego_pred_cover": 3,
+      "true_stego_pred_stego": 57
+     },
+     "tpr_at_1pct_fpr": 0.38333333333333336,
+     "auc_ci95": [
+      0.9272152777777777,
+      0.9888888888888889
+     ],
+     "accuracy_ci95": [
+      0.8666666666666667,
+      0.9583333333333334
+     ],
+     "per_family_auc": {
+      "cells": 0.9911111111111112,
+      "clouds": 0.9955555555555555,
+      "strata": 0.9511111111111111,
+      "terrain": 0.9555555555555556
+     },
+     "held_out_family_auc": {
+      "cells": 0.9155555555555556,
+      "clouds": 0.9822222222222222,
+      "strata": 0.88,
+      "terrain": 0.9066666666666666
+     },
+     "held_out_family_auc_mean": 0.9211111111111111
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.545625,
-     "accuracy": 0.525
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.533125,
-     "accuracy": 0.5125
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9408333333333333,
+     "accuracy": 0.8583333333333333,
+     "precision": 0.8307692307692308,
+     "recall": 0.9,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 49,
+      "true_cover_pred_stego": 11,
+      "true_stego_pred_cover": 6,
+      "true_stego_pred_stego": 54
+     },
+     "tpr_at_1pct_fpr": 0.3333333333333333,
+     "auc_ci95": [
+      0.9022222222222223,
+      0.9733472222222223
+     ],
+     "accuracy_ci95": [
+      0.8,
+      0.9166666666666666
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 1.0,
+      "strata": 0.8355555555555556,
+      "terrain": 0.9022222222222223
+     },
+     "held_out_family_auc": {
+      "cells": 0.88,
+      "clouds": 0.9822222222222222,
+      "strata": 0.8222222222222222,
+      "terrain": 0.7644444444444445
+     },
+     "held_out_family_auc_mean": 0.8622222222222222
     }
-   },
-   "leave_one_family_out_mean_auc": 0.5296875,
-   "condition": "hugo",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 67.47355033190345,
-   "seconds": 445.6
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.5673046875,
-   "accuracy": 0.54375,
-   "precision": 0.5448717948717948,
-   "recall": 0.53125,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 89,
-    "true_cover_pred_stego": 71,
-    "true_stego_pred_cover": 75,
-    "true_stego_pred_stego": 85
-   },
-   "auc_ci95": [
-    0.5536289062499999,
-    0.5846494140624999
-   ],
-   "accuracy_ci95": [
-    0.521875,
-    0.565625
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.519375,
-     "accuracy": 0.525
+   "condition": "single_dct_svd@0.05",
+   "kind": "single",
+   "algorithm": "dct_svd",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.005208333333333331,
+   "bytes_mean": 150.0,
+   "changed_samples_mean": 36488.63333333333,
+   "psnr_db_mean": 51.45712692913826,
+   "short_of_rate": 60,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9205555555555556,
+     "accuracy": 0.8416666666666667,
+     "precision": 0.847457627118644,
+     "recall": 0.8333333333333334,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 51,
+      "true_cover_pred_stego": 9,
+      "true_stego_pred_cover": 10,
+      "true_stego_pred_stego": 50
+     },
+     "tpr_at_1pct_fpr": 0.26666666666666666,
+     "auc_ci95": [
+      0.8794375,
+      0.9627777777777777
+     ],
+     "accuracy_ci95": [
+      0.7833333333333333,
+      0.9
+     ],
+     "per_family_auc": {
+      "cells": 0.8488888888888889,
+      "clouds": 0.9511111111111111,
+      "strata": 0.92,
+      "terrain": 0.9644444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.8133333333333334,
+      "clouds": 0.92,
+      "strata": 0.9066666666666666,
+      "terrain": 0.9155555555555556
+     },
+     "held_out_family_auc_mean": 0.888888888888889
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.541875,
-     "accuracy": 0.5
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9622222222222222,
+     "accuracy": 0.9166666666666666,
+     "precision": 0.8787878787878788,
+     "recall": 0.9666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 52,
+      "true_cover_pred_stego": 8,
+      "true_stego_pred_cover": 2,
+      "true_stego_pred_stego": 58
+     },
+     "tpr_at_1pct_fpr": 0.4166666666666667,
+     "auc_ci95": [
+      0.9294444444444444,
+      0.9883333333333333
+     ],
+     "accuracy_ci95": [
+      0.8666666666666667,
+      0.9583333333333334
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9955555555555555,
+      "strata": 0.9511111111111111,
+      "terrain": 0.9466666666666667
+     },
+     "held_out_family_auc": {
+      "cells": 0.9155555555555556,
+      "clouds": 0.9777777777777777,
+      "strata": 0.8933333333333333,
+      "terrain": 0.8977777777777778
+     },
+     "held_out_family_auc_mean": 0.9211111111111111
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.559375,
-     "accuracy": 0.55
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.56,
-     "accuracy": 0.55
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9441666666666667,
+     "accuracy": 0.85,
+     "precision": 0.828125,
+     "recall": 0.8833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 49,
+      "true_cover_pred_stego": 11,
+      "true_stego_pred_cover": 7,
+      "true_stego_pred_stego": 53
+     },
+     "tpr_at_1pct_fpr": 0.55,
+     "auc_ci95": [
+      0.9088819444444444,
+      0.9738958333333334
+     ],
+     "accuracy_ci95": [
+      0.7916666666666666,
+      0.9
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.9955555555555555,
+      "strata": 0.8577777777777778,
+      "terrain": 0.9022222222222223
+     },
+     "held_out_family_auc": {
+      "cells": 0.8355555555555556,
+      "clouds": 0.9422222222222222,
+      "strata": 0.84,
+      "terrain": 0.7777777777777778
+     },
+     "held_out_family_auc_mean": 0.8488888888888888
     }
-   },
-   "leave_one_family_out_mean_auc": 0.54515625,
-   "condition": "wow",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 67.26370786718408,
-   "seconds": 67.3
+   }
   },
   {
-   "n_pairs": 160,
-   "split": "grouped 5-fold by seed (a cover and its stego are always on the same side)",
-   "auc": 0.55359375,
-   "accuracy": 0.51875,
-   "precision": 0.5197368421052632,
-   "recall": 0.49375,
-   "confusion_matrix": {
-    "true_cover_pred_cover": 87,
-    "true_cover_pred_stego": 73,
-    "true_stego_pred_cover": 81,
-    "true_stego_pred_stego": 79
-   },
-   "auc_ci95": [
-    0.5424199218750001,
-    0.5682431640625
-   ],
-   "accuracy_ci95": [
-    0.503125,
-    0.534375
-   ],
-   "leave_one_family_out": {
-    "cells": {
-     "n_pairs": 40,
-     "auc": 0.528125,
-     "accuracy": 0.5
+   "condition": "single_dct_svd@0.1",
+   "kind": "single",
+   "algorithm": "dct_svd",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.005208333333333331,
+   "bytes_mean": 150.0,
+   "changed_samples_mean": 36317.933333333334,
+   "psnr_db_mean": 51.49857963622902,
+   "short_of_rate": 60,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9169444444444445,
+     "accuracy": 0.825,
+     "precision": 0.8421052631578947,
+     "recall": 0.8,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 51,
+      "true_cover_pred_stego": 9,
+      "true_stego_pred_cover": 12,
+      "true_stego_pred_stego": 48
+     },
+     "tpr_at_1pct_fpr": 0.25,
+     "auc_ci95": [
+      0.871625,
+      0.9572291666666667
+     ],
+     "accuracy_ci95": [
+      0.7666666666666667,
+      0.875
+     ],
+     "per_family_auc": {
+      "cells": 0.8444444444444444,
+      "clouds": 0.9377777777777778,
+      "strata": 0.9377777777777778,
+      "terrain": 0.9555555555555556
+     },
+     "held_out_family_auc": {
+      "cells": 0.8088888888888889,
+      "clouds": 0.9066666666666666,
+      "strata": 0.9066666666666666,
+      "terrain": 0.8844444444444445
+     },
+     "held_out_family_auc_mean": 0.8766666666666667
     },
-    "clouds": {
-     "n_pairs": 40,
-     "auc": 0.551875,
-     "accuracy": 0.5125
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9633333333333334,
+     "accuracy": 0.9083333333333333,
+     "precision": 0.8769230769230769,
+     "recall": 0.95,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 52,
+      "true_cover_pred_stego": 8,
+      "true_stego_pred_cover": 3,
+      "true_stego_pred_stego": 57
+     },
+     "tpr_at_1pct_fpr": 0.4,
+     "auc_ci95": [
+      0.933048611111111,
+      0.9894444444444445
+     ],
+     "accuracy_ci95": [
+      0.8583333333333333,
+      0.95
+     ],
+     "per_family_auc": {
+      "cells": 0.9911111111111112,
+      "clouds": 0.9955555555555555,
+      "strata": 0.96,
+      "terrain": 0.9466666666666667
+     },
+     "held_out_family_auc": {
+      "cells": 0.9111111111111111,
+      "clouds": 0.9822222222222222,
+      "strata": 0.8977777777777778,
+      "terrain": 0.9022222222222223
+     },
+     "held_out_family_auc_mean": 0.9233333333333333
     },
-    "strata": {
-     "n_pairs": 40,
-     "auc": 0.545,
-     "accuracy": 0.5125
-    },
-    "terrain": {
-     "n_pairs": 40,
-     "auc": 0.57125,
-     "accuracy": 0.5625
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.9430555555555555,
+     "accuracy": 0.85,
+     "precision": 0.828125,
+     "recall": 0.8833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 49,
+      "true_cover_pred_stego": 11,
+      "true_stego_pred_cover": 7,
+      "true_stego_pred_stego": 53
+     },
+     "tpr_at_1pct_fpr": 0.4,
+     "auc_ci95": [
+      0.9066388888888889,
+      0.9730555555555556
+     ],
+     "accuracy_ci95": [
+      0.7916666666666666,
+      0.9083333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.9911111111111112,
+      "clouds": 0.9955555555555555,
+      "strata": 0.8577777777777778,
+      "terrain": 0.9066666666666666
+     },
+     "held_out_family_auc": {
+      "cells": 0.84,
+      "clouds": 0.9511111111111111,
+      "strata": 0.8311111111111111,
+      "terrain": 0.76
+     },
+     "held_out_family_auc_mean": 0.8455555555555556
     }
-   },
-   "leave_one_family_out_mean_auc": 0.5490625,
-   "condition": "s_uniward",
-   "kind": "single algorithm over the whole image, no carrier",
-   "payload_bytes_requested": 1536,
-   "payload_bytes_embedded_mean": 1536.0,
-   "bits_per_sample_mean": 0.05333333333333334,
-   "psnr_db_mean": 68.29722889729334,
-   "seconds": 65.3
+   }
+  },
+  {
+   "condition": "single_hugo@0.02",
+   "kind": "single",
+   "algorithm": "hugo",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 1014.1833333333333,
+   "psnr_db_mean": 71.705396150042,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5138888888888888,
+     "accuracy": 0.49166666666666664,
+     "precision": 0.48936170212765956,
+     "recall": 0.38333333333333336,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 36,
+      "true_cover_pred_stego": 24,
+      "true_stego_pred_cover": 37,
+      "true_stego_pred_stego": 23
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5008263888888889,
+      0.5305625
+     ],
+     "accuracy_ci95": [
+      0.475,
+      0.5
+     ],
+     "per_family_auc": {
+      "cells": 0.5022222222222222,
+      "clouds": 0.49333333333333335,
+      "strata": 0.5333333333333333,
+      "terrain": 0.52
+     },
+     "held_out_family_auc": {
+      "cells": 0.5022222222222222,
+      "clouds": 0.49333333333333335,
+      "strata": 0.52,
+      "terrain": 0.52
+     },
+     "held_out_family_auc_mean": 0.508888888888889
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5916666666666667,
+     "accuracy": 0.5666666666666667,
+     "precision": 0.5588235294117647,
+     "recall": 0.6333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 30,
+      "true_cover_pred_stego": 30,
+      "true_stego_pred_cover": 22,
+      "true_stego_pred_stego": 38
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5752777777777778,
+      0.6272222222222222
+     ],
+     "accuracy_ci95": [
+      0.525,
+      0.6166666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.72,
+      "clouds": 0.5866666666666667,
+      "strata": 0.5733333333333334,
+      "terrain": 0.6088888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.5911111111111111,
+      "clouds": 0.5555555555555556,
+      "strata": 0.5422222222222223,
+      "terrain": 0.5777777777777777
+     },
+     "held_out_family_auc_mean": 0.5666666666666667
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5836111111111111,
+     "accuracy": 0.5416666666666666,
+     "precision": 0.5342465753424658,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 26,
+      "true_cover_pred_stego": 34,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.0,
+     "auc_ci95": [
+      0.5538819444444444,
+      0.6250069444444445
+     ],
+     "accuracy_ci95": [
+      0.5083333333333333,
+      0.5833333333333334
+     ],
+     "per_family_auc": {
+      "cells": 0.7066666666666667,
+      "clouds": 0.5288888888888889,
+      "strata": 0.5111111111111111,
+      "terrain": 0.6088888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.56,
+      "clouds": 0.5688888888888889,
+      "strata": 0.5222222222222223,
+      "terrain": 0.5622222222222222
+     },
+     "held_out_family_auc_mean": 0.5533333333333333
+    }
+   }
+  },
+  {
+   "condition": "single_hugo@0.05",
+   "kind": "single",
+   "algorithm": "hugo",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 2535.866666666667,
+   "psnr_db_mean": 67.72462720339325,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5444444444444444,
+     "accuracy": 0.525,
+     "precision": 0.5348837209302325,
+     "recall": 0.38333333333333336,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 40,
+      "true_cover_pred_stego": 20,
+      "true_stego_pred_cover": 37,
+      "true_stego_pred_stego": 23
+     },
+     "tpr_at_1pct_fpr": 0.0,
+     "auc_ci95": [
+      0.5261111111111111,
+      0.5747291666666667
+     ],
+     "accuracy_ci95": [
+      0.49166666666666664,
+      0.5583333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.6044444444444445,
+      "clouds": 0.5111111111111111,
+      "strata": 0.5555555555555556,
+      "terrain": 0.5466666666666666
+     },
+     "held_out_family_auc": {
+      "cells": 0.5333333333333333,
+      "clouds": 0.5066666666666667,
+      "strata": 0.5377777777777778,
+      "terrain": 0.5333333333333333
+     },
+     "held_out_family_auc_mean": 0.5277777777777778
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6911111111111111,
+     "accuracy": 0.6666666666666666,
+     "precision": 0.6470588235294118,
+     "recall": 0.7333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 36,
+      "true_cover_pred_stego": 24,
+      "true_stego_pred_cover": 16,
+      "true_stego_pred_stego": 44
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6524930555555555,
+      0.7505763888888889
+     ],
+     "accuracy_ci95": [
+      0.6083333333333333,
+      0.7333333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.9111111111111111,
+      "clouds": 0.7022222222222222,
+      "strata": 0.5866666666666667,
+      "terrain": 0.6488888888888888
+     },
+     "held_out_family_auc": {
+      "cells": 0.6622222222222223,
+      "clouds": 0.6088888888888889,
+      "strata": 0.5911111111111111,
+      "terrain": 0.6177777777777778
+     },
+     "held_out_family_auc_mean": 0.6200000000000001
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7175,
+     "accuracy": 0.6416666666666667,
+     "precision": 0.6231884057971014,
+     "recall": 0.7166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 34,
+      "true_cover_pred_stego": 26,
+      "true_stego_pred_cover": 17,
+      "true_stego_pred_stego": 43
+     },
+     "tpr_at_1pct_fpr": 0.06666666666666667,
+     "auc_ci95": [
+      0.6613611111111112,
+      0.7897361111111111
+     ],
+     "accuracy_ci95": [
+      0.5916666666666667,
+      0.7
+     ],
+     "per_family_auc": {
+      "cells": 0.9511111111111111,
+      "clouds": 0.6355555555555555,
+      "strata": 0.5688888888888889,
+      "terrain": 0.6666666666666666
+     },
+     "held_out_family_auc": {
+      "cells": 0.6266666666666667,
+      "clouds": 0.6577777777777778,
+      "strata": 0.5555555555555556,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc_mean": 0.6011111111111112
+    }
+   }
+  },
+  {
+   "condition": "single_hugo@0.1",
+   "kind": "single",
+   "algorithm": "hugo",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.09999999999999996,
+   "bytes_mean": 2880.0,
+   "changed_samples_mean": 5440.233333333334,
+   "psnr_db_mean": 64.40708337240484,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5572222222222222,
+     "accuracy": 0.525,
+     "precision": 0.5333333333333333,
+     "recall": 0.4,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 39,
+      "true_cover_pred_stego": 21,
+      "true_stego_pred_cover": 36,
+      "true_stego_pred_stego": 24
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.545,
+      0.5852777777777778
+     ],
+     "accuracy_ci95": [
+      0.49166666666666664,
+      0.5666666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.6355555555555555,
+      "clouds": 0.5644444444444444,
+      "strata": 0.5511111111111111,
+      "terrain": 0.56
+     },
+     "held_out_family_auc": {
+      "cells": 0.5777777777777777,
+      "clouds": 0.52,
+      "strata": 0.5822222222222222,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc_mean": 0.5611111111111111
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8275,
+     "accuracy": 0.7666666666666667,
+     "precision": 0.7352941176470589,
+     "recall": 0.8333333333333334,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 42,
+      "true_cover_pred_stego": 18,
+      "true_stego_pred_cover": 10,
+      "true_stego_pred_stego": 50
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.7683194444444444,
+      0.8872291666666667
+     ],
+     "accuracy_ci95": [
+      0.708125,
+      0.825
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.8622222222222222,
+      "strata": 0.6888888888888889,
+      "terrain": 0.7911111111111111
+     },
+     "held_out_family_auc": {
+      "cells": 0.8222222222222222,
+      "clouds": 0.7555555555555555,
+      "strata": 0.6933333333333334,
+      "terrain": 0.7066666666666667
+     },
+     "held_out_family_auc_mean": 0.7444444444444444
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8233333333333334,
+     "accuracy": 0.7416666666666667,
+     "precision": 0.7230769230769231,
+     "recall": 0.7833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 42,
+      "true_cover_pred_stego": 18,
+      "true_stego_pred_cover": 13,
+      "true_stego_pred_stego": 47
+     },
+     "tpr_at_1pct_fpr": 0.2,
+     "auc_ci95": [
+      0.7633263888888888,
+      0.8811249999999999
+     ],
+     "accuracy_ci95": [
+      0.6833333333333333,
+      0.8
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.8311111111111111,
+      "strata": 0.6044444444444445,
+      "terrain": 0.7777777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.7955555555555556,
+      "clouds": 0.7911111111111111,
+      "strata": 0.6022222222222222,
+      "terrain": 0.5911111111111111
+     },
+     "held_out_family_auc_mean": 0.6950000000000001
+    }
+   }
+  },
+  {
+   "condition": "single_wow@0.02",
+   "kind": "single",
+   "algorithm": "wow",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 1079.75,
+   "psnr_db_mean": 71.47045430323881,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.54,
+     "accuracy": 0.5,
+     "precision": 0.5,
+     "recall": 0.4166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 35,
+      "true_cover_pred_stego": 25,
+      "true_stego_pred_cover": 35,
+      "true_stego_pred_stego": 25
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5224930555555555,
+      0.5688958333333334
+     ],
+     "accuracy_ci95": [
+      0.475,
+      0.525
+     ],
+     "per_family_auc": {
+      "cells": 0.56,
+      "clouds": 0.5288888888888889,
+      "strata": 0.56,
+      "terrain": 0.5688888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.5333333333333333,
+      "clouds": 0.5066666666666667,
+      "strata": 0.5422222222222223,
+      "terrain": 0.5466666666666666
+     },
+     "held_out_family_auc_mean": 0.5322222222222222
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5755555555555556,
+     "accuracy": 0.5666666666666667,
+     "precision": 0.5625,
+     "recall": 0.6,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 32,
+      "true_cover_pred_stego": 28,
+      "true_stego_pred_cover": 24,
+      "true_stego_pred_stego": 36
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5591666666666667,
+      0.6069444444444444
+     ],
+     "accuracy_ci95": [
+      0.525,
+      0.6166666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.6533333333333333,
+      "clouds": 0.5955555555555555,
+      "strata": 0.5644444444444444,
+      "terrain": 0.5955555555555555
+     },
+     "held_out_family_auc": {
+      "cells": 0.56,
+      "clouds": 0.5555555555555556,
+      "strata": 0.5333333333333333,
+      "terrain": 0.56
+     },
+     "held_out_family_auc_mean": 0.5522222222222223
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6338888888888888,
+     "accuracy": 0.5833333333333334,
+     "precision": 0.5657894736842105,
+     "recall": 0.7166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 27,
+      "true_cover_pred_stego": 33,
+      "true_stego_pred_cover": 17,
+      "true_stego_pred_stego": 43
+     },
+     "tpr_at_1pct_fpr": 0.05,
+     "auc_ci95": [
+      0.5902708333333333,
+      0.6936180555555556
+     ],
+     "accuracy_ci95": [
+      0.5416666666666666,
+      0.6335416666666664
+     ],
+     "per_family_auc": {
+      "cells": 0.8311111111111111,
+      "clouds": 0.5822222222222222,
+      "strata": 0.5511111111111111,
+      "terrain": 0.6222222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.5955555555555555,
+      "clouds": 0.5333333333333333,
+      "strata": 0.5422222222222223,
+      "terrain": 0.5266666666666666
+     },
+     "held_out_family_auc_mean": 0.5494444444444444
+    }
+   }
+  },
+  {
+   "condition": "single_wow@0.05",
+   "kind": "single",
+   "algorithm": "wow",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 2695.6833333333334,
+   "psnr_db_mean": 67.495711587617,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5638888888888889,
+     "accuracy": 0.525,
+     "precision": 0.5306122448979592,
+     "recall": 0.43333333333333335,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 34,
+      "true_stego_pred_stego": 26
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5438888888888889,
+      0.5966666666666667
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.5583333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.5822222222222222,
+      "clouds": 0.6,
+      "strata": 0.5955555555555555,
+      "terrain": 0.5466666666666666
+     },
+     "held_out_family_auc": {
+      "cells": 0.5333333333333333,
+      "clouds": 0.5688888888888889,
+      "strata": 0.5466666666666666,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc_mean": 0.5533333333333333
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6652777777777777,
+     "accuracy": 0.65,
+     "precision": 0.625,
+     "recall": 0.75,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 33,
+      "true_cover_pred_stego": 27,
+      "true_stego_pred_cover": 15,
+      "true_stego_pred_stego": 45
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6238888888888889,
+      0.7241944444444444
+     ],
+     "accuracy_ci95": [
+      0.5916666666666667,
+      0.7083333333333334
+     ],
+     "per_family_auc": {
+      "cells": 0.8488888888888889,
+      "clouds": 0.6444444444444445,
+      "strata": 0.5555555555555556,
+      "terrain": 0.6533333333333333
+     },
+     "held_out_family_auc": {
+      "cells": 0.6044444444444445,
+      "clouds": 0.6044444444444445,
+      "strata": 0.5688888888888889,
+      "terrain": 0.6355555555555555
+     },
+     "held_out_family_auc_mean": 0.6033333333333333
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7144444444444444,
+     "accuracy": 0.6166666666666667,
+     "precision": 0.5945945945945946,
+     "recall": 0.7333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 30,
+      "true_cover_pred_stego": 30,
+      "true_stego_pred_cover": 16,
+      "true_stego_pred_stego": 44
+     },
+     "tpr_at_1pct_fpr": 0.08333333333333333,
+     "auc_ci95": [
+      0.6535833333333334,
+      0.7851423611111111
+     ],
+     "accuracy_ci95": [
+      0.5666666666666667,
+      0.675
+     ],
+     "per_family_auc": {
+      "cells": 0.9511111111111111,
+      "clouds": 0.6044444444444445,
+      "strata": 0.5488888888888889,
+      "terrain": 0.6755555555555556
+     },
+     "held_out_family_auc": {
+      "cells": 0.6533333333333333,
+      "clouds": 0.6222222222222222,
+      "strata": 0.5688888888888889,
+      "terrain": 0.56
+     },
+     "held_out_family_auc_mean": 0.6011111111111112
+    }
+   }
+  },
+  {
+   "condition": "single_wow@0.1",
+   "kind": "single",
+   "algorithm": "wow",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.09999999999999996,
+   "bytes_mean": 2880.0,
+   "changed_samples_mean": 5645.933333333333,
+   "psnr_db_mean": 64.27049966000124,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5669444444444445,
+     "accuracy": 0.5583333333333333,
+     "precision": 0.5777777777777777,
+     "recall": 0.43333333333333335,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 41,
+      "true_cover_pred_stego": 19,
+      "true_stego_pred_cover": 34,
+      "true_stego_pred_stego": 26
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5486111111111112,
+      0.5972291666666667
+     ],
+     "accuracy_ci95": [
+      0.5166666666666667,
+      0.6
+     ],
+     "per_family_auc": {
+      "cells": 0.6133333333333333,
+      "clouds": 0.6133333333333333,
+      "strata": 0.5377777777777778,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc": {
+      "cells": 0.5777777777777777,
+      "clouds": 0.5377777777777778,
+      "strata": 0.5466666666666666,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc_mean": 0.5566666666666666
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8,
+     "accuracy": 0.7416666666666667,
+     "precision": 0.7164179104477612,
+     "recall": 0.8,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 41,
+      "true_cover_pred_stego": 19,
+      "true_stego_pred_cover": 12,
+      "true_stego_pred_stego": 48
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.7427638888888889,
+      0.8686111111111111
+     ],
+     "accuracy_ci95": [
+      0.683125,
+      0.8083333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.9866666666666667,
+      "clouds": 0.8355555555555556,
+      "strata": 0.64,
+      "terrain": 0.7688888888888888
+     },
+     "held_out_family_auc": {
+      "cells": 0.7555555555555555,
+      "clouds": 0.7555555555555555,
+      "strata": 0.6355555555555555,
+      "terrain": 0.7244444444444444
+     },
+     "held_out_family_auc_mean": 0.7177777777777777
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8208333333333333,
+     "accuracy": 0.7416666666666667,
+     "precision": 0.7101449275362319,
+     "recall": 0.8166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 40,
+      "true_cover_pred_stego": 20,
+      "true_stego_pred_cover": 11,
+      "true_stego_pred_stego": 49
+     },
+     "tpr_at_1pct_fpr": 0.16666666666666666,
+     "auc_ci95": [
+      0.7591180555555556,
+      0.8814027777777778
+     ],
+     "accuracy_ci95": [
+      0.675,
+      0.8
+     ],
+     "per_family_auc": {
+      "cells": 1.0,
+      "clouds": 0.84,
+      "strata": 0.5911111111111111,
+      "terrain": 0.7422222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.7866666666666666,
+      "clouds": 0.8266666666666667,
+      "strata": 0.5911111111111111,
+      "terrain": 0.5955555555555555
+     },
+     "held_out_family_auc_mean": 0.7
+    }
+   }
+  },
+  {
+   "condition": "single_s_uniward@0.02",
+   "kind": "single",
+   "algorithm": "s_uniward",
+   "requested_rate_bps": 0.02,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.020000000000000004,
+   "bytes_mean": 576.0,
+   "changed_samples_mean": 828.7666666666667,
+   "psnr_db_mean": 72.57682853118385,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5380555555555555,
+     "accuracy": 0.5166666666666667,
+     "precision": 0.5208333333333334,
+     "recall": 0.4166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 37,
+      "true_cover_pred_stego": 23,
+      "true_stego_pred_cover": 35,
+      "true_stego_pred_stego": 25
+     },
+     "tpr_at_1pct_fpr": 0.0,
+     "auc_ci95": [
+      0.5208263888888889,
+      0.5636249999999999
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.5416666666666666
+     ],
+     "per_family_auc": {
+      "cells": 0.52,
+      "clouds": 0.5155555555555555,
+      "strata": 0.5955555555555555,
+      "terrain": 0.5822222222222222
+     },
+     "held_out_family_auc": {
+      "cells": 0.5244444444444445,
+      "clouds": 0.5022222222222222,
+      "strata": 0.5466666666666666,
+      "terrain": 0.5422222222222223
+     },
+     "held_out_family_auc_mean": 0.528888888888889
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5830555555555555,
+     "accuracy": 0.5333333333333333,
+     "precision": 0.5303030303030303,
+     "recall": 0.5833333333333334,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 29,
+      "true_cover_pred_stego": 31,
+      "true_stego_pred_cover": 25,
+      "true_stego_pred_stego": 35
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5688819444444444,
+      0.6141666666666666
+     ],
+     "accuracy_ci95": [
+      0.5083333333333333,
+      0.5666666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.64,
+      "clouds": 0.6444444444444445,
+      "strata": 0.5777777777777777,
+      "terrain": 0.5733333333333334
+     },
+     "held_out_family_auc": {
+      "cells": 0.5688888888888889,
+      "clouds": 0.5733333333333334,
+      "strata": 0.56,
+      "terrain": 0.5733333333333334
+     },
+     "held_out_family_auc_mean": 0.5688888888888889
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5984722222222222,
+     "accuracy": 0.5833333333333334,
+     "precision": 0.5735294117647058,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 31,
+      "true_cover_pred_stego": 29,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5691493055555557,
+      0.6455590277777777
+     ],
+     "accuracy_ci95": [
+      0.5416666666666666,
+      0.6333333333333333
+     ],
+     "per_family_auc": {
+      "cells": 0.7288888888888889,
+      "clouds": 0.5711111111111111,
+      "strata": 0.5288888888888889,
+      "terrain": 0.5888888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.6177777777777778,
+      "clouds": 0.6333333333333333,
+      "strata": 0.5288888888888889,
+      "terrain": 0.5444444444444444
+     },
+     "held_out_family_auc_mean": 0.581111111111111
+    }
+   }
+  },
+  {
+   "condition": "single_s_uniward@0.05",
+   "kind": "single",
+   "algorithm": "s_uniward",
+   "requested_rate_bps": 0.05,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.04999999999999998,
+   "bytes_mean": 1440.0,
+   "changed_samples_mean": 2072.4666666666667,
+   "psnr_db_mean": 68.59626055237943,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5513888888888889,
+     "accuracy": 0.5,
+     "precision": 0.5,
+     "recall": 0.4,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 36,
+      "true_cover_pred_stego": 24,
+      "true_stego_pred_cover": 36,
+      "true_stego_pred_stego": 24
+     },
+     "tpr_at_1pct_fpr": 0.03333333333333333,
+     "auc_ci95": [
+      0.5358333333333334,
+      0.575
+     ],
+     "accuracy_ci95": [
+      0.475,
+      0.525
+     ],
+     "per_family_auc": {
+      "cells": 0.5333333333333333,
+      "clouds": 0.5466666666666666,
+      "strata": 0.5777777777777777,
+      "terrain": 0.5777777777777777
+     },
+     "held_out_family_auc": {
+      "cells": 0.5155555555555555,
+      "clouds": 0.52,
+      "strata": 0.5555555555555556,
+      "terrain": 0.5511111111111111
+     },
+     "held_out_family_auc_mean": 0.5355555555555556
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.6866666666666666,
+     "accuracy": 0.6416666666666667,
+     "precision": 0.6197183098591549,
+     "recall": 0.7333333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 33,
+      "true_cover_pred_stego": 27,
+      "true_stego_pred_cover": 16,
+      "true_stego_pred_stego": 44
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6491597222222222,
+      0.7389027777777778
+     ],
+     "accuracy_ci95": [
+      0.5916666666666667,
+      0.7
+     ],
+     "per_family_auc": {
+      "cells": 0.7377777777777778,
+      "clouds": 0.7644444444444445,
+      "strata": 0.6222222222222222,
+      "terrain": 0.6888888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.6177777777777778,
+      "clouds": 0.64,
+      "strata": 0.5911111111111111,
+      "terrain": 0.6488888888888888
+     },
+     "held_out_family_auc_mean": 0.6244444444444444
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.7061111111111111,
+     "accuracy": 0.6416666666666667,
+     "precision": 0.639344262295082,
+     "recall": 0.65,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 38,
+      "true_cover_pred_stego": 22,
+      "true_stego_pred_cover": 21,
+      "true_stego_pred_stego": 39
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.6561111111111111,
+      0.7688958333333333
+     ],
+     "accuracy_ci95": [
+      0.5916666666666667,
+      0.7
+     ],
+     "per_family_auc": {
+      "cells": 0.9111111111111111,
+      "clouds": 0.6577777777777778,
+      "strata": 0.5466666666666666,
+      "terrain": 0.6888888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.6311111111111111,
+      "clouds": 0.72,
+      "strata": 0.5466666666666666,
+      "terrain": 0.5688888888888889
+     },
+     "held_out_family_auc_mean": 0.6166666666666666
+    }
+   }
+  },
+  {
+   "condition": "single_s_uniward@0.1",
+   "kind": "single",
+   "algorithm": "s_uniward",
+   "requested_rate_bps": 0.1,
+   "refused": {},
+   "n_test_pairs": 60,
+   "bits_per_sample_mean": 0.09999999999999996,
+   "bytes_mean": 2880.0,
+   "changed_samples_mean": 4530.783333333334,
+   "psnr_db_mean": 65.19634411762793,
+   "short_of_rate": 0,
+   "detectors": {
+    "lr_basic": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.5622222222222222,
+     "accuracy": 0.5333333333333333,
+     "precision": 0.5434782608695652,
+     "recall": 0.4166666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 39,
+      "true_cover_pred_stego": 21,
+      "true_stego_pred_cover": 35,
+      "true_stego_pred_stego": 25
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.5472152777777778,
+      0.5905625
+     ],
+     "accuracy_ci95": [
+      0.5,
+      0.575
+     ],
+     "per_family_auc": {
+      "cells": 0.56,
+      "clouds": 0.6266666666666667,
+      "strata": 0.5511111111111111,
+      "terrain": 0.5377777777777778
+     },
+     "held_out_family_auc": {
+      "cells": 0.5333333333333333,
+      "clouds": 0.6044444444444445,
+      "strata": 0.5377777777777778,
+      "terrain": 0.5644444444444444
+     },
+     "held_out_family_auc_mean": 0.5599999999999999
+    },
+    "lr_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8397222222222223,
+     "accuracy": 0.775,
+     "precision": 0.7323943661971831,
+     "recall": 0.8666666666666667,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 41,
+      "true_cover_pred_stego": 19,
+      "true_stego_pred_cover": 8,
+      "true_stego_pred_stego": 52
+     },
+     "tpr_at_1pct_fpr": 0.016666666666666666,
+     "auc_ci95": [
+      0.7874930555555555,
+      0.8994583333333334
+     ],
+     "accuracy_ci95": [
+      0.7166666666666667,
+      0.8416666666666667
+     ],
+     "per_family_auc": {
+      "cells": 0.9466666666666667,
+      "clouds": 0.9333333333333333,
+      "strata": 0.7333333333333333,
+      "terrain": 0.8088888888888889
+     },
+     "held_out_family_auc": {
+      "cells": 0.7466666666666667,
+      "clouds": 0.8533333333333334,
+      "strata": 0.6844444444444444,
+      "terrain": 0.7422222222222222
+     },
+     "held_out_family_auc_mean": 0.7566666666666667
+    },
+    "trees_srm": {
+     "n_train_pairs": 79,
+     "n_test_pairs": 60,
+     "auc": 0.8241666666666667,
+     "accuracy": 0.775,
+     "precision": 0.7704918032786885,
+     "recall": 0.7833333333333333,
+     "confusion_matrix": {
+      "true_cover_pred_cover": 46,
+      "true_cover_pred_stego": 14,
+      "true_stego_pred_cover": 13,
+      "true_stego_pred_stego": 47
+     },
+     "tpr_at_1pct_fpr": 0.25,
+     "auc_ci95": [
+      0.7705555555555555,
+      0.8816875000000001
+     ],
+     "accuracy_ci95": [
+      0.7166666666666667,
+      0.8335416666666665
+     ],
+     "per_family_auc": {
+      "cells": 0.9866666666666667,
+      "clouds": 0.8755555555555555,
+      "strata": 0.5955555555555555,
+      "terrain": 0.76
+     },
+     "held_out_family_auc": {
+      "cells": 0.8355555555555556,
+      "clouds": 0.8622222222222222,
+      "strata": 0.6044444444444445,
+      "terrain": 0.6488888888888888
+     },
+     "held_out_family_auc_mean": 0.7377777777777779
+    }
+   }
   }
  ],
- "skipped_embeddings": [],
- "skipped_count": 0,
+ "cover_family_classification": {
+  "lr_basic": {
+   "accuracy": 0.8666666666666667,
+   "chance": 0.25,
+   "n_test": 60
+  },
+  "lr_srm": {
+   "accuracy": 0.95,
+   "chance": 0.25,
+   "n_test": 60
+  },
+  "trees_srm": {
+   "accuracy": 0.9,
+   "chance": 0.25,
+   "n_test": 60
+  }
+ },
  "environment": {
   "python": "3.13.18",
   "numpy": "2.5.3",
+  "scikit_learn": "1.9.1",
   "machine": "x86_64",
-  "system": "Linux"
+  "system": "Linux",
+  "workers": 2
  },
- "wall_seconds": 984.0,
+ "command": "python3 scripts/eval_detectability.py --stage evaluate --train-seeds 20 --test-seeds 15 --width 320 --height 240 --workers 2",
+ "wall_seconds": 1196.2,
  "limitations": [
   "Synthetic procedural covers only; no photographs. Results do not transfer to natural images.",
-  "The detector is a small linear model on about 65 hand-made features with a few hundred training images; learned steganalysers (rich models with ensemble classifiers, CNNs) are far stronger.",
-  "An adversary who knows the generator can produce unlimited training covers; this evaluation trains on a small sample.",
-  "The single-algorithm conditions embed over the whole image without the bootstrap carrier; the operational transport is the patch_mixed condition.",
-  "The bootstrap carrier of the transport is written in plain least-significant bits of the reserved top rows and is itself a detectable structure for a detector that looks for it.",
-  "Confidence intervals reflect sampling of seeds only, not model or feature choice."
+  "Small samples (tens of covers per family): confidence intervals are wide; differences inside an interval are not meaningful.",
+  "Detectors are small classical models on hand-made features (a subset of SRM-style residual co-occurrences); full rich models with ensemble classifiers and CNN steganalysers are stronger. No CNN was trained: no deep-learning framework is available here.",
+  "An adversary who knows the generator can produce unlimited training covers; these detectors train on a small sample.",
+  "The single-algorithm conditions embed over the whole image without the carrier; the operational transport is the transport_* conditions.",
+  "Confidence intervals reflect sampling of test seeds only, not model or feature choice."
  ]
 }

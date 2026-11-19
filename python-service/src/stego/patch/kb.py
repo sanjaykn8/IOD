@@ -1,7 +1,13 @@
-"""Static knowledge base + hybrid retrieval (structured filters, then BM25, top-1).
+"""Static knowledge base + risk-aware retrieval (selector `kb-risk-1`).
 
-No LLM, no embeddings, no network. Deterministic: fixed tokenisation, corpus-wide IDF,
-ties broken by (higher score, lower algorithm id).
+Per patch: structured hard filters (operational policy, the KB's geometry/size/hard-avoid rules, measured
+capacity) -> ranking of the eligible algorithms by
+    1. risk tier from the versioned risk table (`kb/risk_table.json`, built on the validation split only),
+    2. expected distortion: measured changes per embedded bit (same table),
+    3. processing cost: measured milliseconds per KiB (same table),
+    4. BM25 suitability of the KB text for the patch's descriptive terms (higher first),
+    5. lower algorithm id.
+Top-1 wins. No LLM, no embeddings, no network; deterministic.
 """
 
 import json
@@ -15,6 +21,8 @@ from ..errors import StegoError
 from . import SELECTOR_VERSION
 
 KB_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "kb", "algorithm_kb.json")
+RISK_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "kb", "risk_table.json")
+TIER_RANK = {"low": 0, "medium": 1, "high": 2, "not_measured": 3}
 _TOKEN = re.compile(r"[a-z0-9][a-z0-9\-_]*")
 _REQ_ENTRY = ("id", "name", "variant", "domain", "summary", "suitable_terms", "suitable_when", "avoid_when", "requirements",
               "hard_avoid", "capacity", "distortion", "cost", "assumptions", "extraction", "limitations", "references", "evidence")
@@ -81,7 +89,35 @@ def validate(kb):
 def load():
     with open(KB_PATH, encoding="utf-8") as fh:
         kb = json.load(fh)
+    risk_table()                      # the selector needs both files; fail at start-up, not mid-plan
     return validate(kb)
+
+
+def validate_risk(t):
+    if not isinstance(t, dict) or not str(t.get("version", "")).startswith("risk-table-") or not isinstance(t.get("algorithms"), dict):
+        _fail("risk table: missing version or algorithms")
+    if set(t["algorithms"]) != set(BY_NAME):
+        _fail("risk table must cover exactly the ten registered algorithms")
+    for name, r in t["algorithms"].items():
+        if r.get("tier") not in TIER_RANK:
+            _fail(f"risk table: bad tier for {name}")
+        for k in ("changes_per_bit", "ms_per_kib"):
+            if not isinstance(r.get(k), (int, float)) or r[k] < 0:
+                _fail(f"risk table: {name}.{k} must be a non-negative number")
+        if r["tier"] != "not_measured" and not isinstance(r.get("auc"), (int, float)):
+            _fail(f"risk table: {name} has a tier but no measured AUC")
+    return t
+
+
+@lru_cache(maxsize=1)
+def risk_table():
+    with open(RISK_PATH, encoding="utf-8") as fh:
+        return validate_risk(json.load(fh))
+
+
+def risk_key(name):
+    r = risk_table()["algorithms"][name]
+    return TIER_RANK[r["tier"]], float(r["changes_per_bit"]), float(r["ms_per_kib"])
 
 
 def _cmp(value, op, ref):
@@ -154,20 +190,24 @@ def structural(features, supports):
     return out
 
 
-def retrieve(features, chunk_bytes, capacities, supports):
-    """Structured filters -> BM25 -> ranking for one patch.
+def retrieve(features, chunk_bytes, capacities, supports, allowed=None):
+    """Structured filters -> risk-aware ranking (tier, distortion, cost, BM25, id) for one patch.
 
     features: patch feature dict (+ channels, block8_fill, bits_per_sample)
     capacities: {name: measured capacity bits}; supports: {name: (ok, reason)}
+    allowed: operational policy (iterable of names); None = all ten (educational use)
     Returns an inspectable result; `selected` is None when nothing is eligible.
     """
-    kb, idx = load(), index()
+    kb, idx, rt = load(), index(), risk_table()
     terms = query_terms(features)
     need = chunk_bytes * 8
     rows = []
     for e in kb["entries"]:
         name = e["name"]
         filters = []
+        if allowed is not None:
+            filters.append({"filter": "operational_policy", "passed": name in allowed,
+                            "detail": None if name in allowed else "excluded by the operational algorithm policy"})
         ok, why = supports[name]
         filters.append({"filter": "geometry_support", "passed": bool(ok), "detail": why})
         req = e["requirements"]
@@ -183,17 +223,25 @@ def retrieve(features, chunk_bytes, capacities, supports):
         filters.append({"filter": "measured_capacity", "passed": cap >= need and need > 0, "detail": f"{cap} bits measured, {need} bits required"})
         eligible = all(f["passed"] for f in filters)
         score, matched = idx.score(name, terms)
+        risk = rt["algorithms"][name]
+        tier, cpb, cost = risk_key(name)
         rows.append({"algorithm": name, "alg_id": e["id"], "kb_entry": f"{kb['kb_version']}#{e['id']}", "eligible": eligible, "filters": filters,
                      "exclusion_reason": None if eligible else next(f["filter"] for f in filters if not f["passed"]),
                      "bm25": round(score, 6), "matched_terms": matched, "capacity_bits": cap,
-                     "advisory_bits_per_sample": e["capacity"].get("advisory_bits_per_sample")})
-    ranked = sorted((r for r in rows if r["eligible"]), key=lambda r: (-r["bm25"], r["alg_id"]))
+                     "advisory_bits_per_sample": e["capacity"].get("advisory_bits_per_sample"),
+                     "risk": {"tier": risk["tier"], "auc": risk.get("auc"), "changes_per_bit": cpb, "ms_per_kib": cost},
+                     "expected_changes": int(round(cpb * need)), "expected_ms": round(cost * chunk_bytes / 1024.0, 3),
+                     "_key": (tier, cpb, cost, -round(score, 6), e["id"])})
+    ranked = sorted((r for r in rows if r["eligible"]), key=lambda r: r["_key"])
     for i, r in enumerate(ranked):
         r["rank"] = i + 1
-    return {"selector_version": SELECTOR_VERSION, "kb_version": kb["kb_version"], "query_terms": terms, "required_bits": need,
+    tie = len(ranked) > 1 and ranked[0]["_key"][:4] == ranked[1]["_key"][:4]
+    for r in rows:
+        del r["_key"]
+    return {"selector_version": SELECTOR_VERSION, "kb_version": kb["kb_version"], "risk_table": rt["version"], "query_terms": terms,
+            "required_bits": need, "selection_rule": "eligible -> risk tier -> changes per bit -> ms per KiB -> BM25 (higher) -> algorithm id",
             "candidates": rows, "ranking": [r["algorithm"] for r in ranked],
-            "selected": ranked[0]["algorithm"] if ranked else None,
-            "tie": len(ranked) > 1 and ranked[0]["bm25"] == ranked[1]["bm25"]}
+            "selected": ranked[0]["algorithm"] if ranked else None, "tie": tie}
 
 
 def public_view():
@@ -204,4 +252,5 @@ def public_view():
     out["bm25_stats"] = {"documents": idx.n, "avg_doc_len": round(idx.avgdl, 3),
                          "idf": {t: round(v, 6) for t, v in sorted(idx.idf.items()) if t in {q["term"] for q in kb["query_terms"]}}}
     out["registry"] = [BY_NAME[e["name"]].describe() for e in kb["entries"]]
+    out["risk_table"] = risk_table()
     return out

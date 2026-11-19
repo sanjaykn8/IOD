@@ -5,9 +5,9 @@ Generator `procgen-1` · quality heuristics `cover-quality-1` · default profile
 This document describes the cover source of the operational transport **as implemented**. It replaces
 every earlier cover-acquisition path: the server-side OpenCV webcam, the browser webcam, the PNG upload,
 the client-selected stored cover, the seeded "procedural" request and the automatic procedural fallback
-were removed end to end (routes, backend trait, configuration, UI, types). The transport formats
-(`frame-v2/appwire-v1/bootstrap-v2/manifest-v1`), the segmentation, the knowledge base and the ten
-algorithm variants are unchanged — see `patchwise-transport.md`.
+were removed end to end (routes, backend trait, configuration, UI, types). The transport format is now
+`frame-v3/appwire-v1/bootstrap-v3/manifest-v2` (keyed bootstrap carrier, `bootstrap-v3-design.md`); the
+segmentation, the knowledge base and the ten algorithm variants are unchanged — see `patchwise-transport.md`.
 
 The educational workbench (`/api/learn/*`, "Algorithm Learning" tab) is a separate namespace and keeps
 its own sample covers and its optional PNG upload. Nothing there reaches the operational transport.

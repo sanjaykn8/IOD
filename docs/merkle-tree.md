@@ -24,7 +24,7 @@ comm_PK_D = Poseidon(0x02, PK_KEM, PK_Dil)
 ```
 
 Sourced from the exact same `PK_KEM`/`PK_Dil` bytes used for real
-Dilithium/ML-DSA signature verification elsewhere in the protocol (both
+ML-DSA signature verification elsewhere in the protocol (both
 come from the same `identity::keys::DeviceKeys` struct), preventing
 proof/key splicing by construction.
 

@@ -2,6 +2,7 @@
 //! conservative defaults). See docs/patchwise-transport.md and docs/development.md.
 
 use crate::transport::generator::GeneratorConfig;
+use crate::transport::policy::AlgorithmPolicy;
 use serde_json::{json, Value};
 
 #[derive(Clone, Debug)]
@@ -22,6 +23,10 @@ pub struct StegoConfig {
     pub max_replans: u32,
     /// Process-level cover-generation configuration (profile + IOD_STEGO_GENERATOR_*). Requests may only tighten it.
     pub generator: GeneratorConfig,
+    /// Operational patch-algorithm policy (IOD_STEGO_ALGORITHM_POLICY / _ALLOW).
+    pub policy: AlgorithmPolicy,
+    /// Bootstrap-v3 discovery window above the last accepted sequence number (IOD_STEGO_SYNC_WINDOW).
+    pub sync_window: u32,
 }
 
 impl Default for StegoConfig {
@@ -39,6 +44,8 @@ impl Default for StegoConfig {
             target_chunk_bytes: 48,
             max_replans: 2,
             generator: GeneratorConfig::profile(crate::transport::generator::DEFAULT_PROFILE).expect("default profile exists"),
+            policy: AlgorithmPolicy::named(crate::transport::policy::DEFAULT_POLICY).expect("default policy exists"),
+            sync_window: crate::transport::bootstrap::DEFAULT_SYNC_WINDOW,
         }
     }
 }
@@ -99,6 +106,8 @@ impl StegoConfig {
             target_chunk_bytes: env_parse("IOD_STEGO_TARGET_CHUNK_BYTES", d.target_chunk_bytes)?,
             max_replans: env_parse("IOD_STEGO_MAX_REPLANS", d.max_replans)?,
             generator: GeneratorConfig::from_env()?,
+            policy: AlgorithmPolicy::from_lookup(|k| std::env::var(k).ok())?,
+            sync_window: env_parse("IOD_STEGO_SYNC_WINDOW", d.sync_window)?,
         };
         c.validate()?;
         Ok(c)
@@ -120,6 +129,9 @@ impl StegoConfig {
         }
         if !(8..=65_536).contains(&self.target_chunk_bytes) {
             return Err("IOD_STEGO_TARGET_CHUNK_BYTES must be within 8..=65536".into());
+        }
+        if !(1..=crate::transport::bootstrap::MAX_SYNC_WINDOW).contains(&self.sync_window) {
+            return Err("IOD_STEGO_SYNC_WINDOW must be within 1..=1024".into());
         }
         if self.max_replans > 6 {
             return Err("IOD_STEGO_MAX_REPLANS must be within 0..=6".into());
@@ -150,7 +162,9 @@ impl StegoConfig {
         let name = std::path::Path::new(&self.artifact_dir).file_name().map(|s| s.to_string_lossy().to_string()).unwrap_or_default();
         json!({"limits": self.limits(), "segmentation_overrides": self.segmentation, "target_chunk_bytes": self.target_chunk_bytes,
                "max_replans": self.max_replans, "artifact_dir_name": name, "http_timeout_ms": self.http_timeout_ms,
-               "cover_generation": self.generator.public_view()})
+               "cover_generation": self.generator.public_view(), "algorithm_policy": self.policy.public_view(),
+               "bootstrap": {"version": crate::transport::bootstrap::VERSION, "sync_window": self.sync_window,
+                             "replay_lookback": crate::transport::bootstrap::REPLAY_LOOKBACK, "placement": "keyed, distributed, encrypted (docs/bootstrap-v3-design.md)"}})
     }
 }
 
@@ -187,7 +201,7 @@ mod tests {
         let mut c = StegoConfig::default();
         c.max_replans = 99;
         assert!(c.validate().is_err());
-        assert!(!StegoConfig::default().public_view().to_string().contains("policy"));
+        assert!(!StegoConfig::default().public_view().to_string().contains("priority"), "no message-priority policy exists");
     }
     #[test]
     fn public_view_hides_full_path() {

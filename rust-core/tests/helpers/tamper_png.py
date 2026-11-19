@@ -1,12 +1,13 @@
 """Test helper: inspect / tamper with a saved patch-wise stego PNG at the PIXEL level.
 
 Deliberately INDEPENDENT of the image service's code (stdlib + numpy + Pillow only): it re-implements
-the documented layouts (docs/patchwise-transport.md), so it doubles as a cross-check of the format.
+the documented layouts (docs/bootstrap-v3-design.md, docs/patchwise-transport.md), so it doubles as a
+cross-check of the format. It holds no key: the Rust test derives the frame's value stream (and decrypts or
+re-encrypts the carrier) and passes the value stream in a file.
 
-  bootstrap carrier (LSBs of the flat samples from index 0):
-      preamble(16) = "SB" | ver=2 | flags=0 | manifest_len u32 | frame_len u32 | crc32(first 12)
-      manifest(manifest_len) | crc32(manifest)
-  manifest v1: 24-byte fixed part, 12 bytes per patch, RLE cell map
+  carrier pixels P = first distinct values of (v_i mod (W*H)), v_i = big-endian u32 from the value file
+  sample slot k    = pixel P[k div C], channel k mod C
+  manifest v2: 24-byte fixed part (carrier_pixels at bytes 14..16), 12 bytes per patch, RLE cell map
 
 Usage: python3 tamper_png.py <mode> <path> [args...]
 """
@@ -33,36 +34,21 @@ def save(arr):
     Image.fromarray(arr).save(path, format="PNG")
 
 
-def get_bytes(flat, start_bit, n):
-    return bytearray(np.packbits(flat[start_bit:start_bit + 8 * n] & 1).tobytes())
+def positions(values_file, n_pixels):
+    v = np.frombuffer(open(values_file, "rb").read(), dtype=">u4").astype(np.int64) % n_pixels
+    _, first = np.unique(v, return_index=True)
+    return v[np.sort(first)]
 
 
-def put_bytes(flat, start_bit, data):
-    bits = np.unpackbits(np.frombuffer(bytes(data), dtype=np.uint8))
-    flat[start_bit:start_bit + bits.size] = (flat[start_bit:start_bit + bits.size] & 0xFE) | bits
-
-
-def read_carrier(flat):
-    pre = get_bytes(flat, 0, 16)
-    assert pre[:2] == b"SB" and pre[2] == 2, "not a bootstrap v2 image"
-    mlen, flen = struct.unpack(">II", pre[4:12])
-    return pre, get_bytes(flat, 128, mlen), mlen, flen
-
-
-def write_preamble(flat, pre):
-    pre[12:16] = struct.pack(">I", zlib.crc32(bytes(pre[:12])))
-    put_bytes(flat, 0, pre)
-
-
-def write_manifest(flat, man):
-    """Rewrite the manifest (same length) with a VALID carrier CRC: CRC is not authentication."""
-    put_bytes(flat, 128, man)
-    put_bytes(flat, 128 + 8 * len(man), struct.pack(">I", zlib.crc32(bytes(man))))
+def slots(arr, pos, start, n):
+    c = 1 if arr.ndim == 2 else arr.shape[2]
+    k = np.arange(start, start + n)
+    return pos[k // c] * c + k % c
 
 
 def parse_manifest(man):
-    magic, ver, seg, sel, ch, w, h, cell, n, rrows, plen, maplen = struct.unpack(">4sBBBBHHBBHII", bytes(man[:24]))
-    assert magic == b"IOPM"
+    magic, ver, seg, sel, ch, w, h, cell, n, cpix, plen, maplen = struct.unpack(">4sBBBBHHBBHII", bytes(man[:24]))
+    assert magic == b"IOPM" and ver == 2, "not a manifest v2"
     entries = [struct.unpack(">BBHII", bytes(man[24 + 12 * i:36 + 12 * i])) for i in range(n)]
     rows, cols = -(-h // cell), -(-w // cell)
     labels, i, data = [], 0, man[24 + 12 * n:]
@@ -81,8 +67,8 @@ def parse_manifest(man):
     assert len(labels) == rows * cols, "map does not cover the grid"
     grid = np.array(labels, dtype=np.uint8).reshape(rows, cols)
     px = np.repeat(np.repeat(grid, cell, 0), cell, 1)[:h, :w].copy()
-    return {"channels": ch, "width": w, "height": h, "cell": cell, "n": n, "reserved_rows": rrows, "payload_len": plen,
-            "entries": entries, "pixel_labels": px, "map_offset": 24 + 12 * n, "map_len": maplen}
+    return {"channels": ch, "width": w, "height": h, "cell": cell, "n": n, "carrier_pixels": cpix, "payload_len": plen,
+            "entries": entries, "pixel_labels": px}
 
 
 if mode in ("make-cover", "make-mixed-cover"):
@@ -117,98 +103,54 @@ elif mode == "jpeg":
 else:
     arr = np.array(load(), dtype=np.uint8)
     flat = arr.reshape(-1)
+    npix = arr.shape[0] * arr.shape[1]
     if mode == "blank":
         flat[:] = 128
-    elif mode == "dump":
-        pre, man, mlen, flen = read_carrier(flat)
-        m = parse_manifest(man)
-        crc_ok = bytes(get_bytes(flat, 128 + 8 * mlen, 4)) == struct.pack(">I", zlib.crc32(bytes(man)))
-        counts = np.bincount(m["pixel_labels"].reshape(-1), minlength=m["n"]).tolist()
-        print(json.dumps({"manifest_len": mlen, "frame_len": flen, "crc_ok": crc_ok, "width": m["width"], "height": m["height"],
-                          "channels": m["channels"], "cell": m["cell"], "patch_count": m["n"], "reserved_rows": m["reserved_rows"],
-                          "payload_len": m["payload_len"], "pixels_per_patch": counts,
+    elif mode == "legacy-v2":             # blank image carrying a valid retired bootstrap-v2 preamble in the top-row LSBs
+        flat[:] = 128
+        body = struct.pack(">2sBBII", b"SB", 2, 0, 100, 400)
+        pre = body + struct.pack(">I", zlib.crc32(body))
+        bits = np.unpackbits(np.frombuffer(pre, dtype=np.uint8))
+        flat[:bits.size] = (flat[:bits.size] & 0xFE) | bits
+    elif mode == "read-bits":             # values_file start n_bits -> hex
+        pos = positions(args[0], npix)
+        print(np.packbits(flat[slots(arr, pos, int(args[1]), int(args[2]))] & 1).tobytes().hex())
+        sys.exit(0)
+    elif mode == "write-bits":            # values_file hex: set the LSBs of slots 0.. to the given bits (+-1 change)
+        pos = positions(args[0], npix)
+        bits = np.unpackbits(np.frombuffer(bytes.fromhex(args[1]), dtype=np.uint8))
+        idx = slots(arr, pos, 0, bits.size)
+        diff = idx[(flat[idx] & 1) != bits]
+        flat[diff] = np.where(flat[diff] == 255, 254, flat[diff] + 1)
+    elif mode == "carrier-flip":          # values_file slot: flip one carrier LSB (no repair)
+        pos = positions(args[0], npix)
+        k = slots(arr, pos, int(args[1]), 1)[0]
+        flat[k] = flat[k] - 1 if flat[k] & 1 else flat[k] + 1
+    elif mode == "dump":                  # values_file manifest_hex -> independent view of the patch layout
+        m = parse_manifest(bytes.fromhex(args[1]))
+        pos = positions(args[0], npix)[:m["carrier_pixels"]]
+        lab = m["pixel_labels"]
+        counts = np.bincount(lab.reshape(-1), minlength=m["n"]).tolist()
+        eff = lab.copy().reshape(-1)
+        eff[pos] = 255
+        usable = np.bincount(eff[eff != 255], minlength=m["n"]).tolist()
+        rows_touched = sorted(set((pos // m["width"]).tolist()))
+        print(json.dumps({"width": m["width"], "height": m["height"], "channels": m["channels"], "cell": m["cell"],
+                          "patch_count": m["n"], "carrier_pixels": m["carrier_pixels"], "carrier_pixels_distinct": int(len(set(pos.tolist()))),
+                          "carrier_rows_touched": len(rows_touched), "payload_len": m["payload_len"],
+                          "pixels_per_patch": counts, "usable_pixels_per_patch": usable,
                           "patches": [{"patch_id": i, "alg_id": e[0], "param": e[1], "offset": e[3], "length": e[4]} for i, e in enumerate(m["entries"])]}))
         sys.exit(0)
-    elif mode == "carrier-flip":          # flip one carrier LSB (no CRC repair)
-        flat[int(args[0])] ^= 1
-    elif mode == "preamble-set":          # field value, CRC repaired
-        pre, man, mlen, flen = read_carrier(flat)
-        field, value = args[0], int(args[1])
-        if field == "version":
-            pre[2] = value
-        elif field == "flags":
-            pre[3] = value
-        elif field == "manifest_len":
-            pre[4:8] = struct.pack(">I", (mlen + value) & 0xFFFFFFFF if args[1][0] in "+-" else value)
-        elif field == "frame_len":
-            pre[8:12] = struct.pack(">I", (flen + value) & 0xFFFFFFFF if args[1][0] in "+-" else value)
-        else:
-            sys.exit("unknown preamble field")
-        write_preamble(flat, pre)
-    elif mode == "manifest-entry":        # patch field value   (carrier CRC repaired)
-        pre, man, mlen, flen = read_carrier(flat)
-        patch, field, value = int(args[0]), args[1], int(args[2])
-        base = 24 + 12 * patch
-        if field == "alg":
-            man[base] = value
-        elif field == "param":
-            man[base + 1] = value
-        elif field == "offset":
-            man[base + 4:base + 8] = struct.pack(">I", value)
-        elif field == "length":
-            man[base + 8:base + 12] = struct.pack(">I", value)
-        else:
-            sys.exit("unknown entry field")
-        write_manifest(flat, man)
-    elif mode == "manifest-move-byte":    # shift one payload byte between two used patches (still contiguous)
-        pre, man, mlen, flen = read_carrier(flat)
-        m = parse_manifest(man)
-        used = [i for i, e in enumerate(m["entries"]) if e[0]]
-        a, b = used[0], used[1]
-        ea, eb = m["entries"][a], m["entries"][b]
-        man[24 + 12 * a + 8:24 + 12 * a + 12] = struct.pack(">I", ea[4] - 1)
-        man[24 + 12 * b + 4:24 + 12 * b + 8] = struct.pack(">I", eb[3] - 1)
-        man[24 + 12 * b + 8:24 + 12 * b + 12] = struct.pack(">I", eb[4] + 1)
-        write_manifest(flat, man)
-    elif mode == "manifest-byte":         # absolute manifest byte offset, value (carrier CRC repaired)
-        pre, man, mlen, flen = read_carrier(flat)
-        off = int(args[0])
-        man[off if off >= 0 else len(man) + off] = int(args[1])
-        write_manifest(flat, man)
-    elif mode == "manifest-relabel":      # relabel the first map run from patch a to patch b (carrier CRC repaired)
-        pre, man, mlen, flen = read_carrier(flat)
-        m = parse_manifest(man)
-        a, b = int(args[0]), int(args[1])
-        i, data = m["map_offset"], man
-        prev = None
-        done = False
-        while i < len(data):
-            lab_pos = i
-            i += 1
-            while data[i] & 0x80:
-                i += 1
-            i += 1
-            nxt = data[i] if i < len(data) else None
-            if data[lab_pos] == a and prev != b and nxt != b:
-                data[lab_pos] = b
-                done = True
-                break
-            prev = data[lab_pos]
-        if not done:
-            sys.exit("no relabelable run")
-        write_manifest(flat, man)
-    elif mode == "flip-patch":            # patch_id [count]: damage pixels inside one patch (payload area). Bit 0 AND bit 7 are
-        # toggled so that both LSB-plane and transform-domain embeddings are disturbed whatever the patch algorithm is
-        pre, man, mlen, flen = read_carrier(flat)
-        m = parse_manifest(man)
+    elif mode == "flip-patch":            # values_file manifest_hex patch_id [count] [cover]: damage pixels inside one patch.
+        # Bit 0 AND bit 7 are toggled so LSB-plane and transform-domain embeddings are both disturbed.
+        m = parse_manifest(bytes.fromhex(args[1]))
         lab = m["pixel_labels"]
-        lab[: m["reserved_rows"]] = 255
-        ys, xs = np.nonzero(lab == int(args[0]))
-        k = int(args[1]) if len(args) > 1 else ys.size
-        if len(args) > 2:
-            # partial damage: only pixels the embedding actually modified (stego != cover), i.e. pixels
-            # that certainly carry payload, whatever algorithm the patch uses
-            cov = np.asarray(Image.open(args[2]))
+        lab.reshape(-1)[positions(args[0], npix)[:m["carrier_pixels"]]] = 255
+        ys, xs = np.nonzero(lab == int(args[2]))
+        k = int(args[3]) if len(args) > 3 else ys.size
+        if len(args) > 4:
+            # partial damage: only pixels the embedding actually modified (stego != cover)
+            cov = np.asarray(Image.open(args[4]))
             ch = (cov != arr).reshape(arr.shape[0], arr.shape[1], -1).any(axis=2)[ys, xs]
             ys, xs = ys[ch], xs[ch]
             if ys.size == 0:

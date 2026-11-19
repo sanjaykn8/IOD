@@ -77,7 +77,8 @@ fn header() {
     println!("OS       : {}", cmd("uname", &["-srm"]));
     println!("rustc    : {}", cmd("rustc", &["--version"]));
     println!("build    : {}", if cfg!(debug_assertions) { "DEBUG (numbers not meaningful)" } else { "release" });
-    println!("libs     : pqcrypto-kyber 0.8.1 (Kyber768), pqcrypto-dilithium 0.5.0 (Dilithium2), plonky3 =0.9.0-rc.1 (BabyBear, Poseidon2, hiding FRI), chacha20poly1305, sha3, hkdf");
+    println!("suite    : {}", iod_core::crypto::suite::SUITE_ID);
+    println!("libs     : ml-kem 0.3.4 (ML-KEM-768, FIPS 203), ml-dsa 0.1.2 (ML-DSA-44, FIPS 204, hedged, ctx = suite id), plonky3 =0.9.0-rc.1 (BabyBear, Poseidon2, hiding FRI), chacha20poly1305, sha3, hkdf");
     println!("quick    : {}\n", quick());
 }
 
@@ -117,20 +118,20 @@ fn main() {
     let enrolled = fuzzy_extractor::generate(&puf.read());
     stats(time_it(|| { let _ = fuzzy_extractor::reproduce(&puf.read(), &enrolled.helper_data); }, reps(200)), "PUF fuzzy-extractor reconstruction");
 
-    println!("\n--- ML-KEM-768 (Kyber768) / ML-DSA-44 (Dilithium2) ---");
+    println!("\n--- ML-KEM-768 (FIPS 203) / ML-DSA-44 (FIPS 204) ---");
     stats(time_it(|| { let _ = kem::keypair(); }, reps(200)), "ML-KEM-768 keygen");
     let (kpk, ksk) = kem::keypair();
     stats(time_it(|| { let _ = kem::encapsulate(&kpk).unwrap(); }, reps(500)), "ML-KEM-768 encapsulate");
     let (ct, _) = kem::encapsulate(&kpk).unwrap();
     stats(time_it(|| { let _ = kem::decapsulate(&ksk, &ct).unwrap(); }, reps(500)), "ML-KEM-768 decapsulate");
-    println!("  sizes: pk={} B, ct={} B", kpk.0.len(), ct.0.len());
+    println!("  sizes: pk={} B, sk(seed)={} B, ct={} B", kpk.0.len(), ksk.0.len(), ct.0.len());
     stats(time_it(|| { let _ = sign::keypair(); }, reps(200)), "ML-DSA-44 keygen");
     let (spk, ssk) = sign::keypair();
     let msg = [0x5au8; 256];
     stats(time_it(|| { let _ = sign::sign_transcript(&ssk, &msg).unwrap(); }, reps(500)), "ML-DSA-44 sign (256 B transcript)");
     let sig = sign::sign_transcript(&ssk, &msg).unwrap();
     stats(time_it(|| { let _ = sign::verify_transcript(&spk, &msg, &sig); }, reps(500)), "ML-DSA-44 verify");
-    println!("  sizes: pk={} B, sig={} B", spk.0.len(), sig.0.len());
+    println!("  sizes: pk={} B, sk(seed)={} B, sig={} B", spk.0.len(), ssk.0.len(), sig.0.len());
 
     println!("\n--- AEAD / hash / Merkle ---");
     let key = aead::AeadKey([9u8; 32]);

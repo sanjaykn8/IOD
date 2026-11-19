@@ -115,6 +115,21 @@ fn route(
             }
         }
 
+        (Method::Get, ["api", "system", "crypto"]) => {
+            let s = state.lock().unwrap();
+            let archived = s.db.legacy_snapshot_summary().unwrap_or_else(|_| json!({"count": null}));
+            ok(json!({
+                "suite": crate::crypto::suite::describe(),
+                "migration": {
+                    "state": if archived["count"].as_u64().unwrap_or(0) > 0 { "legacy_state_archived" } else { "current" },
+                    "archived_at_startup": s.crypto_migration["archived_now"],
+                    "legacy_snapshots": archived,
+                    "action": "identities from another suite are archived, never loaded; register affected drones again or reset the simulation",
+                },
+                "puf": "simulated SRAM PUF (software model); physical PUF integration is deferred",
+            }))
+        }
+
         (Method::Get, ["api", "state"]) => {
             let s = state.lock().unwrap();
             let groups: Vec<_> = s.gcs.groups.keys().filter_map(|g| views::group_view(g, &s.gcs)).collect();

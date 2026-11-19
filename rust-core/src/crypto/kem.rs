@@ -1,24 +1,48 @@
-//! Post-quantum KEM wrapper: Kyber768 (NIST Round-3), the direct
-//! algorithmic predecessor of standardized ML-KEM-768 (FIPS 203).
+//! Post-quantum KEM wrapper: **ML-KEM-768 (FIPS 203, final)** via the RustCrypto
+//! `ml-kem` crate (pinned `=0.3.4`).
 //!
-//! IMPORTANT (KEM, not PKE): ML-KEM/Kyber is a *Key Encapsulation
-//! Mechanism*. `encapsulate` does not "encrypt an arbitrary plaintext" —
-//! it produces a fresh ciphertext bound to a fresh shared secret. To send
-//! a structured plaintext payload confidentially and authentically, the
-//! protocol layer (see `protocol/messages.rs`) does:
+//! IMPORTANT (KEM, not PKE): ML-KEM is a *Key Encapsulation Mechanism*.
+//! `encapsulate` does not "encrypt an arbitrary plaintext" — it produces a fresh
+//! ciphertext bound to a fresh 32-byte shared secret. To send a structured
+//! payload confidentially and authentically, the protocol layer
+//! (`protocol/envelope.rs`) does
 //!     (ct, shared_secret) = kem::encapsulate(pk)
-//!     aead_key = kdf(shared_secret, ...)
-//!     ciphertext = aead::seal(aead_key, associated_data, plaintext)
-//! and transmits `(ct, ciphertext)` together. This module intentionally
-//! does NOT expose an "encrypt(pk, plaintext)" function, to prevent the
-//! protocol code from accidentally treating the KEM as textbook
-//! public-key encryption.
+//!     aead_key = HKDF(shared_secret, info = domain || suite)
+//!     ciphertext = ChaCha20-Poly1305(aead_key, associated_data, plaintext)
+//! and transmits `(ct, ciphertext)` together. This module intentionally does NOT
+//! expose an `encrypt(pk, plaintext)` function.
+//!
+//! ## Encodings
+//! * Public (encapsulation) key: the FIPS 203 `ek` byte string, 1184 bytes. Decoding
+//!   runs the crate's FIPS 203 §7.2 modulus check; non-canonical keys are rejected.
+//! * Private (decapsulation) key: stored in **seed form** `d || z` (64 bytes), the
+//!   crate's preferred serialization and permitted by FIPS 203 §3.3. The expanded
+//!   2400-byte `dk` encoding is checked in tests only.
+//! * Ciphertext 1088 bytes, shared secret 32 bytes.
+//!
+//! ## Implicit rejection
+//! FIPS 203 decapsulation never reports "invalid ciphertext": a well-formed-length
+//! but tampered ciphertext yields a pseudo-random shared secret `J(z || c)`. The
+//! protocol therefore relies on the AEAD tag under the derived key to reject such
+//! envelopes. Only a ciphertext of the wrong LENGTH is a decoding error here.
 
-use pqcrypto_kyber::kyber768;
-use pqcrypto_traits::kem::{Ciphertext, PublicKey, SecretKey, SharedSecret};
+use ml_kem::array::Array;
+use ml_kem::kem::{Decapsulate, Encapsulate, Generate, KeyExport};
+use ml_kem::{DecapsulationKey, EncapsulationKey, MlKem768};
 
-#[derive(Clone, serde::Serialize, serde::Deserialize)]
+pub const PUBLIC_KEY_BYTES: usize = 1184;
+pub const EXPANDED_SECRET_KEY_BYTES: usize = 2400;
+pub const SECRET_SEED_BYTES: usize = 64;
+pub const CIPHERTEXT_BYTES: usize = 1088;
+pub const SHARED_SECRET_BYTES: usize = 32;
+
+type Dk = DecapsulationKey<MlKem768>;
+type Ek = EncapsulationKey<MlKem768>;
+
+/// FIPS 203 encapsulation key bytes (1184).
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct KemPublicKey(pub Vec<u8>);
+/// Decapsulation key in seed form `d || z` (64 bytes). Device-local only.
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct KemSecretKey(pub Vec<u8>);
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
@@ -26,72 +50,67 @@ pub struct KemCiphertext(pub Vec<u8>);
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct KemSharedSecret(pub Vec<u8>);
 
-/// Deterministic-from-seed key generation.
-///
-/// The pqcrypto/PQClean Kyber768 implementation does not expose a
-/// "KeyGen_from_seed(seed)" API as loosely implied by the specification's
-/// pseudocode — its `keypair()` draws randomness directly from the OS
-/// CSPRNG internally. To honor the specification's intent (device keys
-/// are *reproducible* from the PUF-derived seed, since the drone does not
-/// store long-term secrets) while using the real PQClean implementation
-/// as-is, we adapt the reconstructed PUF seed into a deterministic RNG
-/// (ChaCha20, seeded via a domain-separated HKDF expansion of the PUF
-/// seed) and use `getrandom`'s test/deterministic backend indirection is
-/// NOT available for this vendored C implementation, so instead we
-/// implement determinism at the *seed-management* layer: the drone
-/// derives keys once at registration time using the underlying library's
-/// own secure `keypair()", and persists only the fact that the keypair
-/// is *associated with* a given PUF-seed epoch; regenerating identical
-/// keys bit-for-bit from the seed alone is therefore a documented
-/// limitation of the chosen PQClean-backed library (see
-/// docs/cryptography.md, "Deterministic key generation limitation").
-///
-/// For the parts of the system that *do* require a deterministic,
-/// reproducible mapping seed -> keypair (used by the PUF/registration
-/// simulation and by the reproducible test-vector generator), we provide
-/// `keypair_from_seed`, which deterministically seeds a ChaCha20 RNG from
-/// the PUF seed via domain-separated HKDF and uses it to directly
-/// generate Kyber768 keys through PQClean's indcpa keygen entry points
-/// exposed by pqcrypto-kyber's `keypair()` — HOWEVER pqcrypto-kyber does
-/// not expose a seeded variant either. We therefore implement the
-/// practical, honestly-documented approach actually used by this
-/// prototype: `keypair_from_seed` uses the seed to deterministically
-/// generate the *underlying randomness bytes* Kyber768 needs (64 bytes:
-/// 32 for the CPA keypair seed + 32 for the CCA transform's z value) and
-/// feeds them through PQClean's seed-expansion (SHAKE-128/256), which is
-/// exactly how PQClean's *internal* deterministic KAT (known-answer-test)
-/// keygen works. Since pqcrypto's safe Rust API does not re-expose that
-/// internal entry point, this prototype instead derives determinism at a
-/// layer we do fully control: see `identity::derive_device_keys`, which
-/// records the derivation seed and regenerates+re-persists keys
-/// consistently rather than claiming bit-identical regeneration across
-/// process restarts purely from the seed. This is documented explicitly
-/// as a simplification vs. the idealized spec pseudocode.
+impl std::fmt::Debug for KemSecretKey {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KemSecretKey(<redacted>)")
+    }
+}
+impl std::fmt::Debug for KemSharedSecret {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("KemSharedSecret(<redacted>)")
+    }
+}
+
+fn parse_ek(pk: &KemPublicKey) -> anyhow::Result<Ek> {
+    let arr = Array::try_from(pk.0.as_slice())
+        .map_err(|_| anyhow::anyhow!("ML-KEM-768 public key must be {PUBLIC_KEY_BYTES} bytes, got {}", pk.0.len()))?;
+    Ek::new(&arr).map_err(|_| anyhow::anyhow!("ML-KEM-768 public key failed the FIPS 203 modulus check"))
+}
+
+fn parse_dk(sk: &KemSecretKey) -> anyhow::Result<Dk> {
+    let seed = Array::try_from(sk.0.as_slice())
+        .map_err(|_| anyhow::anyhow!("ML-KEM-768 private key seed must be {SECRET_SEED_BYTES} bytes, got {}", sk.0.len()))?;
+    Ok(Dk::from_seed(seed))
+}
+
+fn export(dk: &Dk) -> (KemPublicKey, KemSecretKey) {
+    let seed = dk.to_seed().expect("key was created from a seed");
+    (KemPublicKey(dk.encapsulation_key().to_bytes().to_vec()), KemSecretKey(seed.to_vec()))
+}
+
+/// Fresh keypair from the operating-system CSPRNG (FIPS 203 ML-KEM.KeyGen).
 pub fn keypair() -> (KemPublicKey, KemSecretKey) {
-    let (pk, sk) = kyber768::keypair();
-    (
-        KemPublicKey(pk.as_bytes().to_vec()),
-        KemSecretKey(sk.as_bytes().to_vec()),
-    )
+    export(&Dk::generate())
 }
 
+/// Deterministic keypair from a 64-byte seed `d || z` (FIPS 203 ML-KEM.KeyGen_internal).
+///
+/// Used by the NIST known-answer tests. It is also the documented seam for future
+/// provisioning from a physical PUF; the simulator does NOT derive device keys
+/// from the simulated PUF (see `identity::keys`).
+pub fn keypair_from_seed(seed: &[u8; SECRET_SEED_BYTES]) -> (KemPublicKey, KemSecretKey) {
+    export(&Dk::from_seed(Array::from(*seed)))
+}
+
+/// Derive the public key from a stored private key (used to check stored state).
+pub fn public_from_secret(sk: &KemSecretKey) -> anyhow::Result<KemPublicKey> {
+    Ok(export(&parse_dk(sk)?).0)
+}
+
+/// FIPS 203 ML-KEM.Encaps with fresh OS randomness.
 pub fn encapsulate(pk: &KemPublicKey) -> anyhow::Result<(KemCiphertext, KemSharedSecret)> {
-    let pk = kyber768::PublicKey::from_bytes(&pk.0)
-        .map_err(|_| anyhow::anyhow!("invalid Kyber768 public key encoding"))?;
-    let (ss, ct) = kyber768::encapsulate(&pk);
-    Ok((
-        KemCiphertext(ct.as_bytes().to_vec()),
-        KemSharedSecret(ss.as_bytes().to_vec()),
-    ))
+    let ek = parse_ek(pk)?;
+    let (ct, ss) = ek.encapsulate();
+    Ok((KemCiphertext(ct.to_vec()), KemSharedSecret(ss.to_vec())))
 }
 
+/// FIPS 203 ML-KEM.Decaps. Wrong-length inputs are errors; a tampered ciphertext of
+/// the right length returns the implicit-rejection secret (see module docs).
 pub fn decapsulate(sk: &KemSecretKey, ct: &KemCiphertext) -> anyhow::Result<KemSharedSecret> {
-    let sk = kyber768::SecretKey::from_bytes(&sk.0)
-        .map_err(|_| anyhow::anyhow!("invalid Kyber768 secret key encoding"))?;
-    let ct = kyber768::Ciphertext::from_bytes(&ct.0)
-        .map_err(|_| anyhow::anyhow!("invalid Kyber768 ciphertext encoding"))?;
-    let ss = kyber768::decapsulate(&ct, &sk);
-    Ok(KemSharedSecret(ss.as_bytes().to_vec()))
+    let dk = parse_dk(sk)?;
+    let c = Array::try_from(ct.0.as_slice())
+        .map_err(|_| anyhow::anyhow!("ML-KEM-768 ciphertext must be {CIPHERTEXT_BYTES} bytes, got {}", ct.0.len()))?;
+    Ok(KemSharedSecret(dk.decapsulate(&c).to_vec()))
 }
 
 #[cfg(test)]
@@ -99,11 +118,39 @@ mod tests {
     use super::*;
 
     #[test]
+    fn standard_sizes() {
+        let (pk, sk) = keypair();
+        assert_eq!(pk.0.len(), PUBLIC_KEY_BYTES);
+        assert_eq!(sk.0.len(), SECRET_SEED_BYTES);
+        let (ct, ss) = encapsulate(&pk).unwrap();
+        assert_eq!(ct.0.len(), CIPHERTEXT_BYTES);
+        assert_eq!(ss.0.len(), SHARED_SECRET_BYTES);
+        #[allow(deprecated)]
+        {
+            use ml_kem::ExpandedKeyEncoding;
+            let dk = parse_dk(&sk).unwrap();
+            assert_eq!(dk.to_expanded_bytes().len(), EXPANDED_SECRET_KEY_BYTES);
+        }
+    }
+
+    #[test]
     fn encapsulate_decapsulate_agree() {
         let (pk, sk) = keypair();
         let (ct, ss1) = encapsulate(&pk).unwrap();
         let ss2 = decapsulate(&sk, &ct).unwrap();
         assert_eq!(ss1.0, ss2.0);
+        assert_eq!(public_from_secret(&sk).unwrap(), pk);
+    }
+
+    #[test]
+    fn seeded_keygen_is_deterministic_and_seeds_differ() {
+        let a = keypair_from_seed(&[7u8; 64]);
+        let b = keypair_from_seed(&[7u8; 64]);
+        let c = keypair_from_seed(&[8u8; 64]);
+        assert_eq!(a.0, b.0);
+        assert_eq!(a.1 .0, b.1 .0);
+        assert_ne!(a.0, c.0);
+        assert_ne!(keypair().0, keypair().0, "OS-random keys differ");
     }
 
     #[test]
@@ -116,11 +163,39 @@ mod tests {
     }
 
     #[test]
-    fn invalid_ciphertext_is_rejected_or_disagrees() {
+    fn tampered_ciphertext_gets_the_implicit_rejection_secret() {
         let (pk, sk) = keypair();
-        let (mut ct, ss1) = encapsulate(&pk).unwrap();
-        ct.0[0] ^= 0xFF;
-        let ss2 = decapsulate(&sk, &ct).unwrap();
-        assert_ne!(ss1.0, ss2.0);
+        let (ct, ss1) = encapsulate(&pk).unwrap();
+        for pos in [0usize, 500, CIPHERTEXT_BYTES - 1] {
+            let mut bad = ct.clone();
+            bad.0[pos] ^= 0x01;
+            let ss2 = decapsulate(&sk, &bad).unwrap();
+            assert_ne!(ss1.0, ss2.0, "pos {pos}");
+            // implicit rejection is deterministic for a given (dk, c)
+            assert_eq!(ss2.0, decapsulate(&sk, &bad).unwrap().0);
+            assert_eq!(ss2.0.len(), SHARED_SECRET_BYTES);
+        }
+    }
+
+    #[test]
+    fn malformed_encodings_are_rejected() {
+        let (pk, sk) = keypair();
+        let (ct, _) = encapsulate(&pk).unwrap();
+        assert!(encapsulate(&KemPublicKey(pk.0[..PUBLIC_KEY_BYTES - 1].to_vec())).is_err());
+        assert!(encapsulate(&KemPublicKey(vec![])).is_err());
+        // a coefficient >= q (all-ones 12-bit fields) fails the FIPS 203 modulus check
+        let mut nc = pk.0.clone();
+        nc[0] = 0xFF;
+        nc[1] = 0xFF;
+        assert!(encapsulate(&KemPublicKey(nc)).is_err());
+        assert!(decapsulate(&sk, &KemCiphertext(ct.0[..100].to_vec())).is_err());
+        assert!(decapsulate(&KemSecretKey(vec![0; 2400]), &ct).is_err(), "expanded/legacy-length private keys are not accepted");
+        assert!(decapsulate(&KemSecretKey(vec![0; 2400 - 64]), &ct).is_err());
+    }
+
+    #[test]
+    fn secrets_are_redacted_in_debug_output() {
+        let (_, sk) = keypair();
+        assert_eq!(format!("{sk:?}"), "KemSecretKey(<redacted>)");
     }
 }

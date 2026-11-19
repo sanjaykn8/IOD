@@ -40,14 +40,12 @@ reconstruction path, closing a real (if currently simulated-away) gap.
 
 ## Deterministic PQ keygen
 
-If a future toolchain upgrade allows using `pqcrypto-mlkem`/
-`pqcrypto-mldsa` (which still don't expose seeded keygen either, as of
-this writing) or a different PQ library that does support
-deterministic/seeded key generation, revisiting
-`identity::keys::derive_device_keys` to achieve the specification's
-original "regenerate keys from the PUF seed with zero persistent
-storage" property would be a meaningful fidelity improvement over the
-current "generate once, persist on-device" compromise.
+The final-standard crates now in use (`ml-kem`, `ml-dsa`) expose the standard seeded
+key generation (`KeyGen_internal`), wrapped as `kem::keypair_from_seed` /
+`sign::keypair_from_seed`. Connecting them to a *physical* PUF's reconstructed seed would
+achieve the specification's "regenerate keys, store nothing" property. It is not done
+with the simulated PUF, on purpose (simulated entropy must not pose as hardware-rooted
+key material); physical PUF integration is deferred.
 
 ## Threshold or distributed GCS
 

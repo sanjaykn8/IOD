@@ -27,8 +27,8 @@ pub const SYNTHETIC_HEX: &str = "A63C915E";
 pub const LABEL: &str = "Educational experiment - not a live UAV transmission";
 const MAX_MESSAGE: usize = 2048;
 /// Operational transport overhead that the learning payload does NOT include
-/// besides the patch manifest (Frame v2 header 16 B + HMAC-SHA256 tag 32 B; the manifest and the
-/// bootstrap preamble travel in reserved rows of the image).
+/// besides the patch manifest (Frame v3 header 16 B + HMAC-SHA256 tag 32 B; the manifest travels compressed
+/// and encrypted in the keyed bootstrap-v3 carrier).
 pub const OPERATIONAL_FRAME_OVERHEAD: usize = 16 + 32;
 
 fn test_key() -> AeadKey {
@@ -80,7 +80,7 @@ pub fn seal_fixture(plaintext: &[u8]) -> (Vec<u8>, Value) {
         "wire_hex_preview": hex_preview(&wire_bytes, 64),
         "wire_binary_preview": bin_preview(&wire_bytes, 8),
         "operational_frame_overhead_bytes_not_included": OPERATIONAL_FRAME_OVERHEAD,
-        "note": "The same AppWire bytes are embedded by every algorithm in this comparison. The live transport additionally splits them over several patches and wraps them in Frame v2 (16-byte header + patch manifest + 32-byte HMAC over manifest and payload).",
+        "note": "The same AppWire bytes are embedded by every algorithm in this comparison. The live transport additionally splits them over several patches and wraps them in Frame v3 (16-byte header + patch manifest + 32-byte HMAC over manifest and payload), with the manifest in a keyed bootstrap-v3 carrier.",
     });
     (wire_bytes, info)
 }

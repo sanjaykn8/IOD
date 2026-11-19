@@ -93,10 +93,10 @@ def test_stego_builders_produce_real_extractable_embeddings():
     from stego.generator import families
     arr, _ = families.generate(E.test_seed(2, "clouds"), 320, 240, "RGB", "clouds")
     rng = np.random.default_rng(5)
-    out, used = E.stego_mixed(arr, 300, rng, config.Limits())
+    out, used, pl, values = E.stego_mixed(arr, 300, rng, config.Limits(), return_plan=True)
     assert out.shape == arr.shape and not np.array_equal(out, arr) and sum(used.values()) >= 1
-    frame, man, _pre, _per = codec.extract_frame(out, config.Limits())
-    assert man.payload_len == 300 and frame[:4] == b"IOD2" and len(frame) > 16 + 300
+    frame, man, _per = codec.extract_frame(out, pl.manifest, np.frombuffer(values, dtype=">u4").astype(np.int64), config.Limits())
+    assert man.payload_len == 300 and frame[:4] == b"IOD3" and len(frame) > 16 + 300
     for name in ("lsb_matching", "dct", "wow"):
         s, n = E.stego_single(arr, name, 200, rng)
         assert s is not None and n == 200 and not np.array_equal(s, arr), name

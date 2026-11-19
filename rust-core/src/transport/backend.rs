@@ -1,7 +1,8 @@
 //! The boundary to the image-processing service. Rust never sends keys or
 //! plaintext through it: only the payload LENGTH and the validated cover-generation
-//! configuration (for planning), the already encrypted + MACed frame bytes (for embedding)
-//! and artifact ids. There is no camera and no cover upload: every cover is generated locally
+//! configuration (for planning), the already encrypted + MACed frame bytes (for embedding),
+//! bootstrap-v3 value streams and already-encrypted carrier bits (never the placement key),
+//! a validated manifest (for extraction) and artifact ids. There is no camera and no cover upload: every cover is generated locally
 //! by the image service.
 
 use crate::transport::config::StegoConfig;
@@ -23,10 +24,16 @@ pub trait StegoBackend: Send + Sync {
     /// filters + BM25) and allocate the payload. Re-plan (`replan_cover_id` present): plan again on
     /// that stored cover WITHOUT generating. Returns the manifest.
     fn plan(&self, req: &Value) -> Result<Value, StegoError>;
-    /// Embed the authenticated Frame v2 into the planned cover exactly as its manifest says; save the PNG.
+    /// Embed the authenticated Frame v3 into the planned cover exactly as its manifest says, write the
+    /// (encrypted) bootstrap-v3 carrier at the given value-stream positions, save the PNG.
     fn encode(&self, req: &Value) -> Result<Value, StegoError>;
-    /// Read the saved PNG identified by `artifact_id` and return the reconstructed (unverified) frame.
-    fn extract(&self, artifact_id: &str, limits: &Value) -> Result<Value, StegoError>;
+    /// Bootstrap-v3 discovery: read the 96 locator bits of the saved PNG for each candidate value stream.
+    fn carrier_probe(&self, req: &Value) -> Result<Value, StegoError>;
+    /// Read `n_bits` carrier bits of the saved PNG at the positions of one value stream.
+    fn carrier_read(&self, req: &Value) -> Result<Value, StegoError>;
+    /// Extract the payload section of the saved PNG with a manifest validated by Rust; returns the
+    /// reconstructed (unverified) frame.
+    fn extract(&self, req: &Value) -> Result<Value, StegoError>;
     /// The static algorithm knowledge base (inspection only).
     fn kb(&self) -> Result<Value, StegoError>;
     /// EDUCATIONAL workbench only (`/learn/*` namespace of the image service).
@@ -69,8 +76,14 @@ impl StegoBackend for HttpBackend {
     fn encode(&self, req: &Value) -> Result<Value, StegoError> {
         self.post("/stego/encode", req)
     }
-    fn extract(&self, artifact_id: &str, limits: &Value) -> Result<Value, StegoError> {
-        self.post("/stego/extract", &serde_json::json!({"artifact_id": artifact_id, "limits": limits}))
+    fn carrier_probe(&self, req: &Value) -> Result<Value, StegoError> {
+        self.post("/stego/carrier/probe", req)
+    }
+    fn carrier_read(&self, req: &Value) -> Result<Value, StegoError> {
+        self.post("/stego/carrier/read", req)
+    }
+    fn extract(&self, req: &Value) -> Result<Value, StegoError> {
+        self.post("/stego/extract", req)
     }
     fn kb(&self) -> Result<Value, StegoError> {
         http::call_json(&self.base, "GET", "/stego/kb", None, self.timeout, self.max_resp)

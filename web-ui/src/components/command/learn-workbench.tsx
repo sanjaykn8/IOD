@@ -1,13 +1,28 @@
 // Algorithm Learning — Worked Calculations and Experiments (EDUCATIONAL ONLY).
 // Separate state, API namespace (/api/learn/*) and labels from the operational UAV flow.
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { BookOpen, ChevronDown, ChevronRight, Download, FlaskConical, GraduationCap, Play, Upload } from "lucide-react";
+import {
+  BookOpen,
+  ChevronDown,
+  ChevronRight,
+  Download,
+  FlaskConical,
+  GraduationCap,
+  Play,
+  Upload,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { BusyLabel, DataTable, Empty, Field, Panel, Status, selectClass } from "./core";
 import {
-  downloadLearnExport, learnApi, type LearnExperiment, type LearnExperimentRequest, type LearnRegistry, type LearnRow,
-  type LearnStep, type LearnWalkthrough,
+  downloadLearnExport,
+  learnApi,
+  type LearnExperiment,
+  type LearnExperimentRequest,
+  type LearnRegistry,
+  type LearnRow,
+  type LearnStep,
+  type LearnWalkthrough,
 } from "@/lib/learn-api";
 
 const SAMPLE_LABELS: Record<string, string> = {
@@ -16,7 +31,18 @@ const SAMPLE_LABELS: Record<string, string> = {
   gray_64: "Small grayscale 64×64 (generated)",
   bw_procedural_256: "Black-and-white procedural 256×256 (operational fallback generator)",
 };
-const ALG_ORDER = ["lsb_replacement", "lsb_matching", "pvd", "edge_adaptive_lsb", "dct", "dwt", "dct_svd", "hugo", "wow", "s_uniward"];
+const ALG_ORDER = [
+  "lsb_replacement",
+  "lsb_matching",
+  "pvd",
+  "edge_adaptive_lsb",
+  "dct",
+  "dwt",
+  "dct_svd",
+  "hugo",
+  "wow",
+  "s_uniward",
+];
 
 const fmt = (v: unknown, d = 3): string => {
   if (v === null || v === undefined) return "n/a";
@@ -31,23 +57,44 @@ function EduBanner() {
       <GraduationCap aria-hidden="true" />
       <div>
         <strong>Educational experiment — not a live UAV transmission</strong>
-        <p>Nothing on this tab touches authentication, group keys, sequence numbers, the operational image transport or its event log.
-          Experiments run the same tested algorithm library in isolation; the “readable message” mode uses the production AEAD code path
-          with a <b>test-only key</b> derived from a public label (never an operational key, never displayed).
-          Experiments are <b>patch-level</b>: the cover is segmented into irregular patches by the same segmenter as the transport and every algorithm embeds into one
-          chosen patch mask. Results describe <b>this repository&apos;s variants</b>, not canonical paper implementations, and never change the production knowledge base or selector.</p>
+        <p>
+          Nothing on this tab touches authentication, group keys, sequence numbers, the operational
+          image transport or its event log. Experiments run the same tested algorithm library in
+          isolation; the “readable message” mode uses the production AEAD code path with a{" "}
+          <b>test-only key</b> derived from a public label (never an operational key, never
+          displayed). Experiments are <b>patch-level</b>: the cover is segmented into irregular
+          patches by the same segmenter as the transport and every algorithm embeds into one chosen
+          patch mask. Results describe <b>this repository&apos;s variants</b>, not canonical paper
+          implementations, and never change the production knowledge base or selector.
+        </p>
       </div>
     </div>
   );
 }
 
 function Matrix({ name, data }: { name: string; data: unknown }) {
-  if (!Array.isArray(data)) return <div className="learn-matrix"><span>{name}</span><code>{JSON.stringify(data)}</code></div>;
+  if (!Array.isArray(data))
+    return (
+      <div className="learn-matrix">
+        <span>{name}</span>
+        <code>{JSON.stringify(data)}</code>
+      </div>
+    );
   const rows = (Array.isArray(data[0]) ? data : [data]) as unknown[][];
   return (
     <div className="learn-matrix">
       <span>{name}</span>
-      <table><tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{fmt(c, 3)}</td>)}</tr>)}</tbody></table>
+      <table>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={i}>
+              {r.map((c, j) => (
+                <td key={j}>{fmt(c, 3)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -58,27 +105,71 @@ function StepView({ s, open }: { s: LearnStep; open: boolean }) {
   const hasDetail = !!s.table || !!s.matrices;
   return (
     <li className="learn-step" data-testid={`learn-step-${s.n}`}>
-      <div className="learn-step-head"><span className="learn-step-n">Step {s.n}</span><strong>{s.title}</strong></div>
+      <div className="learn-step-head">
+        <span className="learn-step-n">Step {s.n}</span>
+        <strong>{s.title}</strong>
+      </div>
       <dl className="learn-step-body">
-        <div><dt>Formula</dt><dd><code>{s.formula}</code></dd></div>
-        <div><dt>Substituted values</dt><dd><code>{s.substitution}</code></dd></div>
-        <div><dt>Result</dt><dd><code>{s.result}</code></dd></div>
+        <div>
+          <dt>Formula</dt>
+          <dd>
+            <code>{s.formula}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Substituted values</dt>
+          <dd>
+            <code>{s.substitution}</code>
+          </dd>
+        </div>
+        <div>
+          <dt>Result</dt>
+          <dd>
+            <code>{s.result}</code>
+          </dd>
+        </div>
       </dl>
       {s.note ? <p className="stego-muted">{s.note}</p> : null}
       {hasDetail ? (
         <>
-          <button type="button" className="learn-toggle" onClick={() => setShow(!show)} aria-expanded={show}>
-            {show ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />} {show ? "Hide" : "Show"} detailed calculations
+          <button
+            type="button"
+            className="learn-toggle"
+            onClick={() => setShow(!show)}
+            aria-expanded={show}
+          >
+            {show ? <ChevronDown aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}{" "}
+            {show ? "Hide" : "Show"} detailed calculations
           </button>
           {show ? (
             <div className="learn-detail">
               {s.table ? (
                 <DataTable label={`Step ${s.n} table`}>
-                  <thead><tr>{s.table.columns.map((c) => <th key={c}>{c}</th>)}</tr></thead>
-                  <tbody>{s.table.rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{fmt(c, 4)}</td>)}</tr>)}</tbody>
+                  <thead>
+                    <tr>
+                      {s.table.columns.map((c) => (
+                        <th key={c}>{c}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {s.table.rows.map((r, i) => (
+                      <tr key={i}>
+                        {r.map((c, j) => (
+                          <td key={j}>{fmt(c, 4)}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
                 </DataTable>
               ) : null}
-              {s.matrices ? <div className="learn-matrices">{Object.entries(s.matrices).map(([k, v]) => <Matrix key={k} name={k} data={v} />)}</div> : null}
+              {s.matrices ? (
+                <div className="learn-matrices">
+                  {Object.entries(s.matrices).map(([k, v]) => (
+                    <Matrix key={k} name={k} data={v} />
+                  ))}
+                </div>
+              ) : null}
             </div>
           ) : null}
         </>
@@ -93,38 +184,96 @@ function WalkthroughView({ alg }: { alg: string }) {
   const [allOpen, setAllOpen] = useState(false);
   useEffect(() => {
     let live = true;
-    setWt(null); setErr(null);
-    void learnApi.walkthrough(alg).then((r) => { if (live) { if (r.ok) setWt(r.data); else setErr(`${r.error.code}: ${r.error.message}`); } });
-    return () => { live = false; };
+    setWt(null);
+    setErr(null);
+    void learnApi.walkthrough(alg).then((r) => {
+      if (live) {
+        if (r.ok) setWt(r.data);
+        else setErr(`${r.error.code}: ${r.error.message}`);
+      }
+    });
+    return () => {
+      live = false;
+    };
   }, [alg]);
-  if (err) return <div className="notice notice-danger" role="alert"><div><strong>Walkthrough unavailable</strong><p>{err}</p></div></div>;
+  if (err)
+    return (
+      <div className="notice notice-danger" role="alert">
+        <div>
+          <strong>Walkthrough unavailable</strong>
+          <p>{err}</p>
+        </div>
+      </div>
+    );
   if (!wt) return <p className="stego-muted">Loading worked example…</p>;
   return (
     <div data-testid="learn-walkthrough">
       <div className="learn-wt-head">
-        <div><h3>{wt.title}</h3><small>Runtime variant: {wt.runtime_variant} · bit order {wt.bit_order}</small></div>
+        <div>
+          <h3>{wt.title}</h3>
+          <small>
+            Runtime variant: {wt.runtime_variant} · bit order {wt.bit_order}
+          </small>
+        </div>
         <div className="button-row">
-          <Status tone={wt.exact_match ? "success" : "danger"}>{wt.exact_match ? "EXACT MATCH" : "MISMATCH"}</Status>
-          <Status tone={wt.all_checks_passed ? "success" : "danger"}>{wt.checks.filter((c) => c.passed).length}/{wt.checks.length} checks</Status>
-          <Button variant="outline" size="sm" onClick={() => setAllOpen(!allOpen)}>{allOpen ? "Collapse" : "Expand"} all calculations</Button>
+          <Status tone={wt.exact_match ? "success" : "danger"}>
+            {wt.exact_match ? "Exact match" : "Mismatch"}
+          </Status>
+          <Status tone={wt.all_checks_passed ? "success" : "danger"}>
+            {wt.checks.filter((c) => c.passed).length}/{wt.checks.length} checks
+          </Status>
+          <Button variant="outline" size="sm" onClick={() => setAllOpen(!allOpen)}>
+            {allOpen ? "Collapse" : "Expand"} all calculations
+          </Button>
         </div>
       </div>
       {wt.teaching_model ? (
-        <div className="notice notice-info" role="note"><BookOpen aria-hidden="true" /><div><strong>Teaching model — simplified illustration</strong><p>{wt.simplification}</p></div></div>
+        <div className="notice notice-info" role="note">
+          <BookOpen aria-hidden="true" />
+          <div>
+            <strong>Teaching model — simplified illustration</strong>
+            <p>{wt.simplification}</p>
+          </div>
+        </div>
       ) : null}
-      <ol className="learn-steps">{wt.steps.map((s) => <StepView key={s.n} s={s} open={allOpen} />)}</ol>
+      <ol className="learn-steps">
+        {wt.steps.map((s) => (
+          <StepView key={s.n} s={s} open={allOpen} />
+        ))}
+      </ol>
       <dl className="stego-kv">
-        <div><dt>EMBEDDED BITS</dt><dd>{wt.embedded_bits}</dd></div>
-        <div><dt>RECOVERED BITS</dt><dd>{wt.recovered_bits}</dd></div>
-        <div><dt>PAYLOAD FIXTURE</dt><dd>{wt.fixtures.synthetic_ciphertext_hex} (synthetic)</dd></div>
+        <div>
+          <dt>EMBEDDED BITS</dt>
+          <dd>{wt.embedded_bits}</dd>
+        </div>
+        <div>
+          <dt>RECOVERED BITS</dt>
+          <dd>{wt.recovered_bits}</dd>
+        </div>
+        <div>
+          <dt>PAYLOAD FIXTURE</dt>
+          <dd>{wt.fixtures.synthetic_ciphertext_hex} (synthetic)</dd>
+        </div>
       </dl>
-      <p className="stego-muted">{wt.fixtures.synthetic_label}. {wt.runtime_link}</p>
+      <p className="stego-muted">
+        {wt.fixtures.synthetic_label}. {wt.runtime_link}
+      </p>
     </div>
   );
 }
 
 /** Image with click-to-inspect pixel values (and the same pixel in a paired image). */
-function Inspectable({ src, pair, label, testid }: { src: string; pair?: string | undefined; label: string; testid?: string }) {
+function Inspectable({
+  src,
+  pair,
+  label,
+  testid,
+}: {
+  src: string;
+  pair?: string | undefined;
+  label: string;
+  testid?: string;
+}) {
   const [zoom, setZoom] = useState(false);
   const [info, setInfo] = useState<string | null>(null);
   const ref = useRef<HTMLImageElement>(null);
@@ -133,7 +282,8 @@ function Inspectable({ src, pair, label, testid }: { src: string; pair?: string 
       const img = new Image();
       img.onload = () => {
         const c = document.createElement("canvas");
-        c.width = img.naturalWidth; c.height = img.naturalHeight;
+        c.width = img.naturalWidth;
+        c.height = img.naturalHeight;
         const ctx = c.getContext("2d");
         if (!ctx) return resolve([]);
         ctx.drawImage(img, 0, 0);
@@ -150,12 +300,27 @@ function Inspectable({ src, pair, label, testid }: { src: string; pair?: string 
     const y = Math.floor(((ev.clientY - r.top) / r.height) * el.naturalHeight);
     const a = await read(src, x, y);
     const b = pair ? await read(pair, x, y) : null;
-    setInfo(`(${x}, ${y}) = [${a.join(", ")}]${b ? ` · paired [${b.join(", ")}] Δ [${a.map((v, i) => (b[i] ?? 0) - v).join(", ")}]` : ""}`);
+    setInfo(
+      `(${x}, ${y}) = [${a.join(", ")}]${b ? ` · paired [${b.join(", ")}] Δ [${a.map((v, i) => (b[i] ?? 0) - v).join(", ")}]` : ""}`,
+    );
   }
   return (
     <figure className="stego-preview learn-figure" data-testid={testid}>
-      <figcaption>{label} <button type="button" className="learn-toggle" onClick={() => setZoom(!zoom)}>{zoom ? "1×" : "zoom 3×"}</button></figcaption>
-      <div className={zoom ? "learn-zoom" : ""}><img ref={ref} src={src} alt={label} onClick={(e) => void onClick(e)} style={zoom ? { width: "300%", maxWidth: "none" } : undefined} /></div>
+      <figcaption>
+        {label}{" "}
+        <button type="button" className="learn-toggle" onClick={() => setZoom(!zoom)}>
+          {zoom ? "1×" : "zoom 3×"}
+        </button>
+      </figcaption>
+      <div className={zoom ? "learn-zoom" : ""}>
+        <img
+          ref={ref}
+          src={src}
+          alt={label}
+          onClick={(e) => void onClick(e)}
+          style={zoom ? { width: "300%", maxWidth: "none" } : undefined}
+        />
+      </div>
       <small className="stego-muted">{info ?? "click a pixel to inspect its value"}</small>
     </figure>
   );
@@ -166,39 +331,132 @@ function RowDetail({ row, cover }: { row: LearnRow; cover?: string | undefined }
   return (
     <div className="learn-row-detail" data-testid={`learn-detail-${row.algorithm}`}>
       <div className="learn-wt-head">
-        <div><h3>{row.algorithm}</h3><small>{row.variant} · {row.domain} · coding: {row.coding}</small></div>
+        <div>
+          <h3>{row.algorithm}</h3>
+          <small>
+            {row.variant} · {row.domain} · coding: {row.coding}
+          </small>
+        </div>
         <div className="button-row">
-          <Status tone={row.status === "ok" ? "success" : "warning"}>{row.status.toUpperCase()}</Status>
-          {v ? <Status tone={v.status === "aead_verified" ? "success" : v.status === "not_applicable_synthetic" ? "info" : "danger"}>{v.status.replace(/_/g, " ").toUpperCase()}</Status> : null}
+          <Status tone={row.status === "ok" ? "success" : "warning"}>
+            {row.status === "ok" ? "OK" : row.status.replace(/_/g, " ")}
+          </Status>
+          {v ? (
+            <Status
+              tone={
+                v.status === "aead_verified"
+                  ? "success"
+                  : v.status === "not_applicable_synthetic"
+                    ? "info"
+                    : "danger"
+              }
+            >
+              {v.status.replace(/_/g, " ")}
+            </Status>
+          ) : null}
         </div>
       </div>
-      {row.error ? <p className="stego-muted">{row.error.code}: {row.error.message}</p> : null}
+      {row.error ? (
+        <p className="stego-muted">
+          {row.error.code}: {row.error.message}
+        </p>
+      ) : null}
       {row.images ? (
         <div className="learn-images">
           {cover ? <Inspectable src={cover} pair={row.images.stego} label="Cover" /> : null}
-          <Inspectable src={row.images.stego} pair={cover} label="Stego (saved PNG)" testid={`learn-stego-${row.algorithm}`} />
-          {row.images.difference_x64 ? <Inspectable src={row.images.difference_x64.png} label={row.images.difference_x64.title} /> : null}
+          <Inspectable
+            src={row.images.stego}
+            pair={cover}
+            label="Stego (saved PNG)"
+            testid={`learn-stego-${row.algorithm}`}
+          />
+          {row.images.difference_x64 ? (
+            <Inspectable
+              src={row.images.difference_x64.png}
+              label={row.images.difference_x64.title}
+            />
+          ) : null}
         </div>
       ) : null}
       <dl className="stego-kv">
-        {([
-          ["MASK SUPPORT", row.mask_support ?? "n/a"],
-          ["PATCH GEOMETRY", row.geometry_supported === false ? `unsupported: ${row.geometry_reason ?? "?"}` : "supported"],
-          ["PATCH CAPACITY (MEASURED)", `${fmt(row.capacity_bits)} bits`], ["PARAMETER", fmt(row.param)],
-          ["PAYLOAD", `${row.payload_bytes} B = ${row.payload_bits} bits · ${fmt(row.bits_per_patch_sample, 6)} bits / patch sample`],
-          ["MSE (IMAGE)", fmt(row.mse, 6)], ["PSNR (IMAGE)", row.psnr_db === null && row.status === "ok" ? "∞ (identical)" : `${fmt(row.psnr_db, 3)} dB`],
-          ["MSE / PSNR (PATCH ONLY)", `${fmt(row.patch_mse, 6)} / ${row.patch_psnr_db === null && row.status === "ok" ? "∞" : `${fmt(row.patch_psnr_db, 3)} dB`}`],
-          ["CHANGES OUTSIDE THE PATCH", fmt(row.outside_patch_changes)],
-          ["SSIM", fmt(row.ssim, 6)], ["EMBED", `${fmt(row.embed_ms, 2)} ms${row.setup_ms ? ` (cost map ${fmt(row.setup_ms, 1)} ms)` : ""}`],
-          ["EXTRACT", `${fmt(row.extract_ms, 2)} ms`], ["BIT ACCURACY", fmt(row.bit_accuracy, 6)], ["BER", fmt(row.ber, 6)],
-          ["CHANGED SAMPLES", fmt(row.changed_samples)], ["EXTRACTED (HEX)", row.extracted_hex_preview ?? "n/a"],
-          ["AEAD", v?.status === "aead_verified" ? `verified · plaintext matches: ${fmt(v.plaintext_matches)}` : v?.status === "not_applicable_synthetic" ? "not applicable (synthetic bytes)" : (v?.error ?? v?.status ?? "n/a")],
-        ] as [string, ReactNode][]).map(([k, val]) => <div key={k}><dt>{k}</dt><dd>{val}</dd></div>)}
+        {(
+          [
+            ["Mask support", row.mask_support ?? "n/a"],
+            [
+              "Patch geometry",
+              row.geometry_supported === false
+                ? `unsupported: ${row.geometry_reason ?? "?"}`
+                : "supported",
+            ],
+            ["Patch capacity (measured)", `${fmt(row.capacity_bits)} bits`],
+            ["Parameter", fmt(row.param)],
+            [
+              "Payload",
+              `${row.payload_bytes} B = ${row.payload_bits} bits · ${fmt(row.bits_per_patch_sample, 6)} bits / patch sample`,
+            ],
+            ["MSE (image)", fmt(row.mse, 6)],
+            [
+              "PSNR (image)",
+              row.psnr_db === null && row.status === "ok"
+                ? "∞ (identical)"
+                : `${fmt(row.psnr_db, 3)} dB`,
+            ],
+            [
+              "MSE / PSNR (patch only)",
+              `${fmt(row.patch_mse, 6)} / ${row.patch_psnr_db === null && row.status === "ok" ? "∞" : `${fmt(row.patch_psnr_db, 3)} dB`}`,
+            ],
+            ["Changes outside the patch", fmt(row.outside_patch_changes)],
+            ["SSIM", fmt(row.ssim, 6)],
+            [
+              "Embed",
+              `${fmt(row.embed_ms, 2)} ms${row.setup_ms ? ` (cost map ${fmt(row.setup_ms, 1)} ms)` : ""}`,
+            ],
+            ["Extract", `${fmt(row.extract_ms, 2)} ms`],
+            ["Bit accuracy", fmt(row.bit_accuracy, 6)],
+            ["BER", fmt(row.ber, 6)],
+            ["Changed samples", fmt(row.changed_samples)],
+            ["Extracted (HEX)", row.extracted_hex_preview ?? "n/a"],
+            [
+              "AEAD",
+              v?.status === "aead_verified"
+                ? `verified · plaintext matches: ${fmt(v.plaintext_matches)}`
+                : v?.status === "not_applicable_synthetic"
+                  ? "not applicable (synthetic bytes)"
+                  : (v?.error ?? v?.status ?? "n/a"),
+            ],
+          ] as [string, ReactNode][]
+        ).map(([k, val]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd>{val}</dd>
+          </div>
+        ))}
       </dl>
       {row.robustness ? (
         <DataTable label={`Robustness of ${row.algorithm}`}>
-          <thead><tr><th>Attack</th><th>Parameters</th><th>Oracle BER (known mask + parameter)</th><th>Outcome</th></tr></thead>
-          <tbody>{row.robustness.map((r) => <tr key={r.attack}><td>{r.label}</td><td><code>{JSON.stringify(r.params)}</code></td><td>{fmt(r.oracle_ber, 4)}{r.oracle_error ? <small>{r.oracle_error}</small> : null}</td><td>{r.outcome}</td></tr>)}</tbody>
+          <thead>
+            <tr>
+              <th>Attack</th>
+              <th>Parameters</th>
+              <th>Oracle BER (known mask + parameter)</th>
+              <th>Outcome</th>
+            </tr>
+          </thead>
+          <tbody>
+            {row.robustness.map((r) => (
+              <tr key={r.attack}>
+                <td>{r.label}</td>
+                <td>
+                  <code>{JSON.stringify(r.params)}</code>
+                </td>
+                <td>
+                  {fmt(r.oracle_ber, 4)}
+                  {r.oracle_error ? <small>{r.oracle_error}</small> : null}
+                </td>
+                <td>{r.outcome}</td>
+              </tr>
+            ))}
+          </tbody>
         </DataTable>
       ) : null}
     </div>
@@ -212,62 +470,225 @@ function PatchSection({ exp, choose }: { exp: LearnExperiment; choose: (id: numb
   const f = (p.features ?? {}) as Record<string, unknown>;
   return (
     <div className="learn-row-detail" data-testid="learn-patch-section">
-      <div className="learn-wt-head"><div><h3>Irregular segmentation and experiment patch</h3>
-        <small>{exp.segmentation.version} · {exp.segmentation.patch_count} patches · every algorithm embeds into patch #{p.patch_id} (chosen by: {p.chosen_by})</small></div>
-        <Status tone="info">ISOLATED FROM PRODUCTION KB / SELECTOR</Status></div>
+      <div className="learn-wt-head">
+        <div>
+          <h3>Irregular segmentation and experiment patch</h3>
+          <small>
+            {exp.segmentation.version} · {exp.segmentation.patch_count} patches · every algorithm
+            embeds into patch #{p.patch_id} (chosen by: {p.chosen_by})
+          </small>
+        </div>
+        <Status tone="info">Isolated from production KB / selector</Status>
+      </div>
       <div className="learn-images">
-        {exp.segmentation.overlay_png ? <Inspectable src={exp.segmentation.overlay_png} label="Segmentation (same segmenter as the transport)" /> : null}
-        {p.highlight_png ? <Inspectable src={p.highlight_png} label={`Patch #${p.patch_id} mask (rest dimmed)`} testid="learn-patch-highlight" /> : null}
+        {exp.segmentation.overlay_png ? (
+          <Inspectable
+            src={exp.segmentation.overlay_png}
+            label="Segmentation (same segmenter as the transport)"
+          />
+        ) : null}
+        {p.highlight_png ? (
+          <Inspectable
+            src={p.highlight_png}
+            label={`Patch #${p.patch_id} mask (rest dimmed)`}
+            testid="learn-patch-highlight"
+          />
+        ) : null}
       </div>
       <dl className="stego-kv">
-        {([["PATCH PIXELS", fmt(f["pixels"])], ["BBOX W × H", `${fmt(f["width"])} × ${fmt(f["height"])}`], ["COMPACTNESS", fmt(f["compactness"], 4)], ["GRADIENT MEAN", fmt(f["gradient_mean"], 3)],
-          ["VARIANCE", fmt(f["variance"], 2)], ["ENTROPY", fmt(f["entropy"], 3)], ["COMPLETE 8×8 BLOCKS", fmt(f["blocks8"])], ["COMPLETE 2×2 BLOCKS", fmt(f["blocks2"])],
-          ["KB QUERY TERMS (READ-ONLY)", p.kb_retrieval_readonly?.query_terms.join(", ") || "—"], ["KB WOULD SELECT (READ-ONLY)", p.kb_retrieval_readonly?.selected ?? "nothing eligible"],
-        ] as [string, ReactNode][]).map(([k, val]) => <div key={k}><dt>{k}</dt><dd>{val}</dd></div>)}
+        {(
+          [
+            ["Patch pixels", fmt(f["pixels"])],
+            ["Bbox W × H", `${fmt(f["width"])} × ${fmt(f["height"])}`],
+            ["Compactness", fmt(f["compactness"], 4)],
+            ["Gradient mean", fmt(f["gradient_mean"], 3)],
+            ["Variance", fmt(f["variance"], 2)],
+            ["Entropy", fmt(f["entropy"], 3)],
+            ["Complete 8×8 blocks", fmt(f["blocks8"])],
+            ["Complete 2×2 blocks", fmt(f["blocks2"])],
+            ["KB query terms (read-only)", p.kb_retrieval_readonly?.query_terms.join(", ") || "—"],
+            [
+              "KB would select (read-only)",
+              p.kb_retrieval_readonly?.selected ?? "nothing eligible",
+            ],
+          ] as [string, ReactNode][]
+        ).map(([k, val]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd>{val}</dd>
+          </div>
+        ))}
       </dl>
-      <p className="stego-muted">{p.note} {exp.variant_notice}</p>
+      <p className="stego-muted">
+        {p.note} {exp.variant_notice}
+      </p>
       {exp.survey?.length ? (
         <DataTable label="Per-patch capacity and suitability survey">
-          <thead><tr><th>Patch</th><th>Pixels</th><th>Gradient</th><th>8×8 / 2×2 blocks</th><th>Largest measured capacities (bits)</th><th>Unsupported geometry</th><th>KB top-1 for this payload (read-only)</th><th /></tr></thead>
-          <tbody>{exp.survey.map((s) => {
-            const caps = Object.entries(s.capacity_bits).sort((a, b) => b[1] - a[1]);
-            const uns = Object.entries(s.unsupported_reasons);
-            return <tr key={s.patch_id} className={s.patch_id === p.patch_id ? "stego-winner" : ""} data-testid={`learn-survey-${s.patch_id}`}>
-              <td>#{s.patch_id}</td><td>{s.pixels}</td><td>{fmt(s.gradient_mean, 2)}</td><td>{s.blocks8} / {s.blocks2}</td>
-              <td title={caps.map(([k, v]) => `${k}: ${v}`).join("\n")}>{caps.slice(0, 3).map(([k, v]) => `${k} ${v}`).join(" · ")}<small> (hover for all ten)</small></td>
-              <td>{uns.length ? uns.map(([k, v]) => `${k} (${v})`).join(", ") : "—"}</td><td>{s.kb_selected ?? "nothing eligible"}</td>
-              <td>{s.patch_id === p.patch_id ? "current" : <button type="button" className="learn-link" onClick={() => choose(s.patch_id)}>use next run</button>}</td></tr>;
-          })}</tbody>
+          <thead>
+            <tr>
+              <th>Patch</th>
+              <th>Pixels</th>
+              <th>Gradient</th>
+              <th>8×8 / 2×2 blocks</th>
+              <th>Largest measured capacities (bits)</th>
+              <th>Unsupported geometry</th>
+              <th>KB top-1 for this payload (read-only)</th>
+              <th />
+            </tr>
+          </thead>
+          <tbody>
+            {exp.survey.map((s) => {
+              const caps = Object.entries(s.capacity_bits).sort((a, b) => b[1] - a[1]);
+              const uns = Object.entries(s.unsupported_reasons);
+              return (
+                <tr
+                  key={s.patch_id}
+                  className={s.patch_id === p.patch_id ? "stego-winner" : ""}
+                  data-testid={`learn-survey-${s.patch_id}`}
+                >
+                  <td>#{s.patch_id}</td>
+                  <td>{s.pixels}</td>
+                  <td>{fmt(s.gradient_mean, 2)}</td>
+                  <td>
+                    {s.blocks8} / {s.blocks2}
+                  </td>
+                  <td title={caps.map(([k, v]) => `${k}: ${v}`).join("\n")}>
+                    {caps
+                      .slice(0, 3)
+                      .map(([k, v]) => `${k} ${v}`)
+                      .join(" · ")}
+                    <small> (hover for all ten)</small>
+                  </td>
+                  <td>{uns.length ? uns.map(([k, v]) => `${k} (${v})`).join(", ") : "—"}</td>
+                  <td>{s.kb_selected ?? "nothing eligible"}</td>
+                  <td>
+                    {s.patch_id === p.patch_id ? (
+                      "current"
+                    ) : (
+                      <button
+                        type="button"
+                        className="learn-link"
+                        onClick={() => choose(s.patch_id)}
+                      >
+                        use next run
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
         </DataTable>
       ) : null}
     </div>
   );
 }
 
-function ComparisonTable({ exp, pick, picked }: { exp: LearnExperiment; pick: (a: string) => void; picked: string | null }) {
+function ComparisonTable({
+  exp,
+  pick,
+  picked,
+}: {
+  exp: LearnExperiment;
+  pick: (a: string) => void;
+  picked: string | null;
+}) {
   const attacks = exp.results.find((r) => r.robustness)?.robustness?.map((r) => r.attack) ?? [];
   return (
     <>
       <DataTable label="Comparison of all algorithms">
-        <thead><tr><th>Algorithm</th><th>Status</th><th>Patch capacity (bits)</th><th>bits / patch sample</th><th>MSE</th><th>PSNR dB</th><th>Patch PSNR dB</th><th>SSIM</th><th>Embed ms</th><th>Extract ms</th><th>Bit acc.</th><th>BER</th><th>Verification</th></tr></thead>
-        <tbody>{exp.results.map((r) => (
-          <tr key={r.algorithm} className={picked === r.algorithm ? "stego-winner" : r.status === "ok" ? "" : "stego-excluded"} data-testid={`learn-cmp-${r.algorithm}`}>
-            <td><button type="button" className="learn-link" onClick={() => pick(r.algorithm)}>{r.algorithm}</button><small className="stego-variant">{r.variant}</small></td>
-            <td>{r.status}{r.error ? <small>{r.error.code}</small> : null}</td><td>{fmt(r.capacity_bits)}</td>
-            <td>{fmt(r.bits_per_patch_sample, 5)}</td><td>{fmt(r.mse, 5)}</td><td>{r.psnr_db === null && r.status === "ok" ? "∞" : fmt(r.psnr_db, 2)}</td><td>{r.patch_psnr_db === null && r.status === "ok" ? "∞" : fmt(r.patch_psnr_db, 2)}</td>
-            <td>{fmt(r.ssim, 5)}</td><td>{fmt(r.embed_ms, 1)}</td><td>{fmt(r.extract_ms, 1)}</td><td>{fmt(r.bit_accuracy, 4)}</td><td>{fmt(r.ber, 4)}</td>
-            <td>{r.verification?.status?.replace(/_/g, " ") ?? "n/a"}</td>
-          </tr>))}</tbody>
+        <thead>
+          <tr>
+            <th>Algorithm</th>
+            <th>Status</th>
+            <th>Patch capacity (bits)</th>
+            <th>bits / patch sample</th>
+            <th>MSE</th>
+            <th>PSNR dB</th>
+            <th>Patch PSNR dB</th>
+            <th>SSIM</th>
+            <th>Embed ms</th>
+            <th>Extract ms</th>
+            <th>Bit acc.</th>
+            <th>BER</th>
+            <th>Verification</th>
+          </tr>
+        </thead>
+        <tbody>
+          {exp.results.map((r) => (
+            <tr
+              key={r.algorithm}
+              className={
+                picked === r.algorithm ? "stego-winner" : r.status === "ok" ? "" : "stego-excluded"
+              }
+              data-testid={`learn-cmp-${r.algorithm}`}
+            >
+              <td>
+                <button type="button" className="learn-link" onClick={() => pick(r.algorithm)}>
+                  {r.algorithm}
+                </button>
+                <small className="stego-variant">{r.variant}</small>
+              </td>
+              <td>
+                {r.status}
+                {r.error ? <small>{r.error.code}</small> : null}
+              </td>
+              <td>{fmt(r.capacity_bits)}</td>
+              <td>{fmt(r.bits_per_patch_sample, 5)}</td>
+              <td>{fmt(r.mse, 5)}</td>
+              <td>{r.psnr_db === null && r.status === "ok" ? "∞" : fmt(r.psnr_db, 2)}</td>
+              <td>
+                {r.patch_psnr_db === null && r.status === "ok" ? "∞" : fmt(r.patch_psnr_db, 2)}
+              </td>
+              <td>{fmt(r.ssim, 5)}</td>
+              <td>{fmt(r.embed_ms, 1)}</td>
+              <td>{fmt(r.extract_ms, 1)}</td>
+              <td>{fmt(r.bit_accuracy, 4)}</td>
+              <td>{fmt(r.ber, 4)}</td>
+              <td>{r.verification?.status?.replace(/_/g, " ") ?? "n/a"}</td>
+            </tr>
+          ))}
+        </tbody>
       </DataTable>
       {attacks.length ? (
         <DataTable label="Robustness matrix">
-          <thead><tr><th>Algorithm</th>{attacks.map((a) => <th key={a}>{a}</th>)}</tr></thead>
-          <tbody>{exp.results.filter((r) => r.robustness).map((r) => (
-            <tr key={r.algorithm}><td>{r.algorithm}</td>{(r.robustness ?? []).map((x) => (
-              <td key={x.attack} className={`learn-rob learn-rob-${x.outcome}`} title={`oracle BER ${x.oracle_ber}`}>{x.outcome === "recovered" ? "✓" : x.outcome === "failed" ? "✗" : "~"} <small>{fmt(x.oracle_ber, 2)}</small></td>))}</tr>))}</tbody>
+          <thead>
+            <tr>
+              <th>Algorithm</th>
+              {attacks.map((a) => (
+                <th key={a}>{a}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {exp.results
+              .filter((r) => r.robustness)
+              .map((r) => (
+                <tr key={r.algorithm}>
+                  <td>{r.algorithm}</td>
+                  {(r.robustness ?? []).map((x) => (
+                    <td
+                      key={x.attack}
+                      className={`learn-rob learn-rob-${x.outcome}`}
+                      title={`oracle BER ${x.oracle_ber}`}
+                    >
+                      {x.outcome === "recovered" ? "✓" : x.outcome === "failed" ? "✗" : "~"}{" "}
+                      <small>{fmt(x.oracle_ber, 2)}</small>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+          </tbody>
         </DataTable>
       ) : null}
-      {attacks.length ? <p className="stego-muted">✓ exact payload recovered · ~ partial (oracle BER ≤ 0.1) · ✗ failed (BER ≈ 0.5 is chance level, i.e. no information). Oracle BER = direct extraction from the attacked image with the known patch mask, algorithm, length and parameter; the operational transport would additionally need the bootstrap and manifest to survive. No failure is repaired or hidden.</p> : null}
+      {attacks.length ? (
+        <p className="stego-muted">
+          ✓ exact payload recovered · ~ partial (oracle BER ≤ 0.1) · ✗ failed (BER ≈ 0.5 is chance
+          level, i.e. no information). Oracle BER = direct extraction from the attacked image with
+          the known patch mask, algorithm, length and parameter; the operational transport would
+          additionally need the bootstrap and manifest to survive. No failure is repaired or hidden.
+        </p>
+      ) : null}
     </>
   );
 }
@@ -290,113 +711,353 @@ export function LearningWorkbench() {
 
   useEffect(() => {
     void learnApi.registry().then((r) => {
-      if (r.ok) { setReg(r.data); setMessage(r.data.sample_message); } else setRegErr(`${r.error.code}: ${r.error.message}`);
+      if (r.ok) {
+        setReg(r.data);
+        setMessage(r.data.sample_message);
+      } else setRegErr(`${r.error.code}: ${r.error.message}`);
     });
   }, []);
   const algInfo = useMemo(() => reg?.algorithms.find((a) => a.name === alg), [reg, alg]);
 
   async function onUpload(f: File | undefined) {
     if (!f) return;
-    if (f.type !== "image/png") { setExpErr("Only PNG covers are accepted (lossless)."); return; }
+    if (f.type !== "image/png") {
+      setExpErr("Only PNG covers are accepted (lossless).");
+      return;
+    }
     const buf = new Uint8Array(await f.arrayBuffer());
     let s = "";
-    for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    for (let i = 0; i < buf.length; i += 0x8000)
+      s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
     setUpload(btoa(s));
   }
 
   async function run(all: boolean) {
-    setBusy(true); setExpErr(null);
+    setBusy(true);
+    setExpErr(null);
     const req: LearnExperimentRequest = {
-      algorithms: all ? "all" : [alg], payload_mode: mode, ...(mode === "aead_fixture" ? { message } : {}),
-      cover: upload ? { upload_b64: upload } : { sample }, patch: /^\d+$/.test(patchSel) ? parseInt(patchSel, 10) : patchSel, robustness: robust, include_images: true,
+      algorithms: all ? "all" : [alg],
+      payload_mode: mode,
+      ...(mode === "aead_fixture" ? { message } : {}),
+      cover: upload ? { upload_b64: upload } : { sample },
+      patch: /^\d+$/.test(patchSel) ? parseInt(patchSel, 10) : patchSel,
+      robustness: robust,
+      include_images: true,
     };
     const r = await learnApi.experiment(req);
     setBusy(false);
-    if (r.ok) { setExp(r.data); setPicked(all ? null : alg); } else setExpErr(`${r.error.code}: ${r.error.message}`);
+    if (r.ok) {
+      setExp(r.data);
+      setPicked(all ? null : alg);
+    } else setExpErr(`${r.error.code}: ${r.error.message}`);
   }
 
-  const pickedRow = exp?.results.find((r) => r.algorithm === picked) ?? (exp && exp.results.length === 1 ? exp.results[0] : undefined);
+  const pickedRow =
+    exp?.results.find((r) => r.algorithm === picked) ??
+    (exp && exp.results.length === 1 ? exp.results[0] : undefined);
   const pc = exp?.payload_construction as Record<string, unknown> | undefined;
 
   return (
     <div className="learn-root" data-testid="learning-workbench">
       <EduBanner />
-      {regErr ? <div className="notice notice-danger" role="alert"><div><strong>Learning service unavailable</strong><p>{regErr}</p></div></div> : null}
+      {regErr ? (
+        <div className="notice notice-danger" role="alert">
+          <div>
+            <strong>Learning service unavailable</strong>
+            <p>{regErr}</p>
+          </div>
+        </div>
+      ) : null}
 
-      <Panel title="A / Choose an algorithm" meta={<Status tone="info">10 ALGORITHMS</Status>}>
+      <Panel title="Choose an algorithm" meta={<span className="panel-count">10 algorithms</span>}>
         <div className="learn-alg-grid" role="radiogroup" aria-label="Algorithm">
           {ALG_ORDER.map((a) => (
-            <button key={a} type="button" role="radio" aria-label={a} aria-checked={alg === a} className={`learn-alg ${alg === a ? "learn-alg-on" : ""}`} onClick={() => setAlg(a)}>
-              <strong>{a}</strong><small>{reg?.algorithms.find((x) => x.name === a)?.domain ?? ""}</small>
+            <button
+              key={a}
+              type="button"
+              role="radio"
+              aria-label={a}
+              aria-checked={alg === a}
+              className={`learn-alg ${alg === a ? "learn-alg-on" : ""}`}
+              onClick={() => setAlg(a)}
+            >
+              <strong>{a}</strong>
+              <small>{reg?.algorithms.find((x) => x.name === a)?.domain ?? ""}</small>
             </button>
           ))}
         </div>
-        {algInfo ? <dl className="stego-kv learn-kv"><div><dt>VARIANT</dt><dd>{algInfo.variant}</dd></div><div><dt>CODING</dt><dd>{algInfo.coding}</dd></div><div><dt>REFERENCE</dt><dd>{algInfo.reference}</dd></div></dl> : null}
+        {algInfo ? (
+          <dl className="stego-kv learn-kv">
+            <div>
+              <dt>VARIANT</dt>
+              <dd>{algInfo.variant}</dd>
+            </div>
+            <div>
+              <dt>CODING</dt>
+              <dd>{algInfo.coding}</dd>
+            </div>
+            <div>
+              <dt>REFERENCE</dt>
+              <dd>{algInfo.reference}</dd>
+            </div>
+          </dl>
+        ) : null}
         <div className="learn-tabs" role="tablist" aria-label="Learning views">
-          {([["math", "Walk me through the mathematics"], ["run", "Run actual example"], ["compare", "Compare all ten"]] as const).map(([k, l]) => (
-            <button key={k} type="button" role="tab" aria-selected={view === k} className={`learn-tab ${view === k ? "learn-tab-on" : ""}`} onClick={() => setView(k)}>{l}</button>
+          {(
+            [
+              ["math", "Walk me through the mathematics"],
+              ["run", "Run actual example"],
+              ["compare", "Compare all ten"],
+            ] as const
+          ).map(([k, l]) => (
+            <button
+              key={k}
+              type="button"
+              role="tab"
+              aria-selected={view === k}
+              className={`learn-tab ${view === k ? "learn-tab-on" : ""}`}
+              onClick={() => setView(k)}
+            >
+              {l}
+            </button>
           ))}
         </div>
       </Panel>
 
       {view === "math" ? (
-        <Panel title="B / Worked calculation (small fixed values)" meta={<Status tone="neutral">DETERMINISTIC</Status>}>
+        <Panel
+          title="Worked calculation (small fixed values)"
+          meta={<Status tone="neutral">Deterministic</Status>}
+        >
           <WalkthroughView alg={alg} />
         </Panel>
       ) : (
-        <Panel title={view === "run" ? `B / Run actual example — ${alg}` : "B / Compare all ten on the same cover, patch and payload"} meta={<Status tone="warning">EDUCATIONAL EXPERIMENT</Status>}>
+        <Panel
+          title={
+            view === "run"
+              ? `Run an example — ${alg}`
+              : "Compare all ten on the same cover, patch and payload"
+          }
+          meta={<Status tone="warning">Educational experiment</Status>}
+        >
           <div className="form-grid stego-grid-4">
             <Field label="Payload">
-              <select className={selectClass} value={mode} onChange={(e) => setMode(e.target.value as typeof mode)} aria-label="Payload mode">
-                <option value="aead_fixture">Readable message → real AEAD encryption (test-only key)</option>
+              <select
+                className={selectClass}
+                value={mode}
+                onChange={(e) => setMode(e.target.value as typeof mode)}
+                aria-label="Payload mode"
+              >
+                <option value="aead_fixture">
+                  Readable message → real AEAD encryption (test-only key)
+                </option>
                 <option value="synthetic">Synthetic ciphertext fixture A6 3C 91 5E</option>
               </select>
             </Field>
             <Field label="Cover">
-              <select className={selectClass} value={upload ? "__upload" : sample} onChange={(e) => { if (e.target.value !== "__upload") { setUpload(null); setSample(e.target.value); } }} aria-label="Sample cover">
-                {(reg?.samples ?? Object.keys(SAMPLE_LABELS)).map((s) => <option key={s} value={s}>{SAMPLE_LABELS[s] ?? s}</option>)}
+              <select
+                className={selectClass}
+                value={upload ? "__upload" : sample}
+                onChange={(e) => {
+                  if (e.target.value !== "__upload") {
+                    setUpload(null);
+                    setSample(e.target.value);
+                  }
+                }}
+                aria-label="Sample cover"
+              >
+                {(reg?.samples ?? Object.keys(SAMPLE_LABELS)).map((s) => (
+                  <option key={s} value={s}>
+                    {SAMPLE_LABELS[s] ?? s}
+                  </option>
+                ))}
                 {upload ? <option value="__upload">Uploaded PNG</option> : null}
               </select>
             </Field>
-            <label className="field"><span>Upload test image (PNG ≤ 512×512)</span><span className="learn-upload"><Upload aria-hidden="true" /><input type="file" accept="image/png" onChange={(e) => void onUpload(e.target.files?.[0])} aria-label="Upload test PNG" /></span></label>
-            <div className="field"><span>Options</span>
-              <label className="learn-check"><input type="checkbox" checked={robust} onChange={(e) => setRobust(e.target.checked)} /> robustness attack suite</label>
-              <label className="learn-check">patch&nbsp;
-                <select className={selectClass} value={patchSel} onChange={(e) => setPatchSel(e.target.value)} aria-label="Patch to embed into">
-                  <option value="most_textured">most textured patch</option><option value="smoothest">smoothest patch</option><option value="largest">largest patch</option><option value="smallest">smallest patch</option>
-                  {(exp?.survey ?? []).map((p) => <option key={p.patch_id} value={String(p.patch_id)}>patch #{p.patch_id} ({p.pixels} px)</option>)}
-                </select></label>
+            <label className="field">
+              <span>Upload test image (PNG ≤ 512×512)</span>
+              <span className="learn-upload">
+                <Upload aria-hidden="true" />
+                <input
+                  type="file"
+                  accept="image/png"
+                  onChange={(e) => void onUpload(e.target.files?.[0])}
+                  aria-label="Upload test PNG"
+                />
+              </span>
+            </label>
+            <div className="field">
+              <span>Options</span>
+              <label className="learn-check">
+                <input
+                  type="checkbox"
+                  checked={robust}
+                  onChange={(e) => setRobust(e.target.checked)}
+                />{" "}
+                robustness attack suite
+              </label>
+              <label className="learn-check">
+                patch&nbsp;
+                <select
+                  className={selectClass}
+                  value={patchSel}
+                  onChange={(e) => setPatchSel(e.target.value)}
+                  aria-label="Patch to embed into"
+                >
+                  <option value="most_textured">most textured patch</option>
+                  <option value="smoothest">smoothest patch</option>
+                  <option value="largest">largest patch</option>
+                  <option value="smallest">smallest patch</option>
+                  {(exp?.survey ?? []).map((p) => (
+                    <option key={p.patch_id} value={String(p.patch_id)}>
+                      patch #{p.patch_id} ({p.pixels} px)
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
           </div>
-          {mode === "aead_fixture" ? <Field label="Readable sample message (serialised as UTF-8, then sealed)"><Textarea rows={4} value={message} onChange={(e) => setMessage(e.target.value)} aria-label="Sample message" /></Field>
-            : <p className="stego-muted">{reg?.synthetic_label ?? "Synthetic bytes for bit-level illustration; not a real ciphertext."}</p>}
+          {mode === "aead_fixture" ? (
+            <Field label="Readable sample message (serialised as UTF-8, then sealed)">
+              <Textarea
+                rows={4}
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                aria-label="Sample message"
+              />
+            </Field>
+          ) : (
+            <p className="stego-muted">
+              {reg?.synthetic_label ??
+                "Synthetic bytes for bit-level illustration; not a real ciphertext."}
+            </p>
+          )}
           <div className="button-row">
-            {view === "run"
-              ? <Button disabled={busy || (mode === "aead_fixture" && !message)} onClick={() => void run(false)}><Play /><BusyLabel busy={busy} idle={`Run ${alg} example`} busyText="Embedding, saving PNG, extracting" /></Button>
-              : <Button disabled={busy || (mode === "aead_fixture" && !message)} onClick={() => void run(true)}><FlaskConical /><BusyLabel busy={busy} idle="Compare all ten" busyText="Running ten algorithms" /></Button>}
-            {exp ? (["json", "csv", "md"] as const).map((f) => <Button key={f} variant="outline" size="sm" onClick={() => void downloadLearnExport(exp.experiment_id, f).catch((e: Error) => setExpErr(e.message))}><Download />{f.toUpperCase()}</Button>) : null}
+            {view === "run" ? (
+              <Button
+                disabled={busy || (mode === "aead_fixture" && !message)}
+                onClick={() => void run(false)}
+              >
+                <Play />
+                <BusyLabel
+                  busy={busy}
+                  idle={`Run ${alg} example`}
+                  busyText="Embedding, saving PNG, extracting"
+                />
+              </Button>
+            ) : (
+              <Button
+                disabled={busy || (mode === "aead_fixture" && !message)}
+                onClick={() => void run(true)}
+              >
+                <FlaskConical />
+                <BusyLabel busy={busy} idle="Compare all ten" busyText="Running ten algorithms" />
+              </Button>
+            )}
+            {exp
+              ? (["json", "csv", "md"] as const).map((f) => (
+                  <Button
+                    key={f}
+                    variant="outline"
+                    size="sm"
+                    onClick={() =>
+                      void downloadLearnExport(exp.experiment_id, f).catch((e: Error) =>
+                        setExpErr(e.message),
+                      )
+                    }
+                  >
+                    <Download />
+                    {f.toUpperCase()}
+                  </Button>
+                ))
+              : null}
           </div>
-          {expErr ? <div className="notice notice-danger" role="alert"><div><strong>Experiment failed</strong><p>{expErr}</p></div></div> : null}
-          {!exp ? <Empty title="No experiment yet" description="Run an example to see the segmentation, the chosen irregular patch, the stego image, the difference map, metrics and verification." /> : (
+          {expErr ? (
+            <div className="notice notice-danger" role="alert">
+              <div>
+                <strong>Experiment failed</strong>
+                <p>{expErr}</p>
+              </div>
+            </div>
+          ) : null}
+          {!exp ? (
+            <Empty
+              title="No experiment yet"
+              description="Run an example to see the segmentation, the chosen irregular patch, the stego image, the difference map, metrics and verification."
+            />
+          ) : (
             <div className="learn-results" data-testid="learn-results">
               <dl className="stego-kv learn-kv">
-                <div><dt>EXPERIMENT</dt><dd>{exp.experiment_id.slice(0, 16)}…</dd></div>
-                <div><dt>COVER</dt><dd>{exp.cover.description} · {exp.cover.width}×{exp.cover.height} {exp.cover.mode}</dd></div>
-                <div><dt>PAYLOAD</dt><dd>{exp.payload.bytes} B = {exp.payload.bits} bits ({exp.payload.kind}) · {exp.payload.bit_order}</dd></div>
-                <div><dt>PAYLOAD HEX</dt><dd>{exp.payload.hex_preview}</dd></div>
-                {exp.payload_mode === "aead_fixture" && pc ? <>
-                  <div><dt>PLAINTEXT</dt><dd>{fmt(pc["plaintext_bytes"])} bytes</dd></div>
-                  <div><dt>ENCRYPTED WIRE</dt><dd>{fmt(pc["wire_bytes"])} bytes ({fmt(pc["appwire_header_bytes"])}-byte header + ciphertext incl. {fmt(pc["aead_tag_bytes"])}-byte tag)</dd></div>
-                  <div><dt>WIRE (BINARY, FIRST BYTES)</dt><dd>{fmt(pc["wire_binary_preview"])}</dd></div>
-                  <div><dt>KEY</dt><dd>{fmt(pc["key"])}</dd></div>
-                </> : null}
-                <div><dt>DURATION</dt><dd>{fmt(exp.duration_ms, 0)} ms</dd></div>
+                <div>
+                  <dt>EXPERIMENT</dt>
+                  <dd>{exp.experiment_id.slice(0, 16)}…</dd>
+                </div>
+                <div>
+                  <dt>COVER</dt>
+                  <dd>
+                    {exp.cover.description} · {exp.cover.width}×{exp.cover.height} {exp.cover.mode}
+                  </dd>
+                </div>
+                <div>
+                  <dt>PAYLOAD</dt>
+                  <dd>
+                    {exp.payload.bytes} B = {exp.payload.bits} bits ({exp.payload.kind}) ·{" "}
+                    {exp.payload.bit_order}
+                  </dd>
+                </div>
+                <div>
+                  <dt>PAYLOAD HEX</dt>
+                  <dd>{exp.payload.hex_preview}</dd>
+                </div>
+                {exp.payload_mode === "aead_fixture" && pc ? (
+                  <>
+                    <div>
+                      <dt>PLAINTEXT</dt>
+                      <dd>{fmt(pc["plaintext_bytes"])} bytes</dd>
+                    </div>
+                    <div>
+                      <dt>ENCRYPTED WIRE</dt>
+                      <dd>
+                        {fmt(pc["wire_bytes"])} bytes ({fmt(pc["appwire_header_bytes"])}-byte header
+                        + ciphertext incl. {fmt(pc["aead_tag_bytes"])}-byte tag)
+                      </dd>
+                    </div>
+                    <div>
+                      <dt>WIRE (BINARY, FIRST BYTES)</dt>
+                      <dd>{fmt(pc["wire_binary_preview"])}</dd>
+                    </div>
+                    <div>
+                      <dt>KEY</dt>
+                      <dd>{fmt(pc["key"])}</dd>
+                    </div>
+                  </>
+                ) : null}
+                <div>
+                  <dt>DURATION</dt>
+                  <dd>{fmt(exp.duration_ms, 0)} ms</dd>
+                </div>
               </dl>
-              {exp.payload_mode === "aead_fixture" && pc ? <p className="stego-muted">{fmt(pc["note"])}</p> : null}
+              {exp.payload_mode === "aead_fixture" && pc ? (
+                <p className="stego-muted">{fmt(pc["note"])}</p>
+              ) : null}
               <PatchSection exp={exp} choose={(id) => setPatchSel(String(id))} />
-              {exp.results.length > 1 ? <ComparisonTable exp={exp} pick={setPicked} picked={picked} /> : null}
-              {pickedRow ? <RowDetail row={pickedRow} cover={exp.cover.png} /> : exp.results.length > 1 ? <p className="stego-muted">Select an algorithm in the table for its images, maps and robustness details.</p> : null}
-              <div className="notice notice-info" role="note"><BookOpen aria-hidden="true" /><div><strong>How to read these numbers</strong><p>{exp.interpretation.join(" ")}</p></div></div>
+              {exp.results.length > 1 ? (
+                <ComparisonTable exp={exp} pick={setPicked} picked={picked} />
+              ) : null}
+              {pickedRow ? (
+                <RowDetail row={pickedRow} cover={exp.cover.png} />
+              ) : exp.results.length > 1 ? (
+                <p className="stego-muted">
+                  Select an algorithm in the table for its images, maps and robustness details.
+                </p>
+              ) : null}
+              <div className="notice notice-info" role="note">
+                <BookOpen aria-hidden="true" />
+                <div>
+                  <strong>How to read these numbers</strong>
+                  <p>{exp.interpretation.join(" ")}</p>
+                </div>
+              </div>
             </div>
           )}
         </Panel>

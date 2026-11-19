@@ -1,32 +1,35 @@
-//! Patch manifest v1 (docs/patchwise-transport.md section 4): strict parser + canonical encoder.
+//! Patch manifest v2 (docs/patchwise-transport.md section 4, docs/bootstrap-v3-design.md):
+//! strict parser + canonical encoder.
 //!
 //! The manifest is produced by the image service (it holds no keys), validated here BEFORE the
 //! frame is authenticated on the sender, and parsed here again AFTER the frame MAC verified on
 //! the receiver. Everything is bounds-checked; any deviation from the canonical encoding fails.
 //!
 //! ```text
-//! "IOPM" | ver=1 | seg_ver=1 | sel_ver=1 | channels | width u16 | height u16 | cell u8 | n u8
-//!        | reserved_rows u16 | payload_len u32 | map_len u32                      (24 bytes, BE)
+//! "IOPM" | ver=2 | seg_ver=1 | sel_ver=2 | channels | width u16 | height u16 | cell u8 | n u8
+//!        | carrier_pixels u16 | payload_len u32 | map_len u32                     (24 bytes, BE)
 //! n x ( alg_id u8 | param u8 | flags u16 = 0 | offset u32 | length u32 )          (12 bytes each)
 //! map: run-length code over the cell grid in raster order: ( label u8 | run LEB128 )*
 //! ```
+//! `carrier_pixels` (R) is canonical: R = `bootstrap::reserve_pixels_for(manifest_len, channels)` and
+//! R <= width*height/8. The first R distinct carrier pixels of the frame's value stream are excluded from
+//! every patch mask; no rows are reserved. (v1 had `reserved_rows` here and is not accepted.)
 
 use crate::transport::backend::ALGS;
 use crate::transport::error::{stage, StegoError};
 use serde_json::{json, Value};
 
 pub const MAGIC: &[u8; 4] = b"IOPM";
-pub const VERSION: u8 = 1;
+pub const VERSION: u8 = 2;
 pub const SEG_VERSION: u8 = 1;
-pub const SEL_VERSION: u8 = 1;
+pub const SEL_VERSION: u8 = 2;
 pub const SEG_VERSION_NAME: &str = "arg-cells-1";
-pub const SEL_VERSION_NAME: &str = "kb-bm25-1";
+pub const SEL_VERSION_NAME: &str = "kb-risk-1";
 pub const FIXED_LEN: usize = 24;
 pub const ENTRY_LEN: usize = 12;
 pub const MAX_PATCHES: usize = 255;
 pub const MAX_MANIFEST_BYTES: usize = 65_536;
 pub const TAG_LEN: usize = 32;
-pub const PREAMBLE_LEN: usize = 16;
 
 /// Inclusive explicit-parameter range per algorithm id (index = id - 1); (0, 0) = parameter must be 0.
 const PARAM_RANGE: [(u8, u8); 10] = [(0, 0), (0, 0), (0, 0), (1, 255), (4, 64), (4, 64), (8, 64), (2, 64), (2, 64), (2, 64)];
@@ -45,7 +48,8 @@ pub struct Manifest {
     pub width: u16,
     pub height: u16,
     pub cell: u8,
-    pub reserved_rows: u16,
+    /// Number of reserved bootstrap-v3 carrier pixels (canonical, see module docs).
+    pub carrier_pixels: u16,
     pub payload_len: u32,
     pub patches: Vec<PatchEntry>,
     /// rows * cols labels, raster order
@@ -61,11 +65,9 @@ pub fn grid(height: u16, width: u16, cell: u8) -> (usize, usize) {
     ((height as usize + c - 1) / c, (width as usize + c - 1) / c)
 }
 
-/// Rows at the top of the image reserved for the bootstrap carrier (preamble | manifest | crc32).
-pub fn reserved_rows_for(manifest_len: usize, width: u16, channels: u8) -> usize {
-    let bits = 8 * (PREAMBLE_LEN + manifest_len + 4);
-    let per_row = width as usize * channels as usize;
-    (bits + per_row - 1) / per_row
+/// Canonical number of reserved carrier pixels for a manifest of `manifest_len` bytes.
+pub fn carrier_pixels_for(manifest_len: usize, channels: u8) -> usize {
+    crate::transport::bootstrap::reserve_pixels_for(manifest_len, channels as usize)
 }
 
 pub fn rle_encode(labels: &[u8]) -> Vec<u8> {
@@ -144,7 +146,7 @@ impl Manifest {
         o.extend_from_slice(&self.height.to_be_bytes());
         o.push(self.cell);
         o.push(self.patches.len() as u8);
-        o.extend_from_slice(&self.reserved_rows.to_be_bytes());
+        o.extend_from_slice(&self.carrier_pixels.to_be_bytes());
         o.extend_from_slice(&self.payload_len.to_be_bytes());
         o.extend_from_slice(&(map.len() as u32).to_be_bytes());
         for p in &self.patches {
@@ -184,7 +186,7 @@ impl Manifest {
         }).collect();
         json!({"version": VERSION, "segmentation_version": SEG_VERSION_NAME, "selector_version": SEL_VERSION_NAME,
                "width": self.width, "height": self.height, "channels": self.channels, "cell_size": self.cell,
-               "patch_count": self.patches.len(), "used_patches": self.used().count(), "reserved_rows": self.reserved_rows,
+               "patch_count": self.patches.len(), "used_patches": self.used().count(), "carrier_pixels": self.carrier_pixels,
                "payload_len": self.payload_len, "patches": patches})
     }
 
@@ -219,7 +221,7 @@ pub fn parse(data: &[u8], max_dim: u32) -> Result<Manifest, StegoError> {
     let height = u16::from_be_bytes([data[10], data[11]]);
     let cell = data[12];
     let n = data[13] as usize;
-    let reserved_rows = u16::from_be_bytes([data[14], data[15]]);
+    let carrier_pixels = u16::from_be_bytes([data[14], data[15]]);
     let payload_len = u32::from_be_bytes(data[16..20].try_into().unwrap());
     let map_len = u32::from_be_bytes(data[20..24].try_into().unwrap()) as usize;
     if !(channels == 1 || channels == 3) || !matches!(cell, 4 | 8 | 16) {
@@ -236,9 +238,9 @@ pub fn parse(data: &[u8], max_dim: u32) -> Result<Manifest, StegoError> {
     if data.len() != expect_len {
         return Err(bad("manifest length does not match its declared sizes"));
     }
-    let rr = reserved_rows_for(data.len(), width, channels);
-    if reserved_rows as usize != rr || rr >= height as usize {
-        return Err(bad("reserved_rows inconsistent with the manifest size"));
+    let r = carrier_pixels_for(data.len(), channels);
+    if carrier_pixels as usize != r || r > (width as usize * height as usize) / 8 {
+        return Err(bad("carrier_pixels inconsistent with the manifest size or the image"));
     }
     if (payload_len as usize) < TAG_LEN + 1 {
         return Err(bad("payload length too small"));
@@ -287,7 +289,7 @@ pub fn parse(data: &[u8], max_dim: u32) -> Result<Manifest, StegoError> {
     if seen.iter().any(|s| !s) {
         return Err(bad("a patch id has no cells in the map"));
     }
-    Ok(Manifest { channels, width, height, cell, reserved_rows, payload_len, patches, cell_labels })
+    Ok(Manifest { channels, width, height, cell, carrier_pixels, payload_len, patches, cell_labels })
 }
 
 /// Deterministic sample manifest (used by the in-process fake backend and by tests).
@@ -312,7 +314,7 @@ pub fn sample(width: u16, height: u16, channels: u8, payload_len: u32, algs: &[(
         patches.push(PatchEntry { alg_id: *alg, param: *param, offset: off, length: len });
         off += len;
     }
-    Manifest { channels, width, height, cell, reserved_rows: reserved_rows_for(mlen, width, channels) as u16, payload_len, patches, cell_labels: labels }
+    Manifest { channels, width, height, cell, carrier_pixels: carrier_pixels_for(mlen, channels) as u16, payload_len, patches, cell_labels: labels }
 }
 
 #[cfg(test)]
@@ -327,12 +329,16 @@ mod tests {
     fn documented_test_vector_matches_the_python_encoder() {
         // docs/patchwise-transport.md section 6 (python-service/tests/test_patch_manifest.py pins the same bytes)
         let labels = vec![0, 0, 1, 1, 0, 1, 1, 1, 0, 1, 1, 1, 0, 0, 0, 1];
-        let man = Manifest { channels: 1, width: 64, height: 64, cell: 16, reserved_rows: 11, payload_len: 40,
+        let man = Manifest { channels: 3, width: 64, height: 64, cell: 16, carrier_pixels: 384, payload_len: 40,
             patches: vec![PatchEntry { alg_id: 0, param: 0, offset: 0, length: 0 }, PatchEntry { alg_id: 1, param: 0, offset: 0, length: 40 }], cell_labels: labels };
         let bytes = man.encode();
-        assert_eq!(hex::encode(&bytes), "494f504d01010101004000401002000b000000280000001000000000000000000000000001000000000000000000002800020102000101030001010300030101");
+        assert_eq!(hex::encode(&bytes), "494f504d020102030040004010020180000000280000001000000000000000000000000001000000000000000000002800020102000101030001010300030101");
         assert_eq!(parse(&bytes, 4096).unwrap(), man);
-        assert_eq!(reserved_rows_for(64, 64, 1), 11);
+        assert_eq!(carrier_pixels_for(64, 3), 384);
+        // a v1 manifest (version byte 1, reserved_rows field) is not accepted
+        let mut v1 = bytes.clone();
+        v1[4] = 1;
+        assert_eq!(parse(&v1, 4096).unwrap_err().code, "UNSUPPORTED_VERSION");
     }
 
     #[test]
@@ -361,9 +367,11 @@ mod tests {
         let e1 = FIXED_LEN + ENTRY_LEN; // first used entry
         let cases: Vec<(Vec<u8>, &str)> = vec![
             (put(&b, 0, b"XOPM"), "MANIFEST_INVALID"),
-            (put(&b, 4, &[2]), "UNSUPPORTED_VERSION"),
+            (put(&b, 4, &[3]), "UNSUPPORTED_VERSION"),
+            (put(&b, 4, &[1]), "UNSUPPORTED_VERSION"), // manifest-v1 (bootstrap-v2 era)
             (put(&b, 5, &[2]), "UNSUPPORTED_VERSION"),
-            (put(&b, 6, &[2]), "UNSUPPORTED_VERSION"),
+            (put(&b, 6, &[1]), "UNSUPPORTED_VERSION"),           // selector kb-bm25-1 (id 1) is retired
+            (put(&b, 6, &[3]), "UNSUPPORTED_VERSION"),
             (put(&b, 7, &[2]), "MANIFEST_INVALID"),
             (put(&b, 8, &[0, 0]), "MANIFEST_INVALID"),
             (put(&b, 8, &[0xFF, 0xFF]), "MANIFEST_INVALID"),
@@ -373,6 +381,7 @@ mod tests {
             (put(&b, 13, &[0]), "MANIFEST_INVALID"),
             (put(&b, 13, &[5]), "MANIFEST_INVALID"),
             (put(&b, 14, &[0, 1]), "MANIFEST_INVALID"),
+            (put(&b, 14, &(m().carrier_pixels + 1).to_be_bytes()), "MANIFEST_INVALID"),
             (put(&b, 16, &[0, 0, 0, 201]), "MANIFEST_INVALID"),
             (put(&b, 16, &[0xFF; 4]), "MANIFEST_INVALID"),
             (put(&b, 20, &[0xFF, 0xFF, 0xFF, 0xF0]), "MANIFEST_INVALID"),
@@ -395,7 +404,7 @@ mod tests {
             (vec![0; MAX_MANIFEST_BYTES + 1], "MANIFEST_TOO_LARGE"),
         ];
         for (i, (bytes, code)) in cases.iter().enumerate() {
-            assert_eq!(parse(bytes, 4096).unwrap_err().code, *code, "case {i}");
+            assert_eq!(parse(bytes, 4096).map(|_| ()).map_err(|e| e.code).err().as_deref(), Some(*code), "case {i}");
         }
         assert_eq!(parse(&b, 100).unwrap_err().code, "MANIFEST_INVALID", "dimension limit");
     }
@@ -427,8 +436,8 @@ mod tests {
         let mut broken = man.clone();
         broken.cell_labels = lab;
         let mut enc = broken.encode();
-        // keep reserved_rows consistent with the (shorter) manifest so that only the map check can fail
-        let rr = reserved_rows_for(enc.len(), 128, 3) as u16;
+        // keep carrier_pixels consistent with the (shorter) manifest so that only the map check can fail
+        let rr = carrier_pixels_for(enc.len(), 3) as u16;
         enc[14..16].copy_from_slice(&rr.to_be_bytes());
         assert_eq!(parse(&enc, 4096).unwrap_err().code, "MANIFEST_INVALID");
     }

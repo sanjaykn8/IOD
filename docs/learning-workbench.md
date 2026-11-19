@@ -10,7 +10,7 @@ The Steganography Lab has two tabs that never share state:
 ```mermaid
 flowchart TB
   subgraph OPS[Operational UAV flow]
-    UIo[Lab tab: UAV Simulation] -->|/api/stego/*| N1[Node relay] --> R1[Rust pipeline: session, directional keys, manifest validation, Frame v2 + MAC, replay]
+    UIo[Lab tab: UAV Simulation] -->|/api/stego/*| N1[Node relay] --> R1[Rust pipeline: session, directional keys, manifest validation, Frame v3 + MAC, bootstrap-v3, replay]
     R1 -->|/stego/*| P1[Python: segmentation, knowledge base + BM25 per patch, 10 algorithms, artifact store]
     R1 --> E1[(SQLite stego_events)]
   end
@@ -37,7 +37,7 @@ Guarantees (each enforced by a test):
 Every result row and export carries the exact repository variant; the banner and the Markdown export state that these are not canonical paper implementations.
 
 ## 3. Payload modes
-* **Readable message → real encryption** (`aead_fixture`): the message (default `UAV_ID=D1 / TARGET=D2 / LAT=9.45 / LON=77.80 / ALT=120`) is UTF-8 serialised and sealed by the production `seal_message` + AppWire v1 code with a **test-only key** = HKDF-SHA256 of a public label (not secret, never used for UAV traffic, never displayed). The UI shows plaintext length, wire length (50-byte header + ciphertext incl. 16-byte tag), hex and binary previews. After extraction the Rust core decodes the AppWire and AEAD-opens it: `aead_verified` + `plaintext_matches`. The same AppWire bytes are embedded by all algorithms (the operational Frame v2 wrapper — 48 bytes plus the patch manifest — is reported but not included, so the comparison is fair).
+* **Readable message → real encryption** (`aead_fixture`): the message (default `UAV_ID=D1 / TARGET=D2 / LAT=9.45 / LON=77.80 / ALT=120`) is UTF-8 serialised and sealed by the production `seal_message` + AppWire v1 code with a **test-only key** = HKDF-SHA256 of a public label (not secret, never used for UAV traffic, never displayed). The UI shows plaintext length, wire length (50-byte header + ciphertext incl. 16-byte tag), hex and binary previews. After extraction the Rust core decodes the AppWire and AEAD-opens it: `aead_verified` + `plaintext_matches`. The same AppWire bytes are embedded by all algorithms (the operational Frame v3 wrapper — 48 bytes plus the patch manifest, which travels in the bootstrap-v3 carrier — is reported but not included, so the comparison is fair).
 * **Synthetic ciphertext** (`synthetic`): `A6 3C 91 5E`, MSB-first. Labelled as a synthetic byte sequence, **not** a real ciphertext; verification is `not_applicable_synthetic` (bit-exactness only).
 
 ## 4. Metrics (consistent definitions)

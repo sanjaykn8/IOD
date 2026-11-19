@@ -1,12 +1,612 @@
-import { useCallback,useEffect,useMemo,useState } from "react";
-import { Database,FileWarning,Filter,Flag,Play,Radio,RefreshCw,RotateCcw,Search,ShieldAlert,Trash2 } from "lucide-react";
-import { api,streamEvents,type ProtocolEvent } from "@/lib/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Flag, Radio, RefreshCw, Search, Trash2 } from "lucide-react";
+import { api, streamEvents, type ProtocolEvent, type SystemCrypto } from "@/lib/api";
+import { stegoApi } from "@/lib/stego-api";
+import type { StegoStatus } from "@/types/api";
 import { usePolling } from "@/hooks/use-polling";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { AlertDialog,AlertDialogAction,AlertDialogCancel,AlertDialogContent,AlertDialogDescription,AlertDialogFooter,AlertDialogHeader,AlertDialogTitle,AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { BusyLabel,DataTable,Empty,ErrorNotice,Field,Flow,PageHeader,Panel,Status,TechnicalId,selectClass } from "./core";
-export function TracePage(){const fetcher=useCallback(()=>api.getTrace(),[]);const {data,error:pollError,refresh}=usePolling(fetcher,4000);const [session,setSession]=useState(""),[flagReason,setFlagReason]=useState(""),[pid,setPid]=useState(""),[token,setToken]=useState(""),[requester,setRequester]=useState("admin-1"),[reason,setReason]=useState(""),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);async function act(fn:()=>Promise<unknown>,clear:()=>void){setBusy(true);setError(null);try{await fn();clear();await refresh()}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}return <><PageHeader eyebrow="PRIVILEGED CONTROL / TRACE" title="Trace Manager" description="Authorization-sensitive pseudonym resolution. Every successful and denied attempt is permanently added to the audit trail." actions={<Status tone="warning">CONTROLLED OPERATION</Status>}/><div className="notice notice-warning"><ShieldAlert/><div><strong>Administrative research control</strong><p>Administrator authority is established only by the administrator token verified in the core (IOD_ADMIN_TOKEN). A trace also requires a reason and a PID belonging to a flagged session; every attempt is audited.</p></div></div>{(error||pollError)&&<ErrorNotice message={error||pollError||"Unknown error"}/>}<div className="split-grid"><Panel title="Flag Suspicious Session"><Field label="Session identifier"><Input value={session} onChange={e=>setSession(e.target.value)} placeholder="Authentication session ID"/></Field><Field label="Evidence / reason"><Input value={flagReason} onChange={e=>setFlagReason(e.target.value)} placeholder="Reason for escalation"/></Field><Button variant="outline" disabled={busy||!session||!flagReason} onClick={()=>void act(()=>api.flagSession(session,"operator",flagReason),()=>{setSession("");setFlagReason("")})}><Flag/>Flag session</Button></Panel><Panel title="Request Identity Trace"><div className="form-grid"><Field label="Requesting administrator"><Input value={requester} onChange={e=>setRequester(e.target.value)}/></Field><Field label="Administrator token"><Input type="password" value={token} onChange={e=>setToken(e.target.value)} placeholder="IOD_ADMIN_TOKEN"/></Field></div><Field label="Target pseudonym / hex"><Input value={pid} onChange={e=>setPid(e.target.value)} placeholder="PID value"/></Field><Field label="Authorization rationale"><Input value={reason} onChange={e=>setReason(e.target.value)} placeholder="Required audit reason"/></Field><Button variant="destructive" disabled={busy||!pid||!reason} onClick={()=>void act(()=>api.requestTrace(requester,reason,pid,token),()=>{setPid("");setReason("")})}><Search/><BusyLabel busy={busy} idle="Request trace" busyText="Authorizing"/></Button></Panel></div><Panel title="Suspicion Flags"><DataTable label="Suspicion flags"><thead><tr><th>Time</th><th>Session</th><th>Flagged by</th><th>Reason</th></tr></thead><tbody>{data?.flags.map(f=><tr key={f.flag_id}><td>{new Date(f.timestamp_unix_ms).toLocaleString()}</td><td><TechnicalId>{f.session_id}</TechnicalId></td><td>{f.flagged_by}</td><td>{f.reason}</td></tr>)}{data&&data.flags.length===0&&<tr><td colSpan={4}><Empty title="No suspicion flags" description="No sessions are currently under review."/></td></tr>}</tbody></DataTable></Panel><Panel title="Trace Audit Trail"><DataTable label="Trace audit trail"><thead><tr><th>Time</th><th>Requester</th><th>Role</th><th>Authorization</th><th>Resolved identity</th><th>Reason</th></tr></thead><tbody>{data?.trace_records.map(t=><tr key={t.trace_id}><td>{new Date(t.timestamp_unix_ms).toLocaleString()}</td><td>{t.requested_by}</td><td>{t.requester_role}</td><td><Status tone={t.authorized?"success":"danger"}>{t.authorized?"AUTHORIZED":"DENIED"}</Status></td><td>{t.authorized?t.resolved_drone_id||"Unresolved":"WITHHELD"}</td><td>{t.reason}</td></tr>)}{data&&data.trace_records.length===0&&<tr><td colSpan={6}><Empty title="Audit trail clear" description="No trace requests have been recorded."/></td></tr>}</tbody></DataTable></Panel></>}
-export function LogsPage(){const [events,setEvents]=useState<ProtocolEvent[]>([]),[live,setLive]=useState(true),[connected,setConnected]=useState(false),[error,setError]=useState<string|null>(null),[status,setStatus]=useState("ALL"),[stage,setStage]=useState(""),[text,setText]=useState("");async function reload(){try{const r=await api.getEventsHistory(300);setEvents(r.events);setError(null)}catch(e){setError(e instanceof Error?e.message:String(e))}}useEffect(()=>{void reload()},[]);useEffect(()=>{if(!live){setConnected(false);return}return streamEvents(ev=>setEvents(prev=>[...prev,ev].slice(-500)),setConnected)},[live]);const filtered=useMemo(()=>events.filter(e=>(status==="ALL"||e.status===status)&&(!stage||e.stage.toLowerCase().includes(stage.toLowerCase()))&&(!text||`${e.sender} ${e.receiver} ${e.session_id} ${e.detail}`.toLowerCase().includes(text.toLowerCase()))).reverse(),[events,status,stage,text]);return <><PageHeader eyebrow="SECURITY OPERATIONS / TELEMETRY" title="Protocol Event Console" description="Durable event history with live SSE updates for registration, M1–M8 authentication, and K1–K4 key establishment." actions={<Status tone={!live?"neutral":connected?"success":"warning"}>{!live?"LIVE PAUSED":connected?"STREAM CONNECTED":"RECONNECTING"}</Status>}/>{error&&<ErrorNotice message={error}/>}<Panel title="Event Filters"><div className="filter-grid"><Field label="Status"><select className={selectClass} value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">All severities</option><option value="Ok">Verified / OK</option><option value="Info">Information</option><option value="Fail">Failed</option></select></Field><Field label="Protocol stage"><Input value={stage} onChange={e=>setStage(e.target.value)} placeholder="M5, K2, R1…"/></Field><Field label="Drone, session, or detail"><Input value={text} onChange={e=>setText(e.target.value)} placeholder="Search telemetry"/></Field><div className="button-row"><Button variant={live?"default":"outline"} onClick={()=>setLive(v=>!v)}><Radio/>{live?"Live on":"Live off"}</Button><Button variant="outline" onClick={()=>void reload()}><RefreshCw/>History</Button></div></div></Panel><Panel title="Event Stream" meta={<span className="panel-count">{filtered.length} / {events.length} EVENTS</span>}><div className="log-console">{filtered.map(ev=><article key={`${ev.session_id}-${ev.stage}-${ev.timestamp_unix_ms}-${ev.sender}`}><time>[{new Date(ev.timestamp_unix_ms).toLocaleTimeString([], {hour12:false})}]</time><span className="log-stage">[{ev.stage}]</span><span className="log-route">[{ev.sender} → {ev.receiver}]</span><p>{ev.detail}</p><Status tone={ev.status==="Ok"?"success":ev.status==="Fail"?"danger":"info"}>{ev.status==="Ok"?"VERIFIED":ev.status==="Fail"?"FAILED":"INFO"}</Status></article>)}{filtered.length===0&&<Empty title="No matching protocol events" description="Adjust the filters or execute a protocol operation."/>}</div></Panel></>}
-export function SystemPage(){const [busy,setBusy]=useState(false),[status,setStatus]=useState<string|null>(null),[error,setError]=useState<string|null>(null);async function reset(){setBusy(true);setError(null);try{await api.reset();setStatus("Simulation reset complete. Drones, groups, sessions, and logs were cleared.")}catch(e){setError(e instanceof Error?e.message:String(e))}finally{setBusy(false)}}return <><PageHeader eyebrow="PLATFORM CONTROL / SYSTEM" title="System Configuration" description="Local service topology, cryptographic posture, research limitations, and simulation controls."/>{error&&<ErrorNotice message={error}/>}<div className="split-grid"><Panel title="Service Topology"><DataTable label="Service endpoints"><tbody><tr><th>Node gateway</th><td><TechnicalId>http://127.0.0.1:4000</TechnicalId></td><td><Status tone="info">BROWSER BOUNDARY</Status></td></tr><tr><th>Rust core</th><td><TechnicalId>http://127.0.0.1:8787</TechnicalId></td><td><Status tone="success">CRYPTO CORE</Status></td></tr><tr><th>Python image service</th><td><TechnicalId>http://127.0.0.1:5001</TechnicalId></td><td><Status tone="warning">SIMULATION</Status></td></tr></tbody></DataTable></Panel><Panel title="Research Safety Boundary"><div className="notice notice-warning"><FileWarning/><div><strong>Local research environment</strong><p>Services are loopback-only and do not use TLS. Do not treat this simulator as a production deployment.</p></div></div><div className="notice"><ShieldAlert/><div><strong>ZK proof limitation</strong><p>The current research backend verifies binding but discloses the witness to the verifier; it is not witness-hiding.</p></div></div></Panel></div><Panel title="Cryptographic Configuration"><DataTable label="Cryptographic configuration"><thead><tr><th>Subsystem</th><th>Implementation</th><th>Classification</th></tr></thead><tbody><tr><td>KEM</td><td>Kyber768 / ML-KEM-768 predecessor</td><td><Status tone="success">REAL</Status></td></tr><tr><td>Signature</td><td>Dilithium2 / ML-DSA-44 predecessor</td><td><Status tone="success">REAL</Status></td></tr><tr><td>Membership</td><td>Poseidon Merkle tree over Goldilocks-style field</td><td><Status tone="info">RESEARCH</Status></td></tr><tr><td>AEAD</td><td>ChaCha20-Poly1305</td><td><Status tone="success">REAL</Status></td></tr><tr><td>PUF</td><td>SRAM-PUF + repetition-code fuzzy extractor</td><td><Status tone="warning">SIMULATED</Status></td></tr><tr><td>ECC</td><td>No elliptic-curve cryptography</td><td><Status tone="success">NONE</Status></td></tr></tbody></DataTable></Panel><Panel title="Destructive Controls" className="danger-zone"><p>Reset permanently clears every local drone, group, session, and protocol event. This action cannot be undone.</p><AlertDialog><AlertDialogTrigger asChild><Button variant="destructive"><Trash2/>Reset simulation</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Reset the entire simulation?</AlertDialogTitle><AlertDialogDescription>This removes all drones, groups, sessions, keys held by the simulation, and protocol logs. The operation cannot be undone.</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" disabled={busy} onClick={()=>void reset()}>{busy?"Resetting…":"Yes, reset everything"}</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>{status&&<p className="success-copy" role="status">{status}</p>}</Panel></>}
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  BusyLabel,
+  DataTable,
+  Disclosure,
+  Empty,
+  ErrorNotice,
+  Field,
+  KeyValues,
+  Notice,
+  PageHeader,
+  Panel,
+  Status,
+  TechnicalId,
+  errorText,
+  selectClass,
+} from "./core";
+
+export function TracePage() {
+  const fetcher = useCallback(() => api.getTrace(), []);
+  const { data, error: pollError, refresh } = usePolling(fetcher, 4000);
+  const [session, setSession] = useState("");
+  const [flagReason, setFlagReason] = useState("");
+  const [pid, setPid] = useState("");
+  const [token, setToken] = useState("");
+  const [requester, setRequester] = useState("admin-1");
+  const [reason, setReason] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function act(fn: () => Promise<unknown>, clear: () => void) {
+    setBusy(true);
+    setError(null);
+    try {
+      await fn();
+      clear();
+      await refresh();
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <>
+      <PageHeader
+        title="Trace manager"
+        description="Flag suspicious sessions and request pseudonym resolution. Every request, granted or denied, is written to the audit trail."
+      />
+      <Notice tone="warning" title="Administrator token required">
+        The core checks the token (IOD_ADMIN_TOKEN). A trace also needs a reason and a PID from a
+        flagged session.
+      </Notice>
+      {(error || pollError) && <ErrorNotice message={error || pollError || "Unknown error"} />}
+      <div className="split-grid section-gap">
+        <Panel title="Flag a session">
+          <Field label="Session id">
+            <Input
+              value={session}
+              onChange={(e) => setSession(e.target.value)}
+              placeholder="Authentication session id"
+            />
+          </Field>
+          <Field label="Reason">
+            <Input value={flagReason} onChange={(e) => setFlagReason(e.target.value)} />
+          </Field>
+          <Button
+            variant="outline"
+            disabled={busy || !session || !flagReason}
+            onClick={() =>
+              void act(
+                () => api.flagSession(session, "operator", flagReason),
+                () => {
+                  setSession("");
+                  setFlagReason("");
+                },
+              )
+            }
+          >
+            <Flag />
+            Flag session
+          </Button>
+        </Panel>
+        <Panel title="Request a trace">
+          <div className="form-grid">
+            <Field label="Requested by">
+              <Input value={requester} onChange={(e) => setRequester(e.target.value)} />
+            </Field>
+            <Field label="Administrator token">
+              <Input
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="IOD_ADMIN_TOKEN"
+              />
+            </Field>
+          </div>
+          <Field label="Pseudonym (PID, hex)">
+            <Input value={pid} onChange={(e) => setPid(e.target.value)} />
+          </Field>
+          <Field label="Reason">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} />
+          </Field>
+          <Button
+            variant="destructive"
+            disabled={busy || !pid || !reason}
+            onClick={() =>
+              void act(
+                () => api.requestTrace(requester, reason, pid, token),
+                () => {
+                  setPid("");
+                  setReason("");
+                },
+              )
+            }
+          >
+            <Search />
+            <BusyLabel busy={busy} idle="Request trace" busyText="Checking" />
+          </Button>
+        </Panel>
+      </div>
+      <Panel title="Flags" meta={<span className="panel-count">{data?.flags.length ?? 0}</span>}>
+        <DataTable label="Suspicion flags">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Session</th>
+              <th>Flagged by</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data?.flags.map((f) => (
+              <tr key={f.flag_id}>
+                <td>{new Date(f.timestamp_unix_ms).toLocaleString()}</td>
+                <td>
+                  <TechnicalId>{f.session_id}</TechnicalId>
+                </td>
+                <td>{f.flagged_by}</td>
+                <td>{f.reason}</td>
+              </tr>
+            ))}
+            {data && data.flags.length === 0 && (
+              <tr>
+                <td colSpan={4}>
+                  <Empty title="No flags" description="No session is under review." />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </DataTable>
+      </Panel>
+      <Panel
+        title="Audit trail"
+        meta={<span className="panel-count">{data?.trace_records.length ?? 0}</span>}
+      >
+        <DataTable label="Trace audit trail">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Requested by</th>
+              <th>Role</th>
+              <th>Decision</th>
+              <th>Resolved drone</th>
+              <th>Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            {data?.trace_records.map((t) => (
+              <tr key={t.trace_id}>
+                <td>{new Date(t.timestamp_unix_ms).toLocaleString()}</td>
+                <td>{t.requested_by}</td>
+                <td>{t.requester_role}</td>
+                <td>
+                  <Status tone={t.authorized ? "success" : "danger"}>
+                    {t.authorized ? "Granted" : "Denied"}
+                  </Status>
+                </td>
+                <td>{t.authorized ? t.resolved_drone_id || "Unresolved" : "Withheld"}</td>
+                <td>{t.reason}</td>
+              </tr>
+            ))}
+            {data && data.trace_records.length === 0 && (
+              <tr>
+                <td colSpan={6}>
+                  <Empty
+                    title="No trace requests"
+                    description="Requests appear here as soon as they are made."
+                  />
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </DataTable>
+      </Panel>
+    </>
+  );
+}
+
+export function LogsPage() {
+  const [events, setEvents] = useState<ProtocolEvent[]>([]);
+  const [live, setLive] = useState(true);
+  const [connected, setConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState("ALL");
+  const [stage, setStage] = useState("");
+  const [text, setText] = useState("");
+  async function reload() {
+    try {
+      const r = await api.getEventsHistory(300);
+      setEvents(r.events);
+      setError(null);
+    } catch (e) {
+      setError(errorText(e));
+    }
+  }
+  useEffect(() => {
+    void reload();
+  }, []);
+  useEffect(() => {
+    if (!live) {
+      setConnected(false);
+      return;
+    }
+    return streamEvents((ev) => setEvents((prev) => [...prev, ev].slice(-500)), setConnected);
+  }, [live]);
+  const filtered = useMemo(
+    () =>
+      events
+        .filter(
+          (e) =>
+            (status === "ALL" || e.status === status) &&
+            (!stage || e.stage.toLowerCase().includes(stage.toLowerCase())) &&
+            (!text ||
+              `${e.sender} ${e.receiver} ${e.session_id} ${e.detail}`
+                .toLowerCase()
+                .includes(text.toLowerCase())),
+        )
+        .reverse(),
+    [events, status, stage, text],
+  );
+  return (
+    <>
+      <PageHeader
+        title="Event log"
+        description="Protocol events for registration (R1–R3), authentication (M1–M8) and key establishment (K1–K4), with live updates."
+        actions={
+          <Status tone={!live ? "neutral" : connected ? "success" : "warning"}>
+            {!live ? "Live updates off" : connected ? "Live" : "Reconnecting"}
+          </Status>
+        }
+      />
+      {error && <ErrorNotice message={error} />}
+      <Panel title="Filters">
+        <div className="filter-grid">
+          <Field label="Status">
+            <select
+              className={selectClass}
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+            >
+              <option value="ALL">All</option>
+              <option value="Ok">Passed</option>
+              <option value="Info">Information</option>
+              <option value="Fail">Failed</option>
+            </select>
+          </Field>
+          <Field label="Stage">
+            <Input
+              value={stage}
+              onChange={(e) => setStage(e.target.value)}
+              placeholder="M5, K2, R1"
+            />
+          </Field>
+          <Field label="Drone, session or text">
+            <Input value={text} onChange={(e) => setText(e.target.value)} />
+          </Field>
+          <div className="button-row">
+            <Button variant={live ? "default" : "outline"} onClick={() => setLive((v) => !v)}>
+              <Radio />
+              {live ? "Live on" : "Live off"}
+            </Button>
+            <Button variant="outline" onClick={() => void reload()}>
+              <RefreshCw />
+              Reload
+            </Button>
+          </div>
+        </div>
+      </Panel>
+      <Panel
+        title="Events"
+        meta={
+          <span className="panel-count">
+            {filtered.length} of {events.length}
+          </span>
+        }
+      >
+        <div className="log-console">
+          {filtered.map((ev) => (
+            <article key={`${ev.session_id}-${ev.stage}-${ev.timestamp_unix_ms}-${ev.sender}`}>
+              <time>
+                {new Date(ev.timestamp_unix_ms).toLocaleTimeString([], { hour12: false })}
+              </time>
+              <span className="log-stage">{ev.stage}</span>
+              <span className="log-route">
+                {ev.sender} → {ev.receiver}
+              </span>
+              <p>{ev.detail}</p>
+              <Status
+                tone={ev.status === "Ok" ? "success" : ev.status === "Fail" ? "danger" : "info"}
+              >
+                {ev.status === "Ok" ? "Passed" : ev.status === "Fail" ? "Failed" : "Info"}
+              </Status>
+            </article>
+          ))}
+          {filtered.length === 0 && (
+            <Empty
+              title="No matching events"
+              description="Change the filters or run a protocol step."
+            />
+          )}
+        </div>
+      </Panel>
+    </>
+  );
+}
+
+function fmtBytes(n: number | undefined) {
+  return n === undefined ? "—" : `${n.toLocaleString()} B`;
+}
+
+export function SystemPage() {
+  const cryptoFetcher = useCallback(() => api.getSystemCrypto(), []);
+  const { data: crypto, error: cryptoError } = usePolling<SystemCrypto>(cryptoFetcher, 15000);
+  const [stego, setStego] = useState<StegoStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void stegoApi.status().then((r) => {
+      if (r.ok) setStego(r.data);
+    });
+  }, []);
+  async function reset() {
+    setBusy(true);
+    setError(null);
+    try {
+      await api.reset();
+      setStatus("Simulation reset. Drones, groups, sessions and events were cleared.");
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const s = crypto?.suite;
+  const kem = s?.sizes.ml_kem_768;
+  const sig = s?.sizes.ml_dsa_44;
+  const policy = stego?.config?.algorithm_policy;
+  const boot = stego?.config?.bootstrap;
+  const archived = crypto?.migration.legacy_snapshots?.count ?? 0;
+  return (
+    <>
+      <PageHeader
+        title="System"
+        description="Active cryptographic suite, transport configuration and simulation controls, as reported by the core."
+      />
+      {(error || cryptoError) && <ErrorNotice message={error || cryptoError || "Unknown error"} />}
+      <Panel
+        title="Cryptographic suite"
+        meta={s ? <Status tone="success">Active</Status> : undefined}
+      >
+        <KeyValues
+          items={[
+            ["Suite id", s?.suite_id, true],
+            ["Key encapsulation", s ? `${s.kem}` : undefined],
+            ["Signatures", s ? `${s.signature}` : undefined],
+            ["AEAD", s?.aead],
+            ["Key derivation", s?.kdf],
+            ["Transcript hash", s?.transcript_hash],
+          ]}
+        />
+        <div className="grid-2" style={{ marginTop: 16 }}>
+          <DataTable label="ML-KEM-768 sizes">
+            <thead>
+              <tr>
+                <th>ML-KEM-768</th>
+                <th className="num">Bytes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Public key</td>
+                <td className="num">{fmtBytes(kem?.public_key)}</td>
+              </tr>
+              <tr>
+                <td>Private key (expanded)</td>
+                <td className="num">{fmtBytes(kem?.private_key_expanded)}</td>
+              </tr>
+              <tr>
+                <td>Private key (stored seed)</td>
+                <td className="num">{fmtBytes(kem?.private_key_seed)}</td>
+              </tr>
+              <tr>
+                <td>Ciphertext</td>
+                <td className="num">{fmtBytes(kem?.ciphertext)}</td>
+              </tr>
+              <tr>
+                <td>Shared secret</td>
+                <td className="num">{fmtBytes(kem?.shared_secret)}</td>
+              </tr>
+            </tbody>
+          </DataTable>
+          <DataTable label="ML-DSA-44 sizes">
+            <thead>
+              <tr>
+                <th>ML-DSA-44</th>
+                <th className="num">Bytes</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Public key</td>
+                <td className="num">{fmtBytes(sig?.public_key)}</td>
+              </tr>
+              <tr>
+                <td>Private key (expanded)</td>
+                <td className="num">{fmtBytes(sig?.private_key_expanded)}</td>
+              </tr>
+              <tr>
+                <td>Private key (stored seed)</td>
+                <td className="num">{fmtBytes(sig?.private_key_seed)}</td>
+              </tr>
+              <tr>
+                <td>Signature</td>
+                <td className="num">{fmtBytes(sig?.signature)}</td>
+              </tr>
+            </tbody>
+          </DataTable>
+        </div>
+        <Notice
+          tone="info"
+          title={s?.validation ? `Conformance tested; ${s.validation}` : "Conformance"}
+        >
+          {s?.conformance}
+        </Notice>
+        <Disclosure summary="Implementation details">
+          <KeyValues
+            items={[
+              ["ML-KEM implementation", s?.kem_implementation],
+              ["ML-DSA implementation", s?.signature_implementation],
+              ["Signing mode", s?.signature_mode],
+              ["Private key storage", s?.private_key_storage],
+              ["Key generation", s?.key_generation],
+              ["Retired suite", s?.legacy_suite, true],
+            ]}
+          />
+        </Disclosure>
+      </Panel>
+      <div className="split-grid section-gap">
+        <Panel title="Device identity">
+          <KeyValues
+            items={[
+              [
+                "PUF",
+                <Status key="p" tone="warning">
+                  Simulated
+                </Status>,
+              ],
+              ["Model", crypto?.puf],
+            ]}
+          />
+          <KeyValues
+            className="mt-4"
+            items={[
+              [
+                "Stored identities from other suites",
+                archived ? `${archived} archived (not loaded)` : "None",
+              ],
+            ]}
+          />
+          {archived > 0 && <p className="stego-muted">{crypto?.migration.action}</p>}
+        </Panel>
+        <Panel title="Image transport">
+          <KeyValues
+            items={[
+              ["Format", stego?.transport?.format_version, true],
+              ["Algorithm policy", policy?.name],
+              ["Allowed", policy?.allowed?.join(", ")],
+              ["Bootstrap", boot ? `v${boot.version}, sync window ${boot.sync_window}` : undefined],
+            ]}
+          />
+          {policy?.excluded && policy.excluded.length > 0 && (
+            <Disclosure summary={`Excluded algorithms (${policy.excluded.length})`}>
+              <DataTable label="Excluded algorithms">
+                <thead>
+                  <tr>
+                    <th>Algorithm</th>
+                    <th>Reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {policy.excluded.map((x) => (
+                    <tr key={x.algorithm}>
+                      <td className="mono">{x.algorithm}</td>
+                      <td>{x.reason}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </DataTable>
+            </Disclosure>
+          )}
+          {!stego && (
+            <p className="stego-muted">
+              Transport status unavailable (image service or gateway not reachable).
+            </p>
+          )}
+        </Panel>
+      </div>
+      <Panel title="Services">
+        <DataTable label="Service endpoints">
+          <thead>
+            <tr>
+              <th>Service</th>
+              <th>Default address</th>
+              <th>Role</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Node gateway</td>
+              <td>
+                <TechnicalId>http://127.0.0.1:4000</TechnicalId>
+              </td>
+              <td>Browser boundary, relays to the core</td>
+            </tr>
+            <tr>
+              <td>Rust core</td>
+              <td>
+                <TechnicalId>http://127.0.0.1:8787</TechnicalId>
+              </td>
+              <td>Protocol, cryptography, transport authority</td>
+            </tr>
+            <tr>
+              <td>Python image service</td>
+              <td>
+                <TechnicalId>http://127.0.0.1:5001</TechnicalId>
+              </td>
+              <td>Cover generation and pixel work; holds no keys</td>
+            </tr>
+          </tbody>
+        </DataTable>
+        <p className="stego-muted">
+          Loopback only, no TLS between services. Research prototype; Raspberry Pi measurements and
+          the radio/UAV link are deferred.
+        </p>
+      </Panel>
+      <Panel title="Reset simulation" className="danger-zone">
+        <p>Clears every drone, group, session and protocol event. This cannot be undone.</p>
+        <AlertDialog>
+          <AlertDialogTrigger asChild>
+            <Button variant="destructive">
+              <Trash2 />
+              Reset simulation
+            </Button>
+          </AlertDialogTrigger>
+          <AlertDialogContent>
+            <AlertDialogHeader>
+              <AlertDialogTitle>Reset the simulation?</AlertDialogTitle>
+              <AlertDialogDescription>
+                All drones, groups, sessions, keys held by the simulation and protocol events are
+                removed.
+              </AlertDialogDescription>
+            </AlertDialogHeader>
+            <AlertDialogFooter>
+              <AlertDialogCancel>Cancel</AlertDialogCancel>
+              <AlertDialogAction
+                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                disabled={busy}
+                onClick={() => void reset()}
+              >
+                {busy ? "Resetting…" : "Reset"}
+              </AlertDialogAction>
+            </AlertDialogFooter>
+          </AlertDialogContent>
+        </AlertDialog>
+        {status && (
+          <p className="success-copy" role="status">
+            {status}
+          </p>
+        )}
+      </Panel>
+    </>
+  );
+}

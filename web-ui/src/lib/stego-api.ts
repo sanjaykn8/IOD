@@ -1,51 +1,95 @@
 // Patch-wise Steganography Lab + Knowledge Base client. Talks ONLY to the Node gateway (`/api/stego/*`),
 // which relays 1:1 to the Rust core. No keys, no selection logic, no crypto here.
 import type {
-  CoverGenerationRequest, KnowledgeBase, StegoBenchmarkRequest, StegoBenchmarkResult, StegoErrorBody, StegoEvent,
-  StegoEventFilter, StegoFailure, StegoMessageResult, StegoPlanPreview, StegoReport, StegoStage, StegoStatus,
+  CoverGenerationRequest,
+  KnowledgeBase,
+  StegoBenchmarkRequest,
+  StegoBenchmarkResult,
+  StegoErrorBody,
+  StegoEvent,
+  StegoEventFilter,
+  StegoFailure,
+  StegoMessageResult,
+  StegoPlanPreview,
+  StegoReport,
+  StegoStage,
+  StegoStatus,
 } from "../types/api";
 
 const BASE = import.meta.env["VITE_API_BASE"] || "http://127.0.0.1:4000/api";
 
 export type StegoResult<T> =
   | { ok: true; status: number; data: T }
-  | { ok: false; status: number; error: StegoErrorBody; stages?: StegoStage[] | undefined; eventId?: string | number | undefined };
+  | {
+      ok: false;
+      status: number;
+      error: StegoErrorBody;
+      stages?: StegoStage[] | undefined;
+      eventId?: string | number | undefined;
+    };
 
 function toError(body: unknown, status: number): StegoErrorBody {
   const b = body as { error?: unknown } | null;
   const e = b?.error;
   if (e && typeof e === "object" && "code" in e) return e as StegoErrorBody;
   if (typeof e === "string") return { code: `HTTP_${status}`, message: e };
-  return { code: status ? `HTTP_${status}` : "GATEWAY_UNREACHABLE", message: status ? `Request failed (${status})` : "The gateway could not be reached" };
+  return {
+    code: status ? `HTTP_${status}` : "GATEWAY_UNREACHABLE",
+    message: status ? `Request failed (${status})` : "The gateway could not be reached",
+  };
 }
 
-async function call<T>(method: "GET" | "POST", path: string, body?: unknown): Promise<StegoResult<T>> {
+async function call<T>(
+  method: "GET" | "POST",
+  path: string,
+  body?: unknown,
+): Promise<StegoResult<T>> {
   let res: Response;
   try {
     res = await fetch(`${BASE}/stego${path}`, {
       method,
-      ...(body !== undefined ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) } : {}),
+      ...(body !== undefined
+        ? { headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+        : {}),
     });
   } catch (e) {
-    return { ok: false, status: 0, error: { code: "GATEWAY_UNREACHABLE", message: e instanceof Error ? e.message : "Network error" } };
+    return {
+      ok: false,
+      status: 0,
+      error: {
+        code: "GATEWAY_UNREACHABLE",
+        message: e instanceof Error ? e.message : "Network error",
+      },
+    };
   }
   const json: unknown = await res.json().catch(() => null);
   const j = json as { ok?: boolean; stages?: StegoStage[]; event_id?: string | number } | null;
   if (!res.ok || j?.ok === false) {
-    return { ok: false, status: res.status, error: toError(json, res.status), stages: j?.stages, eventId: j?.event_id };
+    return {
+      ok: false,
+      status: res.status,
+      error: toError(json, res.status),
+      stages: j?.stages,
+      eventId: j?.event_id,
+    };
   }
   return { ok: true, status: res.status, data: json as T };
 }
 
 function qs(f: StegoEventFilter): string {
   const p = new URLSearchParams();
-  for (const [k, v] of Object.entries(f)) if (v !== undefined && v !== "" && v !== null) p.set(k, String(v));
+  for (const [k, v] of Object.entries(f))
+    if (v !== undefined && v !== "" && v !== null) p.set(k, String(v));
   const s = p.toString();
   return s ? `?${s}` : "";
 }
 
 export interface StegoMessageRequest {
-  session_id?: string; d1_id?: string; d2_id?: string; from_id: string; plaintext: string;
+  session_id?: string;
+  d1_id?: string;
+  d2_id?: string;
+  from_id: string;
+  plaintext: string;
   /** Optional tightening of the active cover-generation profile. A fresh cover is generated for every message. */
   cover_generation?: CoverGenerationRequest;
 }
@@ -53,14 +97,19 @@ export interface StegoMessageRequest {
 export const stegoApi = {
   status: () => call<StegoStatus>("GET", "/status"),
   /** Plan preview: fresh generated cover + segmentation + per-patch knowledge-base retrieval + allocation for a payload LENGTH. Nothing is sealed or embedded. */
-  plan: (body: { payload_bytes?: number; cover_generation?: CoverGenerationRequest; min_level?: number }) => call<StegoPlanPreview>("POST", "/plan", body),
+  plan: (body: {
+    payload_bytes?: number;
+    cover_generation?: CoverGenerationRequest;
+    min_level?: number;
+  }) => call<StegoPlanPreview>("POST", "/plan", body),
   /** The static algorithm knowledge base and selector settings (read-only). */
   kb: () => call<KnowledgeBase>("GET", "/kb"),
   /** Full send -> save -> receive -> verify transaction. Failures keep `stages` and `error.stage`. */
   message: (body: StegoMessageRequest) => call<StegoMessageResult>("POST", "/message", body),
   events: (f: StegoEventFilter = {}) => call<{ events: StegoEvent[] }>("GET", `/events${qs(f)}`),
   report: () => call<StegoReport>("GET", "/report?format=json"),
-  benchmark: (body: StegoBenchmarkRequest) => call<StegoBenchmarkResult>("POST", "/benchmark", body),
+  benchmark: (body: StegoBenchmarkRequest) =>
+    call<StegoBenchmarkResult>("POST", "/benchmark", body),
 };
 
 export type { StegoFailure };
@@ -69,7 +118,8 @@ export type ArtifactKind = "stego" | "cover" | "seg" | "labels" | "diff";
 export type ReportFormat = "json" | "csv" | "patches_csv";
 
 export const stegoUrl = {
-  artifact: (id: string, kind: ArtifactKind) => `${BASE}/stego/artifacts/${encodeURIComponent(id)}/${kind}`,
+  artifact: (id: string, kind: ArtifactKind) =>
+    `${BASE}/stego/artifacts/${encodeURIComponent(id)}/${kind}`,
   report: (format: ReportFormat) => `${BASE}/stego/report?format=${format}`,
 };
 
@@ -88,16 +138,34 @@ export function downloadBlob(blob: Blob, filename: string): void {
 export async function downloadStegoReport(format: ReportFormat): Promise<void> {
   const res = await fetch(stegoUrl.report(format));
   if (!res.ok) throw new Error(`Report download failed (${res.status})`);
-  downloadBlob(await res.blob(), format === "json" ? "stego-report.json" : format === "csv" ? "stego-events.csv" : "stego-patches.csv");
+  downloadBlob(
+    await res.blob(),
+    format === "json"
+      ? "stego-report.json"
+      : format === "csv"
+        ? "stego-events.csv"
+        : "stego-patches.csv",
+  );
 }
 
 function csvCell(v: unknown): string {
-  let s = v === null || v === undefined ? "" : Array.isArray(v) ? v.join(" ") : typeof v === "object" ? JSON.stringify(v) : String(v);
+  let s =
+    v === null || v === undefined
+      ? ""
+      : Array.isArray(v)
+        ? v.join(" ")
+        : typeof v === "object"
+          ? JSON.stringify(v)
+          : String(v);
   if (/^[=+\-@]/.test(s) && Number.isNaN(Number(s))) s = `'${s}`; // spreadsheet formula injection
   return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 }
 
 /** CSV from rows the backend returned (values are copied, never computed here). */
 export function toCsv(columns: string[], rows: Record<string, unknown>[]): string {
-  return [columns.join(","), ...rows.map((r) => columns.map((c) => csvCell(r[c])).join(","))].join("\n") + "\n";
+  return (
+    [columns.join(","), ...rows.map((r) => columns.map((c) => csvCell(r[c])).join(","))].join(
+      "\n",
+    ) + "\n"
+  );
 }
